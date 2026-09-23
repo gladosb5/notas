@@ -2976,9 +2976,19 @@ let cropping=null, cropDrag=null, lastImgTap=null;
 const CROP_MIN=24;
 function noteImageTap(id,ev){
   const now=Date.now(), p=lastImgTap;
-  if(p&&p.id===id&&now-p.t<400&&Math.hypot(ev.clientX-p.x,ev.clientY-p.y)<24){ lastImgTap=null; return startCrop(id); }
+  if(p&&p.id===id&&now-p.t<400&&Math.hypot(ev.clientX-p.x,ev.clientY-p.y)<40){   /* two finger taps rarely land on one spot */ lastImgTap=null; return startCrop(id); }
   lastImgTap={id,t:now,x:ev.clientX,y:ev.clientY};
   return false;
+}
+/* A finger or pencil on a picture wobbles, most of all on the second tap of
+   a double tap, so a press only becomes a drag once it has clearly left
+   where it landed; until then the picture stays put and lifting is a tap.
+   A mouse drags at once. */
+const TAP_SLOP={touch:14, pen:10}, DOUBLE_TAP_SLOP=28;
+function pictureMove(w,ev,kind,id){
+  const p=lastImgTap, second=p&&p.id===id&&Date.now()-p.t<400;
+  const slop=kind==='mouse'?0:(second?DOUBLE_TAP_SLOP:(TAP_SLOP[kind]||TAP_SLOP.touch));
+  return {x:w.x, y:w.y, dx:0, dy:0, box:selectionBox(), sx:ev.clientX, sy:ev.clientY, slop, held:slop>0};
 }
 function startCrop(id){
   if(!S.images.some(i=>i.id===id)) return false;
@@ -3509,7 +3519,7 @@ cInk.addEventListener('pointerdown', ev=>{
     const k = im && handleAt(w.x, w.y, frameOf(im), kind === 'touch');
     if(k === 'rot'){ turning = startTurn(im, w); return; }
     if(k){ resizing = { id:im.id, k, box:{x:im.x,y:im.y,w:im.w,h:im.h,rot:im.rot||0} }; return; }
-    if(im && inImage(w.x, w.y, im)){ moving = { x:w.x, y:w.y, dx:0, dy:0, box:selectionBox() }; return; }
+    if(im && inImage(w.x, w.y, im)){ moving = pictureMove(w, ev, kind, im.id); return; }
     if(tool !== 'select'){
       S.imageSelection = null; $('#selbar').hidden = true; render();
       if(tool === 'text') return;
@@ -3530,11 +3540,11 @@ cInk.addEventListener('pointerdown', ev=>{
     }
     /* inside an existing selection the drag moves it rather than starting a new one */
     if((S.selection.length||S.imageSelection) && hitSelection(w.x, w.y)){
-      moving = { x:w.x, y:w.y, dx:0, dy:0, box:selectionBox() };
+      moving = S.imageSelection ? pictureMove(w, ev, kind, S.imageSelection) : { x:w.x, y:w.y, dx:0, dy:0, box:selectionBox() };
       return;
     }
     const im=imageAt(w.x,w.y);
-    if(im){S.selection=[];S.imageSelection=im.id;moving={x:w.x,y:w.y,dx:0,dy:0,box:selectionBox()};showSelBar();render();return;}
+    if(im){S.selection=[];S.imageSelection=im.id;moving=pictureMove(w,ev,kind,im.id);showSelBar();render();return;}
     S.imageSelection=null;
     lasso = { id:C.uid(), pts:[w.x, w.y] };
     return;
@@ -3588,6 +3598,10 @@ cInk.addEventListener('pointermove', ev=>{
     cInk.style.cursor = k === 'rot' ? 'grab' : k ? ((k==='nw'||k==='se') ? 'nwse-resize' : 'nesw-resize') : (inside ? 'move' : '');
   } else if(cInk.style.cursor) cInk.style.cursor = '';
   if(moving){
+    if(moving.held){
+      if(Math.hypot(ev.clientX - moving.sx, ev.clientY - moving.sy) < moving.slop) return;
+      moving.held = false;   /* it is a drag now; the picture follows the hand from where it pressed */
+    }
     const w = toWorld(ev), b = moving.box;
     /* Ink can be drawn anywhere the paper reaches, so a drag must be allowed to
        follow it: the old clamp pinned the selection inside the 720px text
@@ -3671,7 +3685,7 @@ function endPointer(ev){
     const t = tapImage; tapImage = null;
     if(chipTap(ev)) return;
     /* a finger that landed on a picture and never moved: select it */
-    if(t && Date.now() - t.t < 350 && Math.hypot(ev.clientX - t.x, ev.clientY - t.y) < 6){ pickImage(t.id); noteImageTap(t.id, ev); }
+    if(t && Date.now() - t.t < 350 && Math.hypot(ev.clientX - t.x, ev.clientY - t.y) < TAP_SLOP.touch){ pickImage(t.id); noteImageTap(t.id, ev); }
     /* and a tap on bare paper lets a selected one go, or keeps a crop */
     else if(!t && S.imageSelection && rec && Date.now() - rec.t < 350 && rec.moved < 6){ if(cropping) applyCrop(); else clearSelection(); }
     return;
@@ -3696,9 +3710,9 @@ function endPointer(ev){
     return;
   }
   if(moving){
-    const {dx, dy} = moving; moving = null;
-    /* a press on a picture that never travelled is a tap: two open its crop */
-    const tapped = S.imageSelection && rec && Date.now() - rec.t < 350 && rec.moved < 6;
+    const m = moving, {dx, dy} = m; moving = null;
+    /* a press on a picture that never became a drag is a tap: two open its crop */
+    const tapped = S.imageSelection && rec && Date.now() - rec.t < 500 && (m.slop ? m.held : rec.moved < 6);
     commitMove(tapped ? 0 : dx, tapped ? 0 : dy);
     if(tapped) noteImageTap(S.imageSelection, ev);
     return;

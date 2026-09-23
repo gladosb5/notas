@@ -99,5 +99,46 @@ try{
   assert.ok(Math.abs(t1.w-t0.w/2)<2&&Math.abs(t1.h-t0.h)<2&&t1.rot===Math.PI/2,'the turned crop keeps half its width and its turn');
   assert.ok(Math.abs(t1.cx-cx)<2&&Math.abs(t1.cy-(cy-t0.w/4))<2,'the kept half stays where it was seen: '+JSON.stringify([t1.cx,t1.cy,cx,cy-t0.w/4]));
   assert.deepEqual(errors,[]);
+
+  // 7. on a touch screen a hand wobbles: a double tap whose second tap
+  //    drifts still opens the crop and does not move the picture, a small
+  //    wobble on its own is not a drag, and a real drag still moves it
+  const tctx=await browser.newContext({viewport:{width:1180,height:820},hasTouch:true,isMobile:true});
+  const tp=await tctx.newPage();
+  await tp.goto(base+'/notas.html');
+  await tp.waitForFunction(()=>window.N&&N.ui&&N.ink&&N.ink.startCrop);
+  const tid=await tp.evaluate(async()=>{
+    const skip=[...document.querySelectorAll('.tut button')].find(b=>b.textContent.trim()==='skip');if(skip)skip.click();
+    const cv=document.createElement('canvas');cv.width=400;cv.height=300;const x=cv.getContext('2d');x.fillStyle='#48c';x.fillRect(0,0,400,300);
+    const blob=await new Promise(r=>cv.toBlob(r,'image/png'));
+    await N.ui.insertImages([new File([blob],'p.png',{type:'image/png'})]);
+    N.ink.clearSelection();N.ink.setTool('select');return N.core.S.images.at(-1).id;
+  });
+  const cdp=await tctx.newCDPSession(tp);
+  // finger-sized contacts: a touch with no radius is taken for a stylus
+  const touch=async(from,path,hold=40)=>{
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:from.x,y:from.y,radiusX:12,radiusY:12,force:.5}]});
+    for(const [dx,dy] of path)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:from.x+dx,y:from.y+dy,radiusX:12,radiusY:12,force:.5}]});
+    await tp.waitForTimeout(hold);
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  };
+  const tbox=()=>tp.evaluate(id=>{const im=N.core.S.images.find(i=>i.id===id);return {x:im.x,y:im.y};},tid);
+  const tscreen=(wx,wy)=>tp.evaluate(([wx,wy])=>{const sc=document.querySelector('#scroller'),r=sc.getBoundingClientRect(),M=N.core.M;return {x:wx*M.zoom+r.left+M.colLeft-sc.scrollLeft,y:wy*M.zoom+r.top-sc.scrollTop};},[wx,wy]);
+  const at0=await tbox(),tc=await tp.evaluate(id=>{const im=N.core.S.images.find(i=>i.id===id);return {x:im.x+im.w/2,y:im.y+im.h/2};},tid);
+  const tm=await tscreen(tc.x,tc.y);
+  await touch(tm,[[2,1]]);await tp.waitForTimeout(80);
+  await touch({x:tm.x+6,y:tm.y+4},[[6,4],[12,9],[18,6]]);   // the second tap drifts 18px
+  await tp.waitForTimeout(100);
+  assert.ok(await tp.evaluate(()=>!!N.ink.cropping()),'a wobbly double tap opens the crop');
+  assert.deepEqual(await tbox(),at0,'a wobbly double tap does not move the picture');
+  await tp.keyboard.press('Escape');
+  await tp.waitForTimeout(500);   // past the double-tap window
+  await touch(tm,[[4,3],[8,6]]);   // a lone 10px wobble
+  assert.deepEqual(await tbox(),at0,'a small wobble on its own is not a drag');
+  await tp.waitForTimeout(500);
+  await touch(tm,[[10,0],[30,0],[60,0],[80,0]],60);   // a real drag
+  const moved=await tbox();
+  assert.ok(Math.abs(moved.x-at0.x-80/await tp.evaluate(()=>N.core.M.zoom))<3&&moved.y===at0.y,'a real drag still moves the picture: '+JSON.stringify([at0,moved]));
+  await tctx.close();
   console.log('crop: ok');
 }finally{await browser.close();server.close();}
