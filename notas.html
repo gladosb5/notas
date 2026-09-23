@@ -485,6 +485,13 @@ body[data-tool="text"]:not([data-image-sel]) .line{pointer-events:auto}
    left; a mouse move, a tap or leaving the line brings it back */
 #topbar,#pill,#penpop,#dlpop,#local-status,#offline-status{transition:opacity .5s var(--spring)}
 body.typing #topbar,body.typing #pill,body.typing #penpop,body.typing #local-status,body.typing #offline-status{opacity:.14;pointer-events:none}
+/* A mouse brings the chrome back as it moves toward it; a finger arrives
+   with the tap itself, which was hit-tested before the fade lifted, so the
+   first tap on undo after typing landed on the paper beneath and started a
+   line there. On a touch screen the faded controls stay tappable. */
+@media (pointer:coarse){
+  body.typing #topbar,body.typing #pill,body.typing #penpop,body.typing #local-status,body.typing #offline-status{pointer-events:auto}
+}
 
 /* ---- result chips: the machine's blue ---- */
 /* with a drawing tool up, a resting chip lets the pen through to the paper;
