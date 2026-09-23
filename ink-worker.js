@@ -95,13 +95,19 @@ async function setup(id){
     if(tokens.length!==258||pad<0||sos<0||eos<0)throw new Error('Stroke handwriting vocabulary does not match its model.');
     announce(id,'Stroke reading: starting the model…');
     const options={executionProviders:['wasm'],graphOptimizationLevel:'all',enableCpuMemArena:true,enableMemPattern:false,intraOpNumThreads:1,interOpNumThreads:1};
-    try{
-      [encoder,decoder]=await Promise.all([
-        ort.InferenceSession.create(enc.bytes,options),ort.InferenceSession.create(dec.bytes,options)
-      ]);
-    }catch(e){
+    // Both halves start together; when one fails (out of memory, on a
+    // tablet) the one that started is released, or every retry would leave
+    // another session behind in this worker and fail sooner.
+    const started=await Promise.allSettled([
+      ort.InferenceSession.create(enc.bytes,options),ort.InferenceSession.create(dec.bytes,options)
+    ]);
+    const failed=started.find(r=>r.status==='rejected');
+    if(failed){
+      for(const r of started)if(r.status==='fulfilled')r.value.release?.().catch?.(()=>{});
+      const e=failed.reason;
       throw new Error('The stroke model could not start ('+(e?.message||e)+'). Tap retry; the model is kept on this device.');
     }
+    [encoder,decoder]=started.map(r=>r.value);
     // housekeeping after the model is up, so it never delays the first reading
     const store=STORE();
     if(store){
