@@ -6695,6 +6695,11 @@ function menuSheet(){
      needs them again. the note is written first so nothing is lost. */
   box.querySelector('#refresh-site').onclick=async()=>{
     closeSheet();C.toast('updating.',30000);
+    /* the cached pages are the app while offline: throwing them away with
+       no site to fetch them from again left nothing to open until the
+       connection came back */
+    const reachable=await fetch('./sw.js',{cache:'no-store',signal:AbortSignal.timeout?AbortSignal.timeout(8000):undefined}).then(r=>r.ok,()=>false);
+    if(!reachable){ C.toast('updating needs a connection. nothing was changed.',6000); return; }
     C.savePrefs();
     /* each step is given a few seconds and no more: a save or an unregister
        that never settles used to hold the page on this toast for good. The
