@@ -1,0 +1,18 @@
+{
+  "name": "notas-cloudflare",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync": "node sync.mjs",
+    "dev": "wrangler dev",
+    "deploy": "node sync.mjs && wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.133.0"
+  },
+  "dependencies": {
+    "lib0": "^0.2.117",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.32"
+  }
+}

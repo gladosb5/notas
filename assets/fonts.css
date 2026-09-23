@@ -1,0 +1,21 @@
+@font-face {
+  font-family: 'Caveat';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(./fonts/fonts-WnznHAc5bAfYB2QRah7pcpNvOx-pjSx6SII.ttf) format('truetype');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(./fonts/fonts--F63fjptAgt5VM-kVkqdyU8n5ig.ttf) format('truetype');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(./fonts/fonts--F6qfjptAgt5VM-kVkqdyU8n3twJ8lc.ttf) format('truetype');
+}

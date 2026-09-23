@@ -1,0 +1,36 @@
+{
+  "name": "notas — local maths notebook",
+  "short_name": "notas",
+  "id": "./notas.html",
+  "description": "A private, local-first notebook for handwriting, maths and typed notes.",
+  "lang": "en",
+  "start_url": "./notas.html",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone"],
+  "orientation": "any",
+  "background_color": "#F6F7F5",
+  "theme_color": "#F6F7F5",
+  "categories": ["education", "productivity"],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "./assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

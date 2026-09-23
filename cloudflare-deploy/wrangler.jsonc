@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "notas",
+  "main": "worker.js",
+  "compatibility_date": "2026-09-01",
+  // the notebook's address: a custom domain on the glados.pro zone, which
+  // wrangler creates the DNS record and certificate for on deploy. The
+  // workers.dev address keeps working beside it.
+  "routes": [{ "pattern": "notas.glados.pro", "custom_domain": true }],
+  // The app: everything sync.mjs copies into public/ (with its _headers).
+  // worker.js runs only for the paths listed in run_worker_first: the
+  // room's websocket and its two POSTs, and the nota forward. Every other
+  // request (the model files included) is answered by
+  // the assets alone, including the 404 page sync.mjs writes, so a stray
+  // URL (a bot's scan, a mistyped link) never counts as a Worker request.
+  "assets": {
+    "directory": "./public/",
+    "binding": "ASSETS",
+    // sw.js, the manifest and the model contract all name /notas.html, so it
+    // must be served at that exact path rather than redirected to /notas
+    "html_handling": "none",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/collab/*", "/nota/chat"]
+  },
+  // One NoteRoom per shared note: it relays Yjs updates between the people
+  // on that note over hibernating websockets and keeps the merged document
+  // in its SQLite storage, so it costs nothing while nobody is connected.
+  "durable_objects": {
+    "bindings": [{ "name": "ROOMS", "class_name": "NoteRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["NoteRoom"] }],
+  "observability": { "enabled": true }
+}

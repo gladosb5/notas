@@ -1,0 +1,5 @@
+node_modules
+.wrangler
+.dev.vars
+# copies made by sync.mjs from the project root; run `npm run sync` to refresh
+public/

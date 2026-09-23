@@ -1,0 +1,26 @@
+{
+  "input": 1024,
+  "hidden": 503,
+  "output": 17,
+  "classes": [
+    "(",
+    ")",
+    "+",
+    "-",
+    ".",
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "\\sqrt",
+    "\\times"
+  ],
+  "source": "https://raw.githubusercontent.com/MaciejCaputa/handwritten-mathematics-recogniser/4580bff5ef5e28bb04fdc1fe89d6f51df74f8025/",
+  "bytes": 2096572
+}

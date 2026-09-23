@@ -1,0 +1,28 @@
+node_modules/
+test-results/
+.tmp-*
+__pycache__/
+*.pyc
+
+# large model binaries: fetched by `npm run models` (scripts/fetch-models.mjs)
+assets/ink/*.onnx
+assets/text/*.onnx
+assets/smart/*.wasm
+*.part
+
+# training data and checkpoints never belong in this repo
+.dataset/
+dataset/
+experiments/*
+!experiments/ocr-upgrade/
+experiments/ocr-upgrade/*
+!experiments/ocr-upgrade/router.mjs
+checkpoints/
+outputs/
+*.pt
+*.safetensors
+
+# editor / tool caches
+.impeccable/
+.wrangler/
+.dev.vars
