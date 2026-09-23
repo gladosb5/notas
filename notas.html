@@ -421,16 +421,16 @@ body[data-tool="text"]:not([data-image-sel]) .line{pointer-events:auto}
   border-radius:0;outline:none;cursor:text;
 }
 .line .txt:empty::before{content:attr(data-placeholder);color:var(--ink-3);pointer-events:none}
-/* the native caret is hidden and #caret below glides in its place - but
-   only where there is a mouse. iPadOS draws its selection handles in the
-   caret colour, so a transparent caret there left the words highlighted
-   with nothing to drag, and the gliding bar has no place on a screen the
-   finger already points at. */
+/* the native caret is hidden and #caret below glides in its place. With a
+   mouse, always. On a touch screen only while nothing is selected (.glide,
+   set by the caret script): iPadOS draws its selection handles in the caret
+   colour, so a range keeps the native colour, and its handles, and the
+   gliding bar steps aside for it. */
 @media (hover:hover) and (pointer:fine){
   #lines,.line .txt{caret-color:transparent}
 }
 @media (hover:none),(pointer:coarse){
-  #caret{display:none}
+  #lines.glide,#lines.glide .line .txt{caret-color:transparent}
   /* a visible wash in the machine's blue, so a selection reads as one */
   .line .txt::selection{background:rgba(54,112,178,.28);color:inherit}
 }
@@ -5382,9 +5382,16 @@ requestAnimationFrame(()=>requestAnimationFrame(()=>{ lens.style.transition=''; 
 const layer=document.getElementById('textlayer'), root=document.getElementById('lines'), caret=document.getElementById('caret'), mirror=document.getElementById('caret-mirror');
 if(!layer||!root||!caret||!mirror)return;
 let idleTimer=null, raf=0;
+const touch=matchMedia('(hover:none),(pointer:coarse)');
+root.classList.add('glide');   /* from the first tap, before anything is measured */
 function measure(){
   raf=0;
   const ta=N.text&&N.text.currentText&&N.text.currentText(); if(!ta||!ta.isConnected){ hide(); return; }
+  /* on a touch screen a selected range is the native selection's, with its
+     handles: the native caret colour comes back and the bar goes */
+  const range=ta.selectionStart!==ta.selectionEnd;
+  root.classList.toggle('glide',!(touch.matches&&range));
+  if(touch.matches&&range){ hide(); return; }
   const line=ta.parentElement;
   mirror.style.width=ta.offsetWidth+'px';
   const at=ta.selectionDirection==='backward'?ta.selectionStart:ta.selectionEnd;
