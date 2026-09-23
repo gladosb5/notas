@@ -46,6 +46,23 @@ try{
   const text=await page.evaluate(()=>N.core.S.lines.find(l=>l.id==='one').text);
   assert.ok(/^hello \w*Z/.test(text)&&!/Z$/.test(text),'Typing goes in at the finger: '+text);
 
+  // Enter, then words, then the toolbar's undo (a two-finger tap on a
+  // tablet): the words go first, then the split, and redo brings both back
+  const lines=()=>page.evaluate(()=>N.core.S.lines.slice().sort((a,b)=>a.y-b.y).map(l=>l.text));
+  const before=await lines();
+  await page.keyboard.press('Enter');
+  const split=await lines();
+  await page.keyboard.type('more ');
+  const typedOut=await lines();
+  assert.equal(split.length,before.length+1,'Enter split the line');
+  assert.notDeepEqual(typedOut,split,'The words landed');
+  await page.evaluate(()=>N.core.undo());
+  assert.deepEqual(await lines(),split,'The first undo takes back only the words typed since Enter');
+  await page.evaluate(()=>N.core.undo());
+  assert.deepEqual(await lines(),before,'The second undo joins the split line back');
+  await page.evaluate(()=>{N.core.redo();N.core.redo();});
+  assert.deepEqual(await lines(),typedOut,'Redo brings back the split and the words');
+
   console.log('Mobile text: paper tap keeps focus, line tap places the caret, typing lands passed');
 }finally{
   await browser.close();server.close();

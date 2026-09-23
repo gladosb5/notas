@@ -1824,15 +1824,50 @@ async function save(opts){
 }
 
 /* ---- undo: one stack across ink, text and tutor ink ---- */
-const Undo = { back:[], fwd:[] };
+const Undo = { back:[], fwd:[], typing:null };
+/* Typing is not a step per letter. A run of it is one step, closed when
+   anything else is done or undone, so undo takes back the latest words
+   first. Without it the next step undone (a split line, a join, a two-
+   finger tap after Enter) restored a page from before the words, and they
+   were gone with no redo. The step holds only the lines typed in, so a
+   shared note never takes back someone else's line with it. */
+function typed(ln){
+  if(!Undo.typing){
+    Undo.typing = new Map();
+    /* the letter that replaces a selection belongs to the step that removed it */
+    const top = Undo.back[Undo.back.length-1];
+    Undo.typing.into = top && top.typingJoins && performance.now() - top.typingJoins < 1000 ? top : null;
+    if(top) delete top.typingJoins;
+    paintUndo();
+  }
+  if(!Undo.typing.has(ln.id)) Undo.typing.set(ln.id, ln.text||'');
+}
+function sealTyping(){
+  const was = Undo.typing; if(!was) return;
+  Undo.typing = null;
+  const changes = [];
+  for(const [id, text] of was){ const ln = S.lines.find(l=>l.id===id); if(ln && (ln.text||'') !== text) changes.push({id, was:text, now:ln.text||''}); }
+  if(!changes.length) return;
+  const put = key=>{ for(const c of changes){ const ln = S.lines.find(l=>l.id===c.id); if(ln) ln.text = c[key]; } };
+  const into = was.into;
+  if(into && Undo.back[Undo.back.length-1] === into){
+    const u = into.undo, r = into.redo;
+    into.undo = ()=>{ put('was'); u(); }; into.redo = ()=>{ r(); put('now'); };
+    return;
+  }
+  Undo.back.push({label:'typing', redo:()=>put('now'), undo:()=>put('was')});
+  if(Undo.back.length > 200) Undo.back.shift();
+  Undo.fwd.length = 0;
+}
 /* Without hover there is no way to discover that a bar button does nothing,
    so both arrows say so by going dim whenever their stack is empty. */
 function paintUndo(){
   const u = $('#btn-undo'), r = $('#btn-redo');
-  if(u) u.disabled = !Undo.back.length;
+  if(u) u.disabled = !Undo.back.length && !Undo.typing;
   if(r) r.disabled = !Undo.fwd.length;
 }
 function act(label, redo, undo, collabHint){
+  sealTyping();
   redo();
   Undo.back.push({label, redo, undo});
   if(Undo.back.length > 200) Undo.back.shift();
@@ -1840,12 +1875,14 @@ function act(label, redo, undo, collabHint){
   markDirty(collabHint); paintUndo();
 }
 function undo(){
+  sealTyping();
   const e = Undo.back.pop(); if(!e) return;
   e.undo(); Undo.fwd.push(e); markDirty(); paintUndo();
   N.text && N.text.render(); N.recog && N.recog.rebuild();
   N.ink && N.ink.render(); N.mathcore && N.mathcore.run();
 }
 function redo(){
+  sealTyping();
   const e = Undo.fwd.pop(); if(!e) return;
   e.redo(); Undo.back.push(e); markDirty(); paintUndo();
   N.text && N.text.render(); N.recog && N.recog.rebuild();
@@ -2072,7 +2109,7 @@ function anonId(){
 
 applyPrefs();
 N.core = { S, M, Store, uid, clamp, $, layout, growDoc, setZoom, firstLine, displayTitle, whenLabel, ZOOM_MIN, ZOOM_MAX, markDirty, save, serialize,
-           act, undo, redo, Undo, paintUndo, toast, status, anonId, LINE_H, CONTENT_MAX, strokeById, reducedMotion, smoothWheel, glideTarget,
+           act, undo, redo, Undo, paintUndo, typed, toast, status, anonId, LINE_H, CONTENT_MAX, strokeById, reducedMotion, smoothWheel, glideTarget,
            FEEDBACK_URL, savePrefs, applyPrefs, setActive, getActive, saveView, getView, flushView, setSaveError, clearSaveError, withNoteLock, deleteStoredNote, patchIndexRows, isBlank, swipeAway };
 })();
 </script>
@@ -4278,6 +4315,7 @@ function collapseSpan(span){
   const after = before.filter(l=>!goneIds.has(l.id)).map(l=>l.id === first.id ? {...l, text} : l.y > last.y ? {...l, y:l.y - H} : {...l});
   const restore = list=>{ S.lines = list.map(l=>({...l})); render(); queue(); };
   C.act('delete across lines', ()=>restore(after), ()=>restore(before));
+  const step = C.Undo.back[C.Undo.back.length-1]; if(step) step.typingJoins = performance.now();
   const ln = byId(first.id), input = els.get(first.id)?.firstChild; if(!ln || !input) return null;
   /* the joined line may take fewer rows than the top one did */
   const newH = Math.max(C.LINE_H, ln.h||C.LINE_H);
@@ -4359,6 +4397,7 @@ root.addEventListener('input', ev=>{
   onInput(ln, i, ev);
 });
 function onInput(ln, i, ev){
+  C.typed(ln);
   ln.text = i.value;
   if(ln.tutor){ delete ln.tutor; delete ln.wait; const d = els.get(ln.id); d && d.classList.remove("tutor","wait"); }
   ln.suppressAnswer=/^delete|^history/.test(ev.inputType||'')?ln.text:null;
@@ -6494,7 +6533,7 @@ function blank(id){
   S.id = id || C.uid(); S.title = 'untitled'; S.created = Date.now();
   S.strokes = []; S.lines = []; S.images = []; S.annos = []; S.clusters = []; S.nodes = []; S.textTranscripts = [];
   S.docH = 1600; S.selection = []; S.imageSelection=null; S.savedRev=0; S.remoteRev=0;
-  C.Undo.back.length = 0; C.Undo.fwd.length = 0;
+  C.Undo.back.length = 0; C.Undo.fwd.length = 0; C.Undo.typing = null;
 }
 function paintAll(answers){
   $('#title').textContent = C.displayTitle(S.title, S.lines);
