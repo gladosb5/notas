@@ -19,6 +19,13 @@ export const ENDED=4410;
 // The document is a snapshot in pieces plus bounded merged delta rows;
 // compact after this many delta rows, rather than this many keystrokes.
 const COMPACT_AFTER=200;
+// ...or after this many bytes of delta rows: a picture moved a few times
+// resends its whole data URL each time, and replaying hundreds of those on
+// load would crowd the object's 128 MB.
+const COMPACT_BYTES=16*1024*1024;
+// A stored value may be at most 2 MB, so the snapshot is written in pieces
+// and so is any single edit bigger than a piece (a pasted picture): its
+// leading pieces are 'part' rows, joined onto the 'upd' row that ends it.
 const PIECE=512*1024;
 // Reuse a bounded durable delta row, so fewer rows need to be read and
 // deleted during compaction.
@@ -40,6 +47,7 @@ export class NoteRoom extends DurableObject{
     this.awareness=null;
     this.presenceDoc=null;
     this.pending=0;
+    this.pendingBytes=0;
     this.tail=null;
     this.flushTimer=null;
     // The page's keepalive: "ping" every 20 s is answered here by the
@@ -54,18 +62,22 @@ export class NoteRoom extends DurableObject{
   load(){
     if(this.doc)return;
     const doc=new Y.Doc();
-    const pieces=[];let count=0;
+    const pieces=[],parts=[];let count=0,bytes=0;
     for(const row of this.ctx.storage.sql.exec('SELECT id, kind, data FROM updates ORDER BY id')){
       const data=new Uint8Array(row.data);
       if(row.kind==='snap')pieces.push(data);
+      else if(row.kind==='part'){parts.push(data);bytes+=data.byteLength;}
       else{
         if(pieces.length){Y.applyUpdate(doc,join(pieces));pieces.length=0;}
-        Y.applyUpdate(doc,data);count++;
-        this.tail={id:row.id,data,dirty:false};
+        Y.applyUpdate(doc,parts.length?join([...parts,data]):data);count++;bytes+=data.byteLength;
+        // a row that ends a split edit is never merged into: it holds only the last piece
+        this.tail=parts.length?null:{id:row.id,data,dirty:false};
+        parts.length=0;
       }
     }
     if(pieces.length)Y.applyUpdate(doc,join(pieces));
     this.pending=count;
+    this.pendingBytes=bytes;
     this.doc=doc;
     doc.on('update',(update,origin)=>{
       this.store(update);
@@ -129,15 +141,27 @@ export class NoteRoom extends DurableObject{
       sql.exec('UPDATE updates SET data = ? WHERE id = ?',tail.data,tail.id);
       return;
     }
-    const [row]=sql.exec('INSERT INTO updates(kind, data) VALUES (?, ?) RETURNING id','upd',tail.data);
-    tail.id=row.id;
-    if(++this.pending<COMPACT_AFTER)return;
+    const data=tail.data;
+    if(data.byteLength>PIECE){
+      this.ctx.storage.transactionSync(()=>{
+        let at=0;
+        for(;at+PIECE<data.byteLength;at+=PIECE)sql.exec('INSERT INTO updates(kind, data) VALUES (?, ?)','part',data.subarray(at,at+PIECE));
+        sql.exec('INSERT INTO updates(kind, data) VALUES (?, ?)','upd',data.subarray(at));
+      });
+      if(this.tail===tail)this.tail=null;
+    }else{
+      const [row]=sql.exec('INSERT INTO updates(kind, data) VALUES (?, ?) RETURNING id','upd',data);
+      tail.id=row.id;
+    }
+    this.pendingBytes+=data.byteLength;
+    if(++this.pending<COMPACT_AFTER&&this.pendingBytes<COMPACT_BYTES)return;
     const full=Y.encodeStateAsUpdate(this.doc);
     this.ctx.storage.transactionSync(()=>{
       sql.exec('DELETE FROM updates');
       for(let at=0;at<full.length;at+=PIECE)sql.exec('INSERT INTO updates(kind, data) VALUES (?, ?)','snap',full.subarray(at,at+PIECE));
     });
     this.pending=0;
+    this.pendingBytes=0;
     this.tail=null;
   }
 
@@ -269,7 +293,7 @@ export class NoteRoom extends DurableObject{
     for(const ws of this.ctx.getWebSockets()){ try{ws.close(ENDED,'the host has stopped sharing');}catch(e){} }
     this.ctx.storage.sql.exec('DELETE FROM updates');
     this.ctx.storage.sql.exec('DELETE FROM nota_requests');
-    if(this.doc){ this.doc.destroy(); this.doc=null; this.pending=0; this.tail=null; }
+    if(this.doc){ this.doc.destroy(); this.doc=null; this.pending=0; this.pendingBytes=0; this.tail=null; }
     if(this.presenceDoc)this.presenceDoc.destroy();
     this.presenceDoc=null; this.awareness=null;
   }
