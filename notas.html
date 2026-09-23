@@ -1875,6 +1875,12 @@ function layout(){
   col.style.marginLeft = M.colLeft+'px';
   col.style.transform = z === 1 ? '' : 'scale('+z+')';
   $('#doc').style.height = Math.round(S.docH*z)+'px';
+  /* #col is scaled, so it takes the unscaled height. Its children are all
+     absolutely placed, so without this it is zero high, and iPadOS hides the
+     caret, the selection handles and the edit menu in an editing host whose
+     visible box is empty (#lines fills #col). Not height:100% in CSS: #doc is
+     already zoomed, and the scale would apply twice. */
+  col.style.height = S.docH+'px';
   /* A narrowed column must not strand what a wider screen already wrote: the
      paper stays as wide as its furthest ink or picture, so old coordinates
      are still reachable by panning even though new lines wrap before them. */
@@ -1899,7 +1905,7 @@ function docExtent(){
    not be reached until a fresh stroke pushed it out again. */
 function growDoc(y){
   const want = Math.max(1600, Math.ceil((y + 700)/200)*200);
-  if(want > S.docH){ S.docH = want; $('#doc').style.height = Math.round(want*M.zoom)+'px'; }
+  if(want > S.docH){ S.docH = want; $('#doc').style.height = Math.round(want*M.zoom)+'px'; $('#col').style.height = want+'px'; }
 }
 /* Zoom about a screen point: the bit of paper under the fingers stays under
    the fingers. cx/cy are client coordinates; omitted means the viewport centre. */
