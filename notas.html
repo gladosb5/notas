@@ -2595,9 +2595,13 @@ function eraseAlong(st){
   }
   const edits=N.text ? N.text.eraseCharacters(touched,radius) : [];
   if(!edits.length&&afterStrokes.length===before.length&&afterStrokes.every((s,i)=>s===before[i]))return;
+  /* the lines are looked up when the step runs: a split or join since then
+     restores copies of them, and the objects held here would be edited in
+     vain, so the erased letters never came back */
+  const lineOf=e=>S.lines.find(l=>l.id===e.line.id);
   C.act('erase',
-    ()=>{ S.strokes=afterStrokes;for(const e of edits){e.line.text=e.after;e.line.suppressAnswer=e.after;}N.text.render(); },
-    ()=>{ S.strokes=before;for(const e of edits)e.line.text=e.before;N.text.render(); });
+    ()=>{ S.strokes=afterStrokes;for(const e of edits){const ln=lineOf(e);if(ln){ln.text=e.after;ln.suppressAnswer=e.after;}}N.text.render(); },
+    ()=>{ S.strokes=before;for(const e of edits){const ln=lineOf(e);if(ln)ln.text=e.before;}N.text.render(); });
   after(true);
 }
 
