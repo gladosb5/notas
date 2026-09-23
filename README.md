@@ -11,8 +11,6 @@ npm ci
 npm start
 ```
 
-The model binaries (about 75 MB: the stroke encoder and decoder, the PP-OCR text model and the ONNX Runtime wasm) are not kept in git. `npm start` and `npm test` fetch them first with `npm run models`, which checks each file against the sha256 pinned in `model-contract.js` and skips files that are already correct. Downloads come from https://notas.glados.pro by default; set `NOTAS_MODELS_URL` to use a mirror such as a GitHub release.
-
 Open http://localhost:4173/notas.html. First use shows **setting up** while the handwriting model downloads, with the size received so far in MB; **start writing now** opens the notebook early and the download continues on the status line. Later launches skip the wait because the model is already on the device. The app is cached for offline use afterwards. Wait for **available offline.** before disconnecting. Open the same address and browser profile to return to your notes.
 
 For tablets, serve the project as a static website over HTTPS. The development server only listens on this computer. Opening the HTML directly, or using an ordinary HTTP LAN address, does not provide the supported offline setup.

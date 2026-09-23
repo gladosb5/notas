@@ -2,9 +2,7 @@
   "name": "notas-local",
   "private": true,
   "scripts": {
-    "models": "node scripts/fetch-models.mjs",
-    "prestart": "node scripts/fetch-models.mjs",
-    "pretest": "node scripts/fetch-models.mjs && node scripts/model-contract.mjs --check",
+    "pretest": "node scripts/model-contract.mjs --check",
     "start": "node scripts/serve.mjs",
     "test": "node --test tests/local.test.cjs tests/ocr-routing.test.mjs tests/evidence.test.mjs tests/math-notes.test.cjs tests/ink-timing.test.cjs tests/ink-decode.test.cjs tests/ink-offline.test.cjs tests/no-fast-production.test.mjs",
     "benchmark:notes": "node scripts/benchmark-math-notes.mjs",

@@ -4,12 +4,6 @@ test-results/
 __pycache__/
 *.pyc
 
-# large model binaries: fetched by `npm run models` (scripts/fetch-models.mjs)
-assets/ink/*.onnx
-assets/text/*.onnx
-assets/smart/*.wasm
-*.part
-
 # training data and checkpoints never belong in this repo
 .dataset/
 dataset/
