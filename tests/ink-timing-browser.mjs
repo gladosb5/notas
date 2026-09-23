@@ -43,6 +43,20 @@ try{
   assert.equal(round.ok,true);
   assert.ok(round.times.some(t=>JSON.stringify(t)===JSON.stringify(captured.times)),'import preserves point timing');
 
+  /* coloured ink, ink in the gutter left of the column, and a turned,
+     cropped picture all come back as they went out */
+  const styled=JSON.parse(exported);
+  styled.strokes[0].color='#D64541';
+  styled.strokes.push({...styled.strokes[0],id:'gutter',color:undefined,times:undefined,pts:[-40,300,.5,-20,310,.5]});
+  const px='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  styled.images=[{id:'pic',x:-30,y:40,w:100,h:80,src:px,rot:0.5,full:px,crop:{l:.1,t:.1,r:.9,b:.9}}];
+  const kept=await page.evaluate(async raw=>{
+    const ok=await N.ui.importNoteFile(new File([raw],'styled.notas.json',{type:'application/json'}));
+    const S=N.core.S,im=S.images[0]||{};
+    return {ok,color:S.strokes[0].color,gutter:!!S.strokes.find(s=>s.id==='gutter'),rot:im.rot,x:im.x,crop:im.crop,full:!!im.full};
+  },JSON.stringify(styled));
+  assert.deepEqual(kept,{ok:true,color:'#D64541',gutter:true,rot:0.5,x:-30,crop:{l:.1,t:.1,r:.9,b:.9},full:true},'import keeps ink colour, gutter ink and a turned, cropped picture');
+
   const bad=JSON.parse(exported);bad.strokes[0].times=[0,20,10];
   assert.equal(await page.evaluate(async raw=>N.ui.importNoteFile(new File([raw],'bad-timing.notas.json',{type:'application/json'})),JSON.stringify(bad)),false);
   console.log('Live point timing, clipboard round-trip, export/import preservation and malformed timing rejection passed.');

@@ -7109,6 +7109,10 @@ function validateImportedNote(doc){
   if(!Array.isArray(doc.lines)||!Array.isArray(doc.strokes)||!Array.isArray(doc.images))throw new Error('this note export is incomplete.');
   const finite=(v,limit=1e6)=>Number.isFinite(Number(v))&&Math.abs(Number(v))<=limit;
   const coord=v=>finite(v)&&Number(v)>=0;
+  /* ink and pictures may sit left of the column (the gutter is paper too) or
+     have been turned a little above the top, so only their size is bounded */
+  const place=v=>finite(v);
+  const PICTURE=/^data:image\/(?:png|jpe?g|gif|webp);base64,/i;
   const idSet=new Set(),safeId=raw=>{
     const id=String(raw||C.uid());if(id.length>160||idSet.has(id))throw new Error('this note contains invalid or duplicate item ids.');idSet.add(id);return id;
   };
@@ -7117,7 +7121,7 @@ function validateImportedNote(doc){
     if(!st||!Array.isArray(st.pts)||st.pts.length<3||st.pts.length%3||st.pts.length>600000)throw new Error('this note contains invalid ink data.');
     const pts=st.pts.map(Number);
     for(let i=0;i<pts.length;i+=3){
-      if(!coord(pts[i])||!coord(pts[i+1])||!Number.isFinite(pts[i+2])||pts[i+2]<0||pts[i+2]>1.5)throw new Error('this note contains invalid ink coordinates.');
+      if(!place(pts[i])||!place(pts[i+1])||!Number.isFinite(pts[i+2])||pts[i+2]<0||pts[i+2]>1.5)throw new Error('this note contains invalid ink coordinates.');
     }
     const w=Number(st.w);if(!Number.isFinite(w)||w<=0||w>100)throw new Error('this note contains an invalid pen width.');
     let times;
@@ -7126,7 +7130,8 @@ function validateImportedNote(doc){
       times=st.times.map(Number);
       if(times.some((v,i)=>!Number.isFinite(v)||v<0||v>3600000||(i&&v<times[i-1])))throw new Error('this note contains invalid ink timing data.');
     }
-    return {id:safeId(st.id),author:st.author==='ai'?'ai':'user',w,t0:Number(st.t0)||0,t1:Number(st.t1)||0,pts,bbox:N.ink.bboxOf(pts),...(times?{times}:{})};
+    return {id:safeId(st.id),author:st.author==='ai'?'ai':'user',w,t0:Number(st.t0)||0,t1:Number(st.t1)||0,pts,bbox:N.ink.bboxOf(pts),...(times?{times}:{}),
+      ...(typeof st.color==='string'&&/^#[0-9a-f]{6}$/i.test(st.color)?{color:st.color}:{})};
   });
   const lines=doc.lines.map(l=>{
     if(!l||!coord(l.y)||typeof l.text!=='string'||l.text.length>250000)throw new Error('this note contains invalid typed text.');
@@ -7135,11 +7140,16 @@ function validateImportedNote(doc){
   });
   let imageChars=0;
   const images=doc.images.map(im=>{
-    if(!im||typeof im.src!=='string'||!/^data:image\/(?:png|jpe?g|gif|webp);base64,/i.test(im.src))throw new Error('imported images must be embedded png, jpeg, gif or webp data.');
-    imageChars+=im.src.length;if(im.src.length>16*1024*1024||imageChars>32*1024*1024)throw new Error('embedded images are too large to import safely.');
-    if(!coord(im.x)||!coord(im.y)||!finite(im.w)||!finite(im.h)||Number(im.w)<=0||Number(im.h)<=0)throw new Error('this note contains invalid image geometry.');
+    if(!im||typeof im.src!=='string'||!PICTURE.test(im.src))throw new Error('imported images must be embedded png, jpeg, gif or webp data.');
+    /* a cropped picture keeps its original and the box cut from it */
+    const c=im.crop,full=typeof im.full==='string'&&PICTURE.test(im.full)&&c&&typeof c==='object'&&
+      [c.l,c.t,c.r,c.b].every(v=>Number.isFinite(v)&&v>=0&&v<=1)&&c.l<c.r&&c.t<c.b?im.full:'';
+    imageChars+=im.src.length+full.length;if(im.src.length>16*1024*1024||full.length>16*1024*1024||imageChars>32*1024*1024)throw new Error('embedded images are too large to import safely.');
+    if(!place(im.x)||!place(im.y)||!finite(im.w)||!finite(im.h)||Number(im.w)<=0||Number(im.h)<=0)throw new Error('this note contains invalid image geometry.');
     // a picture is a picture: readings an older build attached to it are dropped
-    return {id:safeId(im.id),x:Number(im.x),y:Number(im.y),w:Number(im.w),h:Number(im.h),src:im.src};
+    return {id:safeId(im.id),x:Number(im.x),y:Number(im.y),w:Number(im.w),h:Number(im.h),src:im.src,
+      ...(finite(im.rot,100)&&Number(im.rot)?{rot:Number(im.rot)}:{}),
+      ...(full?{full,crop:{l:c.l,t:c.t,r:c.r,b:c.b}}:{})};
   });
   const textTranscripts=Array.isArray(doc.textTranscripts)?doc.textTranscripts.filter(t=>t&&typeof t.hash==='string'&&typeof t.text==='string'&&t.hash.length<=500&&t.text.length<=10000).map(t=>({hash:t.hash,text:t.text,confidence:Number(t.confidence)||0,modelVersion:String(t.modelVersion||''),...(t.asked?{asked:true}:{})})):[];
   const transcripts=Array.isArray(doc.transcripts)?doc.transcripts.filter(t=>t&&typeof t.hash==='string'&&t.hash.length<=500).slice(0,20000).map(t=>({
