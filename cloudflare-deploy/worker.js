@@ -41,6 +41,9 @@ export default {
       // The site's own key is spent only for its page (a browser's POST
       // always names its origin), only on nota's model and length, and only
       // so often per address. A caller with their own key spends theirs.
+      // A script can forge Origin, so the model, length and rate limits are
+      // what actually bound the spend; the Origin check keeps other sites'
+      // pages and casual reuse out.
       const siteKey=!!env.CEREBRAS_API_KEY&&origin===url.origin;
       const key=siteKey?env.CEREBRAS_API_KEY:own;
       if(!key)return new Response('nota has no key here.',{status:501,headers:{'Content-Type':'text/plain'}});
@@ -50,6 +53,7 @@ export default {
           const {success}=await env.NOTA_LIMIT.limit({key:request.headers.get('cf-connecting-ip')||'unknown'});
           if(!success)return new Response('nota is busy. try again in a minute.',{status:429,headers:{'Content-Type':'text/plain','Retry-After':'60'}});
         }
+        if(+request.headers.get('content-length')>MAX_BODY)return new Response('the question is too long.',{status:413,headers:{'Content-Type':'text/plain'}});
         const text=await request.text();
         if(text.length>MAX_BODY)return new Response('the question is too long.',{status:413,headers:{'Content-Type':'text/plain'}});
         let json;try{json=JSON.parse(text);}catch{json=null;}

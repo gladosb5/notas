@@ -1855,24 +1855,31 @@ const Undo = { back:[], fwd:[], typing:null };
    finger tap after Enter) restored a page from before the words, and they
    were gone with no redo. The step holds only the lines typed in, so a
    shared note never takes back someone else's line with it. */
-function typed(ln){
+function typed(ln, next){
   if(!Undo.typing){
     Undo.typing = new Map();
     /* the letter that replaces a selection belongs to the step that removed it */
     const top = Undo.back[Undo.back.length-1];
     Undo.typing.into = top && top.typingJoins && performance.now() - top.typingJoins < 1000 ? top : null;
     if(top) delete top.typingJoins;
+    /* new words after an undo end what could be redone, as in any editor */
+    Undo.fwd.length = 0;
     paintUndo();
   }
-  if(!Undo.typing.has(ln.id)) Undo.typing.set(ln.id, ln.text||'');
+  /* what this device typed the line into, kept per keystroke: text that
+     arrives from someone else afterwards is not part of the run */
+  const run = Undo.typing.get(ln.id);
+  if(run) run.now = next; else Undo.typing.set(ln.id, {was:ln.text||'', now:next});
 }
 function sealTyping(){
   const was = Undo.typing; if(!was) return;
   Undo.typing = null;
   const changes = [];
-  for(const [id, text] of was){ const ln = S.lines.find(l=>l.id===id); if(ln && (ln.text||'') !== text) changes.push({id, was:text, now:ln.text||''}); }
+  for(const [id, run] of was){ if(S.lines.some(l=>l.id===id) && run.now !== run.was) changes.push({id, was:run.was, now:run.now}); }
   if(!changes.length) return;
-  const put = key=>{ for(const c of changes){ const ln = S.lines.find(l=>l.id===c.id); if(ln) ln.text = c[key]; } };
+  /* a line someone else has written in since (a shared note) is left as it
+     is: putting back this run's text would take their words with it */
+  const put = key=>{ const from = key === 'was' ? 'now' : 'was'; for(const c of changes){ const ln = S.lines.find(l=>l.id===c.id); if(ln && (ln.text||'') === c[from]) ln.text = c[key]; } };
   const into = was.into;
   if(into && Undo.back[Undo.back.length-1] === into){
     const u = into.undo, r = into.redo;
@@ -4447,7 +4454,7 @@ root.addEventListener('input', ev=>{
   onInput(ln, i, ev);
 });
 function onInput(ln, i, ev){
-  C.typed(ln);
+  C.typed(ln, i.value);
   ln.text = i.value;
   if(ln.tutor){ delete ln.tutor; delete ln.wait; const d = els.get(ln.id); d && d.classList.remove("tutor","wait"); }
   ln.suppressAnswer=/^delete|^history/.test(ev.inputType||'')?ln.text:null;
@@ -6724,7 +6731,9 @@ function menuSheet(){
     /* the cached pages are the app while offline: throwing them away with
        no site to fetch them from again left nothing to open until the
        connection came back */
-    const reachable=await fetch('./sw.js',{cache:'no-store',signal:AbortSignal.timeout?AbortSignal.timeout(8000):undefined}).then(r=>r.ok,()=>false);
+    /* HEAD: the service worker leaves anything but a GET to the network,
+       so the probe can neither be answered from its cache nor land in it */
+    const reachable=await fetch('./sw.js',{method:'HEAD',cache:'no-store',signal:AbortSignal.timeout?AbortSignal.timeout(8000):undefined}).then(r=>r.ok,()=>false);
     if(!reachable){ C.toast('updating needs a connection. nothing was changed.',6000); return; }
     C.savePrefs();
     /* each step is given a few seconds and no more: a save or an unregister
@@ -6868,7 +6877,7 @@ async function renderExport(){
   const w = M.colW, h = contentBottom();
   /* iPadOS gives a canvas at most about 16.7 million pixels and hands back
      nothing past that, so a long note is drawn smaller rather than lost */
-  const scale = Math.min(Math.min(2, Math.max(1, 2400/Math.max(w,h))), Math.sqrt(16e6/(w*h)));
+  const scale = Math.min(Math.min(2, Math.max(1, 2400/Math.max(w,h))), Math.sqrt(16e6/(w*h)), 32000/h);
   const cv = document.createElement('canvas');
   cv.width = Math.round(w*scale); cv.height = Math.round(h*scale);
   const x = cv.getContext('2d');
@@ -7413,7 +7422,9 @@ window.addEventListener('keydown', e=>{
   if(e.key === 'Escape'){ closeSheet(); showAsk(false); N.ink.setPenPop(false); N.ink.clearSelection(); return; }
   /* a sheet or the library over the page has the keys: Delete on a note in
      the list trashed it and deleted the ink selected behind it as well */
-  if(document.querySelector('.sheet:not(.leave)') || (N.library && N.library.modal) || (e.target && e.target.closest && e.target.closest('.sheet,#library'))) return;
+  if(document.querySelector('.sheet:not(.leave)') || (N.library && N.library.modal) || (e.target && e.target.closest && e.target.closest('.sheet'))) return;
+  /* the docked list keeps the page's other shortcuts, but Delete there is the note's */
+  if((e.key === 'Delete' || e.key === 'Backspace') && e.target && e.target.closest && e.target.closest('#library')) return;
   if(mod && k === 'z'){ e.preventDefault(); e.shiftKey ? C.redo() : C.undo(); return; }
   if(mod && k === 'y'){ e.preventDefault(); C.redo(); return; }
   /* Shift makes the key 'Z', and Caps Lock does too: compare the lower case */
