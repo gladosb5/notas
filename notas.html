@@ -800,6 +800,10 @@ body.noicons .tool.swatch i,body.noicons .tool.width i{display:block}
   transition:background-color .15s ease,transform .18s var(--pop);
 }
 .mi i{font-size:18px;color:var(--ink-2);width:20px;text-align:center}
+/* a field's name keeps its width: squeezed by a long value (the share link
+   on a tablet) it broke mid-word into "lin / k" */
+label.mi>span:first-child{flex:none;white-space:nowrap}
+label.mi>.keyin{min-width:0}
 .mi:hover{background:var(--tint)}
 button.mi:active{transform:scale(.99);background:var(--tint-2)}
 .mi .k{margin-left:auto;font:400 12px var(--ui);color:var(--ink-3);letter-spacing:0;white-space:nowrap}
