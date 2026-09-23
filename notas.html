@@ -6499,6 +6499,8 @@ async function newNote(id){
   do{ if(!await C.save()) return; }while(S.dirty);
   N.library && await N.library.leaving();
   blank(id);
+  /* off the old note's room before anything is written to the blank page */
+  N.collab && N.collab.noteChanged();
   N.text.add(120, false);
   M.zoom = 1;
   paintAll();
@@ -6506,7 +6508,6 @@ async function newNote(id){
   C.saveView(S.id,0,0);
   N.text.focusLast();
   await C.save();
-  N.collab && N.collab.noteChanged();
   N.tutorial && N.tutorial.maybeStart();
   N.library && N.library.changed();
   }finally{ changingNote = false; }
@@ -7157,6 +7158,7 @@ async function importNoteFile(f){
     if(raw&&raw.notasBundle&&Array.isArray(raw.notes)&&N.library)return await N.library.importBundle(raw);
     const doc=validateImportedNote(raw);
     blank();
+    N.collab&&N.collab.noteChanged();
     S.title=typeof doc.title==='string'&&doc.title.trim()?doc.title.trim():'imported note';
     S.created=Date.now();
     S.strokes=doc.strokes;S.lines=doc.lines;S.images=doc.images;

@@ -94,7 +94,7 @@ function editText(ytext,from,to){
 /* the page changed: mirror the difference into the document */
 function flush(){
   flushQueued=false;
-  const r=room; if(!r||applying)return;
+  const r=room; if(!r||applying||r.id!==S.id)return;   /* never another note into this room */
   const {Y}=window.Yjs,known=r.known;
   r.doc.transact(()=>{
     const seen=new Set();
@@ -125,7 +125,7 @@ function flush(){
   },LOCAL);
 }
 function changed(hint){
-  if(!room||applying)return;
+  if(!room||applying||room.id!==S.id)return;
   /* A pen lift is one new immutable stroke. Publish it now, without walking
      every stroke and line in a growing note or waiting for the batch timer. */
   if(hint?.stroke&&room.provider){
