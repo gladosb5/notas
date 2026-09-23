@@ -3496,7 +3496,14 @@ function touchesDown(){
    not been heard from for a while is gone. */
 function sweepStale(){
   const now = Date.now();
-  for(const [id, rec] of pointers) if(now - (rec.seen || rec.t) > 2000) pointers.delete(id);
+  for(const [id, rec] of pointers){
+    /* a pencil resting mid-stroke while its writer thinks sends nothing, but
+       it is still the pointer drawing: sweeping it after 2 s let a palm
+       settling then take over the stroke. The pen drawing gets longer; a
+       phantom one is cleared by the next pen down in any case. */
+    const limit = id === activeId && rec.type === 'pen' ? 10000 : 2000;
+    if(now - (rec.seen || rec.t) > limit) pointers.delete(id);
+  }
 }
 /* A pen going down means the pencil is writing. Every other pointer at that
    moment is a palm, a stray finger, or a leftover whose up never arrived -
