@@ -3973,12 +3973,17 @@ TextProto.focus = function(o){
 };
 TextProto.blur = function(){ if(inHost()) document.activeElement.blur(); };
 
+const TOUCH_FIRST = matchMedia('(hover:none),(pointer:coarse)').matches;
 function build(id){
   const d = document.createElement('div');
   d.className = 'line'; d.style.left = '0';
   const i = document.createElement('div');
   Object.setPrototypeOf(i, TextProto);
-  i.className = 'txt'; i.dataset.id = id; i.tabIndex = -1;   /* focusable natively, so focus() from anywhere lands */
+  /* focusable natively, so focus() from anywhere lands - except on a touch
+     screen: there a focusable line took the focus from #lines on every tap
+     (iPad) and gave it back a moment later, and iOS reset the caret each
+     time. TextProto.focus focuses the host first, so script focus still lands. */
+  i.className = 'txt'; i.dataset.id = id; if(!TOUCH_FIRST) i.tabIndex = -1;
   d.appendChild(i);
   const g = document.createElement('div'); g.className = 'ghost-layer'; g.contentEditable = 'false'; g.setAttribute('aria-hidden','true');
   d.appendChild(g);
@@ -4023,6 +4028,42 @@ document.addEventListener('selectionchange', trackCurrent);
    focused from the keyboard or by script still gets its caret at the end. */
 let pressed = 0;
 layer.addEventListener('pointerdown', ()=>{ pressed = Date.now(); }, true);
+/* A tap with a finger or a pencil puts the caret between the characters
+   under it. iOS snaps a tapped caret to the nearest word boundary, so a
+   missing space could not be added mid-word; the character under the tap is
+   found here and the caret is held there while iOS settles (its own
+   placement lands just after the finger lifts). A double tap (a word
+   selected), a long press, a drag and a mouse are left to the browser. */
+let tapAt = null, tapWant = null;
+function caretFromPoint(x, y){
+  if(document.caretPositionFromPoint){ const p = document.caretPositionFromPoint(x, y); return p ? {node:p.offsetNode, off:p.offset} : null; }
+  if(document.caretRangeFromPoint){ const r = document.caretRangeFromPoint(x, y); return r ? {node:r.startContainer, off:r.startOffset} : null; }
+  return null;
+}
+function holdTap(){
+  const w = tapWant; if(!w) return;
+  if(Date.now() > w.until || !w.el.isConnected){ tapWant = null; return; }
+  const sel = document.getSelection();
+  if(sel && !sel.isCollapsed){ tapWant = null; return; }   /* a word or range was selected: leave it */
+  const x = selIn(w.el);
+  if(!x || x[0] !== w.off || x[1] !== w.off){ if(!inHost()) root.focus({preventScroll:true}); placeSel(w.el, w.off, w.off); setCurrent(w.el.dataset.id); }
+}
+layer.addEventListener('pointerdown', e=>{
+  tapWant = null;
+  tapAt = (e.pointerType === 'touch' || e.pointerType === 'pen') ? {x:e.clientX, y:e.clientY, t:Date.now()} : null;
+}, true);
+layer.addEventListener('pointerup', e=>{
+  const a = tapAt; tapAt = null;
+  if(!a || Date.now() - a.t > 350 || Math.hypot(e.clientX - a.x, e.clientY - a.y) > 10) return;
+  const el = e.target && e.target.closest && e.target.closest('.txt');
+  if(!el || !root.contains(el)) return;
+  const p = caretFromPoint(e.clientX, e.clientY);
+  if(!p || !el.contains(p.node)) return;
+  tapWant = {el, off:Math.min(offsetIn(el, p.node, p.off), el.value.length), until:Date.now() + 800};
+  holdTap(); setTimeout(holdTap, 0); setTimeout(holdTap, 60); setTimeout(holdTap, 250);
+}, true);
+document.addEventListener('selectionchange', ()=>{ if(tapWant) holdTap(); });
+root.addEventListener('input', ()=>{ tapWant = null; });
 root.addEventListener('focusin', e=>{
   const t = e.target;
   if(Date.now() - pressed > 1000 && t !== root && t.classList && t.classList.contains('txt') && !selIn(t)) placeSel(t, t.value.length, t.value.length);

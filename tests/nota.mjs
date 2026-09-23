@@ -42,13 +42,18 @@ try{
 
   // ---- typed: the reply is written straight into the note as red lines ----
   await page.evaluate(()=>{N.ink.setTool('text');N.text.add(120,true);});
+  // lines are focused the way the app does it (their focus() lands in the
+  // editing host): on a touch screen a line has no tabindex, so Playwright's
+  // native focus inside fill/type would not reach it
+  const fillLine=async(loc,text)=>{await loc.evaluate(el=>{el.focus();el.select();});if(text)await page.keyboard.insertText(text);else await page.keyboard.press('Backspace');};
   const input=page.locator('.line .txt').last();
-  await input.fill('12 x 12 = 144');
+  await fillLine(input,'12 x 12 = 144');
   await page.keyboard.press('Enter');
   const q=page.locator('.line .txt').last();
-  await q.type('hey not');
+  await q.evaluate(el=>el.focus());
+  await page.keyboard.type('hey not');
   assert.equal(await page.evaluate(()=>document.querySelector('.line.call')),null,'a half-typed call is not blue yet');
-  await q.type('a, what is the square root of this?');
+  await page.keyboard.type('a, what is the square root of this?');
   const blue=await page.evaluate(()=>{
     const d=[...document.querySelectorAll('.line')].find(d=>d.classList.contains('call'));
     if(!d)return null;
@@ -194,10 +199,10 @@ try{
   await page.evaluate(()=>N.ink.setTool('text'));
   const replyId=await page.locator('.line.tutor .txt').first().getAttribute('data-id');
   const replyInput=page.locator('.txt[data-id="'+replyId+'"]');
-  await replyInput.fill('');
+  await fillLine(replyInput,'');
   assert.equal(await page.evaluate(()=>N.core.S.lines.some(l=>l.tutor)),false,'clearing reply restores user ownership');
   const beforeRetry=calls.length;
-  await replyInput.fill('hey nota, can you answer again?');
+  await fillLine(replyInput,'hey nota, can you answer again?');
   await page.waitForFunction(()=>N.core.S.lines.some(l=>l.tutor&&l.text.includes('144.')));
   assert.equal(calls.length,beforeRetry+1,'cleared reply can summon nota again');
   assert.equal(await page.locator('#nota-receipt').isVisible(),false,'receipt clears after response');
