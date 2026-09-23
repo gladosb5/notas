@@ -1057,7 +1057,7 @@ body.noicons .tut-ok .fb{display:block}
 }
 /* a tablet has the width of a laptop and the reach of a phone */
 @media (pointer:coarse) and (min-width:700px){
-  .sheet{ place-items:start center;padding:calc(var(--bar) + 18px) 16px 16px }
+  .sheet{ place-items:start center;padding:calc(var(--bar) + 18px) 16px calc(16px + var(--safe-b)) }
   .sheet .box{ width:min(600px,100%);border-radius:var(--r-sheet);padding:12px }
   .sheet .box::before{ display:none }
   .sheet.enter .box{transform:translateY(18px) scale(.97)}
