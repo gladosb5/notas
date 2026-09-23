@@ -35,6 +35,13 @@ try{
   // t0 is a large performance.now() value, so t1-t0 carries float error of a few microseconds
   assert.ok(Math.abs(copied.pastedDuration-captured.times.at(-1))<1e-3,'pasted duration matches the captured timing');
 
+  const dupColor=await page.evaluate(()=>{
+    const S=N.core.S,s=S.strokes[0];s.color='#2F6FB3';S.selection=[s.id];
+    N.ink.duplicateSelection();const copy=S.strokes.at(-1);
+    const out=copy.color;S.strokes.pop();delete s.color;N.ink.clearSelection();return out;
+  });
+  assert.equal(dupColor,'#2F6FB3','duplicated ink keeps its colour');
+
   const exported=await page.evaluate(()=>JSON.stringify(N.core.serialize()));
   const round=await page.evaluate(async raw=>{
     const ok=await N.ui.importNoteFile(new File([raw],'timing.notas.json',{type:'application/json'}));

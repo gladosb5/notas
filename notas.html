@@ -3295,11 +3295,14 @@ function deleteSelection(){
   clearSelection(); after(); return true;
 }
 /* Strokes stored relative to the group's top-left, so they can land anywhere. */
+function penColor(c){ return typeof c==='string'&&/^#[0-9a-f]{6}$/i.test(c)?c:undefined; }
 function packStrokes(list){
   const bb=bboxOf(list.flatMap(s=>s.pts));
   return {v:1,at:Date.now(),w:bb[2]-bb[0],h:bb[3]-bb[1],
     strokes:list.map(st=>({author:st.author==='ai'?'ai':'user',w:st.w,pts:st.pts.map((v,i)=>i%3===0?v-bb[0]:i%3===1?v-bb[1]:v),
-      times:Array.isArray(st.times)&&st.times.length===st.pts.length/3?st.times.slice():undefined}))};
+      times:Array.isArray(st.times)&&st.times.length===st.pts.length/3?st.times.slice():undefined,
+      /* the pen's colour travels with the ink, or a copy came out graphite */
+      color:penColor(st.color)}))};
 }
 function unpackStrokes(clip,x,y){
   const t=inkNow();
@@ -3307,7 +3310,8 @@ function unpackStrokes(clip,x,y){
     const pts=s.pts.map((v,k)=>k%3===0?v+x:k%3===1?v+y:v);
     const times=Array.isArray(s.times)&&s.times.length===pts.length/3?s.times.map(Number):null;
     const duration=times&&times.length?Math.max(0,times[times.length-1]):0;
-    return {id:C.uid(),author:s.author==='ai'?'ai':'user',tool:'pen',w:s.w,t0:t+i,t1:t+i+duration,pts,bbox:bboxOf(pts),...(times?{times}:{})};
+    const color=penColor(s.color);
+    return {id:C.uid(),author:s.author==='ai'?'ai':'user',tool:'pen',w:s.w,t0:t+i,t1:t+i+duration,pts,bbox:bboxOf(pts),...(times?{times}:{}),...(color?{color}:{})};
   });
 }
 function readClip(){
