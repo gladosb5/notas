@@ -2256,6 +2256,13 @@ function dot(ctx, st){
   ctx.beginPath(); ctx.arc(p[0], p[1], st.w*0.6*weight, 0, 6.284); ctx.fill();
 }
 function drawImages(ctx){
+  /* a decoded picture is megabytes; one no longer on the page (deleted, or
+     in a note since closed) is let go rather than held all session, which
+     on an iPad ends in the tab being reloaded */
+  if(imgCache.size > S.images.length){
+    const here = new Set(S.images.map(i=>i.id));
+    for(const id of imgCache.keys()) if(!here.has(id)) imgCache.delete(id);
+  }
   for(const im of S.images){
     if(!visible([im.x, im.y, im.x+im.w, im.y+im.h])) continue;
     let el = imgCache.get(im.id);
