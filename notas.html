@@ -8901,10 +8901,15 @@ async function prepareOffline(){
     const registration=await navigator.serviceWorker.register('./sw.js');
     const worker=registration.installing||registration.waiting||registration.active;
     if(worker?.state==='activated'){done();return;}
-    if(worker)worker.addEventListener('statechange',()=>{
-      if(worker.state==='activated')done();
-      if(worker.state==='redundant')failed();
+    /* a worker also goes redundant when a newer version replaces it (a
+       deploy while the notebook is open): that is not a failure as long as
+       some version ends up active */
+    const watch=w=>w&&w.addEventListener('statechange',()=>{
+      if(w.state==='activated')done();
+      if(w.state==='redundant'&&!(registration.active&&registration.active.state==='activated')&&!registration.installing&&!registration.waiting)failed();
     });
+    watch(worker);
+    registration.addEventListener('updatefound',()=>watch(registration.installing));
   }catch{failed();}
 }
 async function boot(){
