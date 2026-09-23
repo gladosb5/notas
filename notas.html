@@ -2251,7 +2251,8 @@ function render(onPaint){
     }
     if(S.imageSelection){
       const im=S.images.find(i=>i.id===S.imageSelection);
-      if(im) drawFrame(xCommit, frameOf(im, moving?moving.dx:0, moving?moving.dy:0));
+      if(im&&cropping&&cropping.id===im.id) drawCrop(xCommit, im);
+      else if(im) drawFrame(xCommit, frameOf(im, moving?moving.dx:0, moving?moving.dy:0));
     }
     /* in text mode the ink canvas is normally out of the way; while a picture
        is selected it takes the pointer again so its handles can be dragged */
@@ -2562,7 +2563,7 @@ function setTool(t){
   /* picking the text tool does not grab a line: the caret lands where the
      next tap says, or stays wherever it already was */
 }
-function clearSelection(){ S.selection = [];S.imageSelection=null; $('#selbar').hidden = true; render(); }
+function clearSelection(){ cropping=null; cropDrag=null; S.selection = [];S.imageSelection=null; $('#selbar').hidden = true; render(); }
 
 /* ---- the pen popover: colours and widths, floating just above the pill ---- */
 /* it closes on a tap anywhere else, on esc, and when another tool is picked */
@@ -2824,41 +2825,78 @@ function deleteImage(id){
 }
 /* ---- background removal ---- */
 /* bg-worker.js holds a 94 MB model and needs about 2 GB while it runs, so it
-   is let go a minute after the last picture rather than kept all session. The
-   model itself stays in the model store, so the next use only restarts it. */
+   is let go a minute after the last job rather than kept all session. The
+   model itself stays in the model store, so the next use only restarts it.
+   One worker answers every job: a picture asked for while the background
+   download is still running waits for that download instead of repeating it. */
 const CUTOUT_SIZE=512, CUTOUT_IDLE=60000, CUTOUT_MAX_CHARS=8*1024*1024;  /* IMAGE_MAX_CHARS */
 let cutoutWorker=null, cutoutIdle=0, cutoutSeq=0, cutoutBusy=false;
-function cutoutRun(rgba){
+const cutoutJobs=new Map();
+function cutoutStop(err){
+  const w=cutoutWorker; cutoutWorker=null; clearTimeout(cutoutIdle);
+  if(w) w.terminate();
+  for(const job of cutoutJobs.values()) job.reject(err||new Error('the background remover stopped.'));
+  cutoutJobs.clear();
+}
+function cutoutPort(){
   clearTimeout(cutoutIdle);
-  if(!cutoutWorker) cutoutWorker=new Worker('./bg-worker.js');
-  const w=cutoutWorker, id=++cutoutSeq;
-  let told=false;
+  if(cutoutWorker) return cutoutWorker;
+  const w=cutoutWorker=new Worker('./bg-worker.js');
+  w.onmessage=e=>{
+    const d=e.data||{}, job=cutoutJobs.get(d.id);
+    if(d.progress){
+      if(d.phase==='download') N.downloads&&N.downloads.set('cutout','download','',null,d.loaded,d.total);
+      if(job&&job.progress) job.progress(d);
+      return;
+    }
+    if(!job) return;
+    cutoutJobs.delete(d.id);
+    if(d.error) job.reject(new Error(d.error)); else job.resolve(d);
+    if(!cutoutJobs.size) cutoutIdle=setTimeout(()=>{ if(!cutoutJobs.size&&cutoutWorker===w) cutoutStop(); },CUTOUT_IDLE);
+  };
+  w.onerror=e=>{
+    if(e&&e.preventDefault) e.preventDefault();
+    if(cutoutWorker===w) cutoutStop(new Error('the background remover stopped. this device may be short of memory.'));
+  };
+  return w;
+}
+function cutoutAsk(msg,transfer,progress){
+  const w=cutoutPort(), id=++cutoutSeq;
   return new Promise((resolve,reject)=>{
-    w.onmessage=e=>{
-      const d=e.data||{}; if(d.id!==id) return;
-      if(d.progress){
-        if(d.phase==='download'){
-          N.downloads&&N.downloads.set('cutout','download','',null,d.loaded,d.total);
-          if(!told){ told=true; C.toast('downloading the background remover, about 94 MB. this happens once.', 600000); }
-        }else if(d.phase==='running'){
-          N.downloads&&N.downloads.set('cutout','ready');
-          if(told) C.toast('removing the background.', 600000);
-        }
-        return;
-      }
-      if(d.error) reject(new Error(d.error)); else resolve(d.alpha);
-    };
-    w.onerror=e=>{
-      if(e&&e.preventDefault) e.preventDefault();
-      if(cutoutWorker===w) cutoutWorker=null;
-      w.terminate();
-      reject(new Error('the background remover stopped. this device may be short of memory.'));
-    };
-    w.postMessage({id,rgba:rgba.buffer},[rgba.buffer]);
-  }).finally(()=>{
-    cutoutIdle=setTimeout(()=>{ if(cutoutWorker===w){ w.terminate(); cutoutWorker=null; } },CUTOUT_IDLE);
+    cutoutJobs.set(id,{resolve,reject,progress});
+    w.postMessage({...msg,id},transfer||[]);
   });
 }
+/* The model is downloaded in the background once the notebook has started
+   and the handwriting readers have finished theirs, so the first "remove
+   background" does not sit behind 94 MB. Only the download: starting the
+   model waits for a picture. A connection that asks to save data is left
+   alone, as are automated browsers (the test suite opens hundreds of fresh
+   profiles); both still download on first use. */
+let cutoutWarming=null;
+function prefetchCutout(){
+  if(cutoutWarming) return cutoutWarming;
+  if(!navigator.onLine){
+    addEventListener('online',()=>prefetchCutout(),{once:true});
+    return Promise.resolve(false);
+  }
+  cutoutWarming=cutoutAsk({prefetch:true}).then(d=>{
+    N.downloads&&N.downloads.set('cutout','ready');
+    return d.done;
+  },()=>{
+    cutoutWarming=null;
+    N.downloads&&N.downloads.set('cutout','error','',prefetchCutout);
+    return false;
+  });
+  return cutoutWarming;
+}
+function warmCutoutLater(){
+  if(navigator.webdriver) return;
+  const c=navigator.connection; if(c&&c.saveData) return;
+  const tick=()=>{ if(N.downloads&&N.downloads.busy()) setTimeout(tick,5000); else prefetchCutout(); };
+  setTimeout(tick,8000);
+}
+if(document.readyState==='complete') warmCutoutLater(); else addEventListener('load',warmCutoutLater,{once:true});
 /* The picture with the matte as its alpha, at full size, as a PNG. Like a
    pasted picture it shrinks until the data URL fits the note. */
 function cutoutEncode(el,mask){
@@ -2878,23 +2916,31 @@ function cutoutEncode(el,mask){
     side=Math.max(200,Math.round(side*.7));
   }
 }
+function loadPicture(src){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    img.onload=()=>img.naturalWidth?resolve(img):reject(new Error('that picture is empty.'));
+    img.onerror=()=>reject(new Error('that picture could not be opened.'));
+    img.src=src;
+  });
+}
 async function removeBackground(id){
   const im=S.images.find(i=>i.id===id); if(!im) return false;
   if(cutoutBusy){ C.toast('still removing a background.'); return false; }
   cutoutBusy=true;
   const note=S.id, before=im.src;
   C.toast('removing the background.', 600000);
+  let told=false;
   try{
-    const el=await new Promise((resolve,reject)=>{
-      const img=new Image();
-      img.onload=()=>img.naturalWidth?resolve(img):reject(new Error('that picture is empty.'));
-      img.onerror=()=>reject(new Error('that picture could not be opened.'));
-      img.src=before;
-    });
+    const el=await loadPicture(before);
     const n=CUTOUT_SIZE, small=document.createElement('canvas'); small.width=small.height=n;
     const sx=small.getContext('2d',{willReadFrequently:true});
     sx.imageSmoothingQuality='high'; sx.drawImage(el,0,0,n,n);
-    const alpha=await cutoutRun(sx.getImageData(0,0,n,n).data);
+    const rgba=sx.getImageData(0,0,n,n).data;
+    const {alpha}=await cutoutAsk({rgba:rgba.buffer},[rgba.buffer],d=>{
+      if(d.phase==='download'&&!told){ told=true; C.toast('downloading the background remover, about 94 MB. this happens once.', 600000); }
+      else if(d.phase==='running'){ N.downloads&&N.downloads.set('cutout','ready'); if(told) C.toast('removing the background.', 600000); }
+    });
     const mask=sx.createImageData(n,n);
     for(let i=0;i<alpha.length;i++) mask.data[i*4+3]=alpha[i];
     sx.putImageData(mask,0,0);
@@ -2912,6 +2958,130 @@ async function removeBackground(id){
     C.toast(e.message||'could not remove the background.');
     return false;
   }finally{ cutoutBusy=false; }
+}
+/* ---- cropping a picture ----
+   Two taps on a picture (a double click with a mouse) open its crop: a box
+   with a handle at each corner and edge, and the part being cut away dimmed.
+   Drag a handle to move that side, drag inside to slide the box. done, a tap
+   off the picture or Enter keeps the box; cancel or Escape leaves the picture
+   as it was. The box is kept as fractions of the picture, so it works the
+   same on a turned picture, and the kept part stays where it was on the page. */
+let cropping=null, cropDrag=null, lastImgTap=null;
+const CROP_MIN=24;
+function noteImageTap(id,ev){
+  const now=Date.now(), p=lastImgTap;
+  if(p&&p.id===id&&now-p.t<400&&Math.hypot(ev.clientX-p.x,ev.clientY-p.y)<24){ lastImgTap=null; return startCrop(id); }
+  lastImgTap={id,t:now,x:ev.clientX,y:ev.clientY};
+  return false;
+}
+function startCrop(id){
+  if(!S.images.some(i=>i.id===id)) return false;
+  S.selection=[]; S.imageSelection=id;
+  cropping={id,l:0,t:0,r:1,b:1}; cropDrag=null;
+  render(); showSelBar(); return true;
+}
+function cancelCrop(){
+  if(!cropping) return false;
+  cropping=null; cropDrag=null; render(); showSelBar(); return true;
+}
+/* a page point in the picture's own upright frame, as fractions of it */
+function cropLocal(im,w){
+  let x=w.x, y=w.y; const r=im.rot||0;
+  if(r){ const cx=im.x+im.w/2, cy=im.y+im.h/2, c=Math.cos(-r), sn=Math.sin(-r), px=x-cx, py=y-cy; x=px*c-py*sn+cx; y=px*sn+py*c+cy; }
+  return {u:(x-im.x)/im.w, v:(y-im.y)/im.h};
+}
+function cropPoint(im,u,v){
+  return framePoint(frameOf(im),(u-.5)*im.w,(v-.5)*im.h);
+}
+function cropHandles(im){
+  const c=cropping, mu=(c.l+c.r)/2, mv=(c.t+c.b)/2;
+  return [['nw',c.l,c.t],['ne',c.r,c.t],['sw',c.l,c.b],['se',c.r,c.b],
+          ['n',mu,c.t],['s',mu,c.b],['w',c.l,mv],['e',c.r,mv]].map(([k,u,v])=>({k,...cropPoint(im,u,v)}));
+}
+function cropHandleAt(im,w,touch){
+  const r=(touch?20:HANDLE_HIT)/M.zoom;
+  for(const h of cropHandles(im)) if(Math.hypot(w.x-h.x,w.y-h.y)<=r) return h.k;
+  return null;
+}
+function drawCrop(ctx,im){
+  const c=cropping;
+  ctx.save(); ctx.translate(im.x+im.w/2,im.y+im.h/2); ctx.rotate(im.rot||0);
+  const x0=-im.w/2, y0=-im.h/2, L=x0+c.l*im.w, T=y0+c.t*im.h, R=x0+c.r*im.w, B=y0+c.b*im.h;
+  ctx.fillStyle='rgba(0,0,0,.45)';
+  ctx.beginPath(); ctx.rect(x0,y0,im.w,im.h); ctx.rect(L,T,R-L,B-T); ctx.fill('evenodd');
+  ctx.strokeStyle=colors.blue; ctx.lineWidth=1.5/M.zoom; ctx.setLineDash([]);
+  ctx.strokeRect(L,T,R-L,B-T);
+  /* thirds, faintly, as a guide for where to cut */
+  ctx.globalAlpha=.35; ctx.lineWidth=1/M.zoom; ctx.beginPath();
+  for(const f of [1/3,2/3]){ ctx.moveTo(L+(R-L)*f,T); ctx.lineTo(L+(R-L)*f,B); ctx.moveTo(L,T+(B-T)*f); ctx.lineTo(R,T+(B-T)*f); }
+  ctx.stroke(); ctx.restore();
+  ctx.save(); ctx.fillStyle=colors.paper; ctx.strokeStyle=colors.blue; ctx.lineWidth=1.5/M.zoom; ctx.setLineDash([]);
+  for(const h of cropHandles(im)){ ctx.beginPath(); ctx.arc(h.x,h.y,HANDLE_R/M.zoom,0,6.284); ctx.fill(); ctx.stroke(); }
+  ctx.restore();
+}
+/* a press while cropping: a handle or the box takes it; off the picture it
+   is done; on the dimmed part of the picture it does nothing */
+function cropDown(ev,kind){
+  const im=S.images.find(i=>i.id===cropping.id);
+  if(!im){ cropping=null; return; }
+  const w=toWorld(ev), p=cropLocal(im,w), k=cropHandleAt(im,w,kind==='touch');
+  if(k){ cropDrag={k,start:p,from:{...cropping}}; return; }
+  if(p.u>=cropping.l&&p.u<=cropping.r&&p.v>=cropping.t&&p.v<=cropping.b){ cropDrag={k:'move',start:p,from:{...cropping}}; return; }
+  cropDrag={k:'none'};
+  if(!inImage(w.x,w.y,im)) applyCrop();
+}
+function cropMove(w){
+  const im=S.images.find(i=>i.id===cropping.id), d=cropDrag; if(!im||d.k==='none') return;
+  const p=cropLocal(im,w), f=d.from, du=p.u-d.start.u, dv=p.v-d.start.v;
+  const mu=Math.min(.5,CROP_MIN/im.w), mv=Math.min(.5,CROP_MIN/im.h);
+  let {l,t,r,b}=f;
+  if(d.k==='move'){
+    const cw=r-l, ch=b-t;
+    l=C.clamp(l+du,0,1-cw); t=C.clamp(t+dv,0,1-ch); r=l+cw; b=t+ch;
+  }else{
+    if(d.k.includes('w')) l=C.clamp(f.l+du,0,f.r-mu);
+    if(d.k.includes('e')) r=C.clamp(f.r+du,f.l+mu,1);
+    if(d.k.includes('n')) t=C.clamp(f.t+dv,0,f.b-mv);
+    if(d.k.includes('s')) b=C.clamp(f.b+dv,f.t+mv,1);
+  }
+  Object.assign(cropping,{l,t,r,b});
+  render(); showSelBar();
+}
+function cropCursor(im,w){
+  const k=cropHandleAt(im,w,false);
+  if(k) return k.length===2?((k==='nw'||k==='se')?'nwse-resize':'nesw-resize'):((k==='n'||k==='s')?'ns-resize':'ew-resize');
+  const p=cropLocal(im,w);
+  return p.u>=cropping.l&&p.u<=cropping.r&&p.v>=cropping.t&&p.v<=cropping.b?'move':'';
+}
+/* The kept part becomes the picture: cut from the full-resolution pixels,
+   JPEG kept as JPEG and anything else as PNG (a cut-out keeps its
+   transparency), placed so it does not move on the page. One undo. */
+async function applyCrop(){
+  const c=cropping; if(!c) return false;
+  cropping=null; cropDrag=null;
+  const im=S.images.find(i=>i.id===c.id);
+  if(!im||(c.l<=.001&&c.t<=.001&&c.r>=.999&&c.b>=.999)){ render(); showSelBar(); return false; }
+  const note=S.id, before={src:im.src,x:im.x,y:im.y,w:im.w,h:im.h};
+  const mid=cropPoint(im,(c.l+c.r)/2,(c.t+c.b)/2);
+  let src;
+  try{
+    const el=await loadPicture(before.src);
+    const NW=el.naturalWidth, NH=el.naturalHeight;
+    const sx=Math.round(c.l*NW), sy=Math.round(c.t*NH);
+    const sw=Math.max(1,Math.round(c.r*NW)-sx), sh=Math.max(1,Math.round(c.b*NH)-sy);
+    const cv=document.createElement('canvas'); cv.width=sw; cv.height=sh;
+    cv.getContext('2d').drawImage(el,sx,sy,sw,sh,0,0,sw,sh);
+    src=/^data:image\/jpeg/i.test(before.src)?cv.toDataURL('image/jpeg',.92):cv.toDataURL('image/png');
+    if(typeof src!=='string'||src.length>CUTOUT_MAX_CHARS||src.length<='data:,'.length) throw new Error('that crop is too large to keep in a note.');
+  }catch(e){ C.toast(e.message||'that picture could not be cropped.'); render(); showSelBar(); return false; }
+  const live=S.images.find(i=>i.id===c.id);
+  if(note!==S.id||!live||live.src!==before.src||live.x!==before.x||live.y!==before.y||live.w!==before.w) return false;
+  const w=(c.r-c.l)*before.w, h=(c.b-c.t)*before.h;
+  const now={src,x:mid.x-w/2,y:Math.max(0,mid.y-h/2),w,h};
+  const set=v=>{ const x=S.images.find(i=>i.id===c.id); if(x) Object.assign(x,v); };
+  C.act('crop image',()=>set(now),()=>set(before));
+  C.growDoc(now.y+now.h); after(); showSelBar();
+  return true;
 }
 /* ---- ink clipboard ---- */
 /* Copied ink lives in localStorage, not on the system clipboard. A tablet has
@@ -3015,11 +3185,15 @@ function showSelBar(){
   /* ink the reader made nothing of gets a way to ask nota about it */
   const unread = !S.imageSelection && !!(N.nota && N.nota.askSelection && N.recog && N.recog.selectionUnread && N.recog.selectionUnread(S.selection));
   const turned = S.imageSelection && !!(S.images.find(i=>i.id===S.imageSelection)||{}).rot;
-  const kind = S.imageSelection ? (turned ? 'image-turned' : 'image') : (unread ? 'ink-unread' : 'ink');
+  if(cropping && cropping.id !== S.imageSelection){ cropping = null; cropDrag = null; }
+  const kind = cropping ? 'crop' : S.imageSelection ? (turned ? 'image-turned' : 'image') : (unread ? 'ink-unread' : 'ink');
   if(kind !== selBarKind || !bar.childElementCount){
     bar.innerHTML = '';
     const mk = (label, fn, aria)=>{ const b=document.createElement('button'); b.textContent=label; b.onclick=fn;if(aria)b.setAttribute('aria-label',aria);bar.appendChild(b); };
-    if(kind === 'image' || kind === 'image-turned'){
+    if(kind === 'crop'){
+      mk('done', ()=>applyCrop());
+      mk('cancel', cancelCrop);
+    }else if(kind === 'image' || kind === 'image-turned'){
       /* moving, sizing and turning are done on the picture itself, by its
          frame; the bar keeps only what the frame cannot do */
       if(turned) mk('straighten',()=>straightenImage(S.imageSelection));
@@ -3320,6 +3494,8 @@ cInk.addEventListener('pointerdown', ev=>{
 
   const tool = effectiveTool(ev);
 
+  if(cropping){ cropDown(ev, kind); return; }
+
   /* a selected picture answers to its handles and its body whatever the tool;
      a press anywhere else lets it go and carries on with the tool */
   if(S.imageSelection){
@@ -3387,6 +3563,7 @@ cInk.addEventListener('pointermove', ev=>{
     panBy(ev.clientX-panLast.x, ev.clientY-panLast.y);
     panLast={x:ev.clientX,y:ev.clientY}; return;
   }
+  if(cropDrag){ if(cropping) cropMove(toWorld(ev)); return; }
   if(turning){ turnTo(toWorld(ev)); render(); showSelBar(); return; }
   if(scaling){ scaleTo(toWorld(ev)); render(); showSelBar(); return; }
   if(resizing){
@@ -3395,7 +3572,10 @@ cInk.addEventListener('pointermove', ev=>{
     return;
   }
   /* a mouse over the selected picture or ink says what a press would do */
-  if(activeId === null && (S.imageSelection || S.selection.length) && ev.pointerType === 'mouse'){
+  if(activeId === null && cropping && ev.pointerType === 'mouse'){
+    const im = S.images.find(i=>i.id===cropping.id);
+    cInk.style.cursor = im ? cropCursor(im, toWorld(ev)) : '';
+  } else if(activeId === null && (S.imageSelection || S.selection.length) && ev.pointerType === 'mouse'){
     const w = toWorld(ev), im = S.imageSelection ? S.images.find(i=>i.id===S.imageSelection) : null;
     const k = handleAt(w.x, w.y, frameOf(im));
     const inside = im ? inImage(w.x, w.y, im) : hitSelection(w.x, w.y);
@@ -3485,12 +3665,13 @@ function endPointer(ev){
     const t = tapImage; tapImage = null;
     if(chipTap(ev)) return;
     /* a finger that landed on a picture and never moved: select it */
-    if(t && Date.now() - t.t < 350 && Math.hypot(ev.clientX - t.x, ev.clientY - t.y) < 6) pickImage(t.id);
-    /* and a tap on bare paper lets a selected one go */
-    else if(!t && S.imageSelection && rec && Date.now() - rec.t < 350 && rec.moved < 6) clearSelection();
+    if(t && Date.now() - t.t < 350 && Math.hypot(ev.clientX - t.x, ev.clientY - t.y) < 6){ pickImage(t.id); noteImageTap(t.id, ev); }
+    /* and a tap on bare paper lets a selected one go, or keeps a crop */
+    else if(!t && S.imageSelection && rec && Date.now() - rec.t < 350 && rec.moved < 6){ if(cropping) applyCrop(); else clearSelection(); }
     return;
   }
 
+  if(cropDrag){ cropDrag = null; render(); showSelBar(); return; }
   if(turning){ endTurn(); return; }
   if(scaling){ endScale(); return; }
   if(resizing){
@@ -3510,7 +3691,10 @@ function endPointer(ev){
   }
   if(moving){
     const {dx, dy} = moving; moving = null;
-    commitMove(dx, dy);
+    /* a press on a picture that never travelled is a tap: two open its crop */
+    const tapped = S.imageSelection && rec && Date.now() - rec.t < 350 && rec.moved < 6;
+    commitMove(tapped ? 0 : dx, tapped ? 0 : dy);
+    if(tapped) noteImageTap(S.imageSelection, ev);
     return;
   }
   if(chipTap(ev)){ tapImage=null;cur = null; clearLive(); return; }
@@ -3519,7 +3703,7 @@ function endPointer(ev){
     /* a tap, not a stroke: the picture is what was meant */
     if(Date.now() - t.t < 350 && Math.hypot(ev.clientX - t.x, ev.clientY - t.y) < 6){
       cur = null; clearLive(); tapChip = null;
-      pickImage(t.id);
+      pickImage(t.id); noteImageTap(t.id, ev);
       return;
     }
   }
@@ -3680,7 +3864,7 @@ pill.addEventListener('wheel', ev=>{
 pill.addEventListener('keydown', ev=>{ if(ev.key === 'Escape' && pillOpen()){ setPillOpen(false); moreBtn.focus(); } });
 
 N.ink = { render, renderAI, resize, setTool, setPen, pen, setPillOpen, setPenPop, toWorld, viewOrigin, bboxOf, hitStroke, drawStroke,
-          clearSelection, showSelBar, inkColor, colors, refreshColors, isTyping, after, flush, selectImage, nudgeImage, resizeImage, deleteImage, straightenImage, removeBackground, frameOf, frameHandles,
+          clearSelection, showSelBar, inkColor, colors, refreshColors, isTyping, after, flush, selectImage, nudgeImage, resizeImage, deleteImage, straightenImage, removeBackground, prefetchCutout, startCrop, applyCrop, cancelCrop, cropping:()=>cropping&&{...cropping}, frameOf, frameHandles,
           copySelection, duplicateSelection, deleteSelection, pasteInk, readClip, clipMarker, selectAll, imageAt, pickImage,
           now:inkNow, drawing:()=>!!cur, peerShift, drag:()=>moving?{dx:moving.dx,dy:moving.dy}:null,
           /* what the pointer is in the middle of, for the others on a shared
@@ -6870,6 +7054,10 @@ window.addEventListener('keydown', e=>{
   /* The hint surface is intentionally hidden in this build. Do not let its old
      shortcut expose a panel that has no visible launcher. */
   if(mod && k === 'k' && !$('#ask-dot').hidden){ e.preventDefault(); showAsk(!askOpen); return; }
+  if(N.ink.cropping()){
+    if(e.key === 'Enter'){ e.preventDefault(); N.ink.applyCrop(); return; }
+    if(e.key === 'Escape'){ e.preventDefault(); N.ink.cancelCrop(); return; }
+  }
   if(e.key === 'Escape'){ closeSheet(); showAsk(false); N.ink.setPenPop(false); N.ink.clearSelection(); return; }
   if(mod && k === 'z'){ e.preventDefault(); e.shiftKey ? C.redo() : C.undo(); return; }
   if(mod && k === 'y'){ e.preventDefault(); C.redo(); return; }

@@ -3,7 +3,8 @@
 // MIT, fp16 weights with float32 input and output). At 94 MB it is larger
 // than the site may serve one file, so it comes from Hugging Face at a
 // pinned revision, is checked against its hash and is kept in the model
-// store: downloaded once, the first time a background is removed.
+// store. The page asks for it in the background once the notebook has
+// started (prefetch below), so the first picture does not wait for it.
 importScripts('./assets/smart/ort.wasm.min.js?v=4043d2de','./model-store.js');
 
 const ORT_ROOT=new URL('./assets/smart/',self.location.href).href;
@@ -22,7 +23,7 @@ const MODEL={
   url:'https://huggingface.co/studioludens/birefnet-lite-512/resolve/4a3c40c36c94093cc1e724d9ea428b8fa4b57dc7/onnx/model_fp16.onnx',
   sha:'eff9216bb2f9d3f023d9c2b7196845a7485739ab1f231593633e4d2344ffc516'
 };
-let session,loading;
+let session,loading,fetching;
 
 function announce(id,phase,extra){self.postMessage({id,progress:true,phase,...extra});}
 async function download(url,id){
@@ -42,12 +43,28 @@ async function download(url,id){
   return bytes;
 }
 
+// one download however it is asked for: a picture arriving while the
+// prefetch is still downloading waits for that rather than starting another
+function fetchModel(id){
+  if(!fetching)fetching=self.NOTAS_MODEL_STORE.load({
+    url:MODEL.url,sha:MODEL.sha,label:'background remover',
+    download:url=>download(url,id)
+  }).catch(e=>{fetching=null;throw e;});
+  return fetching;
+}
+// download, check and store the model without starting it: starting takes
+// about 2 GB, which only a picture is worth
+async function prefetch(id){
+  const store=self.NOTAS_MODEL_STORE;
+  let have=[];try{have=await store.keys();}catch(e){}
+  if(have.includes(store.keyOf(MODEL.url)))return 'stored';
+  await fetchModel(id);
+  return 'downloaded';
+}
+
 async function setup(id){
   if(!loading)loading=(async()=>{
-    const {bytes}=await self.NOTAS_MODEL_STORE.load({
-      url:MODEL.url,sha:MODEL.sha,label:'background remover',
-      download:url=>download(url,id)
-    });
+    const {bytes}=await fetchModel(id);
     announce(id,'starting');
     try{
       session=await ort.InferenceSession.create(bytes,{executionProviders:['wasm'],graphOptimizationLevel:'all',logSeverityLevel:3});
@@ -78,6 +95,11 @@ async function matte(id,buffer){
 
 self.onmessage=async e=>{
   const {id,rgba}=e.data||{};
+  if(e.data&&e.data.prefetch){
+    try{self.postMessage({id,done:await prefetch(id)});}
+    catch(err){self.postMessage({id,error:(err&&err.message)||String(err)});}
+    return;
+  }
   try{
     const alpha=await matte(id,rgba);
     self.postMessage({id,alpha},[alpha.buffer]);

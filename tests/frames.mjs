@@ -67,14 +67,14 @@ try{
   },png);
   await page.waitForTimeout(150);
   const labels=await page.evaluate(()=>[...document.querySelectorAll('#selbar button')].map(b=>b.textContent));
-  assert.deepEqual(labels,['delete'],'A selected picture offers no arrows or bigger/smaller buttons: '+labels.join(','));
+  assert.deepEqual(labels,['remove background','delete'],'A selected picture offers no arrows or bigger/smaller buttons: '+labels.join(','));
   // knob at (500, 300-30) dragged to the right of the centre (500,350): a quarter turn
   const pk=await screen(500,270), pkTo=await screen(500+50+30,350);
   await drag(pk,pkTo,12);
   const rot=await page.evaluate(()=>N.core.S.images[0].rot);
   assert.ok(Math.abs(rot-Math.PI/2)<1e-6,'The knob turns the picture, settling on a right angle: '+rot);
   const labels2=await page.evaluate(()=>[...document.querySelectorAll('#selbar button')].map(b=>b.textContent));
-  assert.deepEqual(labels2,['straighten','delete'],'A turned picture can be straightened from the bar');
+  assert.deepEqual(labels2,['straighten','remove background','delete'],'A turned picture can be straightened from the bar');
   // a turned picture is hit where it is seen: its centre column now runs 400..600 tall, 450..550 wide
   assert.equal(await page.evaluate(()=>N.ink.imageAt(460,420)?.id),'pic','Inside the turned picture');
   assert.equal(await page.evaluate(()=>N.ink.imageAt(420,320)?.id),undefined,'The old upright corner is now empty paper');

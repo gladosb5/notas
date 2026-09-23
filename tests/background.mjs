@@ -1,6 +1,7 @@
 // Background removal: the selection bar offers it on a picture, the model
 // comes from its pinned Hugging Face revision, the result is a transparent
-// cut-out, and one undo brings the original back. The browser profile is
+// cut-out, and one undo brings the original back. The prefetch that runs
+// in the background on a real start stores the model beforehand. The browser profile is
 // kept in test-results/ so the model store holds the 94 MB model after the
 // first run and later runs do not download it again.
 import {chromium} from 'playwright';
@@ -17,6 +18,10 @@ try{
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(base+'/notas.html');
   await page.waitForFunction(()=>window.N&&N.ui&&N.ink&&N.ink.removeBackground);
+  // the background download (automatic on a real start, asked for here since
+  // automated browsers skip it) leaves the model in the store, not running
+  const warmed=await page.evaluate(()=>N.ink.prefetchCutout());
+  assert.ok(warmed==='stored'||warmed==='downloaded','the prefetch stores the model: '+warmed);
   const before=await page.evaluate(async()=>{
     const S=N.core.S;
     // a dark disc on a light, slightly textured backdrop

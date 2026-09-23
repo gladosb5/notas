@@ -13,6 +13,7 @@
     "assets": "node scripts/prepare-assets.mjs",
     "test:collab": "node tests/collab.mjs",
     "test:background": "node tests/background.mjs",
+    "test:crop": "node tests/crop.mjs",
     "test:collab-usage": "node --test tests/collab-usage.test.mjs",
     "build:collab": "node scripts/build-collab.mjs"
   },

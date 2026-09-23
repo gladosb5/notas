@@ -215,13 +215,24 @@ makes everything else transparent, at the picture's own size, and one undo
 brings the original back. It runs on the device with BiRefNet lite
 (`studioludens/birefnet-lite-512`, MIT, a 512x512 re-export of
 ZhengPeng7/BiRefNet_lite) in `bg-worker.js`. The model is about 94 MB, more
-than the site can serve as one file, so the first use downloads it from
-Hugging Face at a pinned revision, checks it against its SHA-256 and keeps it
-in the model store; after that it works offline. It needs about 2 GB of memory
+than the site can serve as one file, so it comes from Hugging Face at a pinned
+revision, is checked against its SHA-256 and is kept in the model store; after
+that it works offline. It is downloaded in the background shortly after the
+notebook starts, once the handwriting readers have finished theirs, and shows
+in the models popover while it arrives. A connection with data saver on skips
+that and downloads on the first use instead. It needs about 2 GB of memory
 while it runs, so the worker is let go a minute after the last picture. A
 picture takes a few seconds with the threads a cross-origin isolated site
 gets, and about 20 on the single thread `npm start` gives.
 `node tests/background.mjs` (`npm run test:background`) drives it end to end.
+
+Double-tap a picture (double-click with a mouse) to crop it. A box with a
+handle at each corner and edge appears and the part being cut away is dimmed;
+drag a handle to move that side, or drag inside the box to slide it. **done**,
+Enter or a tap off the picture keeps the box; **cancel** or Escape leaves the
+picture as it was. The kept part is cut from the full-resolution pixels and
+stays where it was on the page, turned pictures included, and one undo brings
+the whole picture back. `node tests/crop.mjs` (`npm run test:crop`) covers it.
 
 ## Using handwriting
 
