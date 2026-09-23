@@ -3,6 +3,8 @@
 // here: the room's websocket and the "hey nota" forward.
 export { NoteRoom } from './room.js';
 const UPSTREAM='https://api.cerebras.ai/v1/chat/completions';
+// what nota.js asks for (CONFIG.model, CONFIG.maxTokens), with room to spare
+const MODEL='gpt-oss-120b',MAX_TOKENS=1024,MAX_BODY=256*1024;
 // /collab/<note id>: the websocket of the note's room. Ids are what the page
 // makes with uid(): lowercase base 36.
 const ROOM=/^\/collab\/([a-z0-9]{8,40})(\/(?:close|nota))?$/;
@@ -31,15 +33,33 @@ export default {
       if(request.method!=='POST')return new Response(null,{status:405,headers:{Allow:'POST'}});
       // The key is spent on whoever calls this, so a browser on another
       // site is refused: it always names its origin on a cross-site POST.
-      // The page's own calls carry this origin, and a plain client (curl,
-      // the tests) sends none, which stays allowed.
+      // The page's own calls carry this origin; a plain client (curl, the
+      // tests) sends none and is forwarded only with a key of its own.
       const origin=request.headers.get('origin');
       if(origin&&origin!==url.origin)return new Response('nota answers its own page only.',{status:403,headers:{'Content-Type':'text/plain'}});
-      const key=env.CEREBRAS_API_KEY||(request.headers.get('authorization')||'').replace(/^Bearer\s+/i,'');
+      const own=(request.headers.get('authorization')||'').replace(/^Bearer\s+/i,'');
+      // The site's own key is spent only for its page (a browser's POST
+      // always names its origin), only on nota's model and length, and only
+      // so often per address. A caller with their own key spends theirs.
+      const siteKey=!!env.CEREBRAS_API_KEY&&origin===url.origin;
+      const key=siteKey?env.CEREBRAS_API_KEY:own;
       if(!key)return new Response('nota has no key here.',{status:501,headers:{'Content-Type':'text/plain'}});
+      let body=request.body;
+      if(siteKey){
+        if(env.NOTA_LIMIT){
+          const {success}=await env.NOTA_LIMIT.limit({key:request.headers.get('cf-connecting-ip')||'unknown'});
+          if(!success)return new Response('nota is busy. try again in a minute.',{status:429,headers:{'Content-Type':'text/plain','Retry-After':'60'}});
+        }
+        const text=await request.text();
+        if(text.length>MAX_BODY)return new Response('the question is too long.',{status:413,headers:{'Content-Type':'text/plain'}});
+        let json;try{json=JSON.parse(text);}catch{json=null;}
+        if(!json||typeof json!=='object'||json.model!==MODEL||!Array.isArray(json.messages))return new Response('invalid request',{status:400,headers:{'Content-Type':'text/plain'}});
+        json.max_tokens=Math.min(+json.max_tokens||MAX_TOKENS,MAX_TOKENS);
+        body=JSON.stringify(json);
+      }
       let upstream;
       try{
-        upstream=await fetch(UPSTREAM,{method:'POST',body:request.body,
+        upstream=await fetch(UPSTREAM,{method:'POST',body,
           headers:{'Content-Type':'application/json','Accept':request.headers.get('accept')||'text/event-stream','Authorization':'Bearer '+key}});
       }catch(e){
         return new Response('nota could not reach the model.',{status:502,headers:{'Content-Type':'text/plain'}});
