@@ -3508,6 +3508,8 @@ function penTakesOver(){
     if(scaling){ const t = scaling; scaling = null; layStrokes(t.orig, (x,y)=>[x,y]); render(); }
     activeId = null;
   }
+  /* a scroll nobody owns any more is not the pen's to continue */
+  if(!owner && panning && !spaceDown){ panning = false; delete cInk.dataset.pan; tapImage = null; }
   pointers.clear();
   gesture = null;
 }
@@ -3582,6 +3584,10 @@ cInk.addEventListener('pointerdown', ev=>{
     }
     const a=avgPoint();
     gesture = { n:touches, t:Date.now(), moved:0, lastX:a.x, lastY:a.y, d0:touchSpread(), z0:M.zoom, interrupted:kept };
+    /* in pen-only mode the first finger began a one-finger scroll; the
+       gesture's lift never reaches the code that ends it, so it ends here,
+       or the next pen stroke would scroll the page instead of drawing */
+    if(panning){ panning = false; delete cInk.dataset.pan; tapImage = null; }
     activeId = null; panStart();
     trace('GESTURE', ev, kept ? 'stroke kept' : 'stroke discarded');
     return;
