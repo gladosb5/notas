@@ -52,6 +52,13 @@ function socketUrl(){ return (location.protocol==='https:'?'wss://':'ws://')+loc
 function colorFor(s){ let h=0; for(const c of s)h=(h*31+c.charCodeAt(0))>>>0; return 'hsl('+(h%360)+' 45% 45%)'; }
 function initials(s){ const w=String(s||'').trim().split(/\s+/).filter(Boolean); return ((w[0]||'?')[0]+(w[1]?w[1][0]:'')).toUpperCase(); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+/* what arrives from the others is only data: a colour is one this page
+   would have made, and a picture is only ever its own bytes, never an
+   address to fetch (which would tell a stranger who is looking, and taint
+   the canvas it is drawn on) */
+function peerColor(c,n){ return /^hsl\(\d{1,3} 45% 45%\)$/.test(c||'')?c:colorFor(n||'someone'); }
+const PICTURE=/^data:image\/(?:png|jpe?g|gif|webp);base64,/i;   /* what an import accepts */
+function safeImage(im){ return !!im&&PICTURE.test(im.src||'')&&(!im.full||PICTURE.test(im.full)); }
 
 function loadLib(){
   if(window.Yjs)return Promise.resolve(window.Yjs);
@@ -157,7 +164,7 @@ function pullAll(){
   try{
     S.strokes=[...r.strokes.entries()].map(([id,v])=>{ const st={...v,id}; r.known.strokes.set(id,strokeSig(st)); return st; });
     S.lines=[]; for(const id of r.lines.keys())takeLine(id);
-    S.images=[...r.images.entries()].map(([id,v])=>{ const im={...v,id}; r.known.images.set(id,imageSig(im)); return im; });
+    S.images=[...r.images.entries()].filter(([,v])=>safeImage(v)).map(([id,v])=>{ const im={...v,id}; r.known.images.set(id,imageSig(im)); return im; });
     if(r.meta.get('title'))S.title=r.meta.get('title');
     S.selection=[]; S.imageSelection=null;
     S.docH=Math.max(S.docH||1600,r.meta.get('docH')||0);
@@ -223,7 +230,7 @@ function observe(){
     try{
       for(const [id,ch] of e.changes.keys){
         if(ch.action==='delete'){ S.images=S.images.filter(i=>i.id!==id); r.known.images.delete(id); N.ink.peerShift.delete(id); if(S.imageSelection===id)S.imageSelection=null; continue; }
-        const im={...r.images.get(id),id}; r.known.images.set(id,imageSig(im));
+        const im={...r.images.get(id),id}; if(!safeImage(im))continue; r.known.images.set(id,imageSig(im));
         dirty.bottom=Math.max(dirty.bottom,im.y+im.h);
         const at=S.images.findIndex(i=>i.id===id);
         if(at<0)S.images.push(im);
@@ -434,7 +441,7 @@ function peers(){
       const until=prev.live.until||now+2000;
       if(until>now){ prev.live.until=until; live=prev.live; }
     }
-    const p={id,name:st.user.name||'someone',color:st.user.color||'#888',cursor:st.cursor||null,selection:st.selection||null,focus:st.focus||null,drag:st.drag||null,
+    const p={id,name:String(st.user.name||'someone').slice(0,40),color:peerColor(st.user.color,st.user.name),cursor:st.cursor||null,selection:st.selection||null,focus:st.focus||null,drag:st.drag||null,
       tool:st.tool||'',live,
       view:prev.view||null,caret:prev.caret,dragDone:prev.dragDone,dragGhost:prev.dragGhost};
     /* a drag that stopped being reported keeps its last offset for a
@@ -600,7 +607,7 @@ function frame(now){
     /* the line they are typing in: a soft band, their caret easing along
        it, and what they have highlighted, all in their colour */
     if(p.focus){
-      const el=document.querySelector('.line .txt[data-id="'+p.focus.line+'"]');
+      const el=document.querySelector('.line .txt[data-id="'+CSS.escape(String(p.focus.line))+'"]');
       const ln=S.lines.find(l=>l.id===p.focus.line);
       if(el&&ln){
         const r=el.getBoundingClientRect(),x=r.left-origin.left,y=r.top-origin.top;
