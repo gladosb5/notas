@@ -39,6 +39,23 @@ try{
     C.Store.set=originalSet;
     await C.save();
 
+    /* an edit made while the previous save of the same note is still being
+       written is saved by the next save, not taken as already written */
+    let releaseOverlap,overlapStarted;
+    const overlapWaiting=new Promise(r=>overlapStarted=r);
+    C.Store.set=async(k,v)=>{
+      if(k==='notas.note.'+S.id&&releaseOverlap===undefined){overlapStarted(); await new Promise(r=>releaseOverlap=r);}
+      return originalSet(k,v);
+    };
+    S.title='Overlap one'; C.markDirty();
+    const firstSave=C.save();
+    await overlapWaiting;
+    S.title='Overlap two'; C.markDirty();
+    const secondSave=C.save();
+    releaseOverlap(); await firstSave; await secondSave;
+    C.Store.set=originalSet;
+    const overlap={stored:(await C.Store.get('notas.note.'+S.id)).title,dirty:S.dirty};
+
     C.Store.set=async()=>false;
     S.title='Unsaved'; C.markDirty();
     await N.ui.newNote();
@@ -54,11 +71,12 @@ try{
     const fallback=await C.Store.get('storage-regression');
     await C.Store.del('storage-regression');
     const deleted=await C.Store.get('storage-regression');
-    return {switched,delayed,failed,first,second,saved,fallback,deleted};
+    return {switched,delayed,overlap,failed,first,second,saved,fallback,deleted};
   });
   assert.deepEqual(result.switched,{first:'Saved before new',second:'Saved before open'});
   assert.equal(result.delayed.row.title,'Snapshot title');
   assert.equal(result.delayed.dirty,true);
+  assert.deepEqual(result.overlap,{stored:'Overlap two',dirty:false},'An edit made during a save is written by the next save');
   assert.deepEqual(result.failed,{id:result.second,title:'Unsaved',dirty:true});
   assert.equal(result.saved,true);
   assert.deepEqual(result.fallback,{title:'New'});

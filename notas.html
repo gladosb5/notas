@@ -1754,14 +1754,20 @@ async function save(opts){
     try{
       const current = await Store.get('notas.note.'+doc.id);
       const currentRev = current?.rev || 0;
-      const expectedRev = doc.rev || 0;
-      /* Two save triggers can snapshot the same local revision before the first
-         queued write finishes (idle autosave + explicit save). If the newer
-         stored revision is one this tab itself just wrote, this task is already
-         satisfied and must not manufacture a conflict copy. */
-      if(current&&currentRev>expectedRev&&(locallyWrittenRevs.get(doc.id)||0)>=currentRev){
-        if(S.id===doc.id&&revision===savedRevision){S.dirty=false;S.savedRev=currentRev;S.remoteRev=0;if(announce||saveFailed)status('saved.');clearSaveError();setActive(doc.id);}
-        return true;
+      let expectedRev = doc.rev || 0;
+      /* Two save triggers can snapshot before the first queued write finishes
+         (idle autosave + explicit save), so both carry the same old rev. If
+         the newer stored revision is one this tab itself just wrote, it is no
+         conflict: when that write held this snapshot's edits too, this task
+         is already satisfied; when this snapshot is newer (a stroke landed
+         while the first write was under way), it follows that write. */
+      const mine=locallyWrittenRevs.get(doc.id);
+      if(current&&currentRev>expectedRev&&mine&&mine.rev>=currentRev){
+        if(mine.revision>=savedRevision){
+          if(S.id===doc.id&&revision===savedRevision){S.dirty=false;S.savedRev=currentRev;S.remoteRev=0;if(announce||saveFailed)status('saved.');clearSaveError();setActive(doc.id);}
+          return true;
+        }
+        expectedRev=doc.rev=currentRev;
       }
       const deletedElsewhere=!current&&expectedRev>0;
       let newerElsewhere=!!current&&(currentRev > expectedRev || (S.id===doc.id && (S.remoteRev||0)>expectedRev));
@@ -1779,7 +1785,7 @@ async function save(opts){
         const was=cix.find(r=>r.id===doc.id);
         cix.unshift({id:conflictId,title:conflict.title,updated:conflict.updated,created:conflict.created,preview:firstLine(conflict.lines),...(was&&was.folder?{folder:was.folder}:{})});
         if(!await Store.putIndex(cix)) throw new Error('Conflict index write failed');
-        locallyWrittenRevs.set(conflictId,1);
+        locallyWrittenRevs.set(conflictId,{rev:1,revision:savedRevision});
         if(S.id===doc.id && revision===savedRevision){
           S.id=conflictId; S.title=conflict.title; S.savedRev=1; S.remoteRev=0; S.dirty=false;
           $('#title').textContent=S.title; setActive(S.id); clearSaveError(); status('saved a conflict copy.');
@@ -1790,7 +1796,7 @@ async function save(opts){
       }
       doc.rev=Math.max(expectedRev,doc.rev||0)+1;
       if(!await Store.set('notas.note.'+doc.id, doc)) throw new Error('Note write failed');
-      locallyWrittenRevs.set(doc.id,doc.rev);
+      locallyWrittenRevs.set(doc.id,{rev:doc.rev,revision:savedRevision});
       const ix = await Store.index();
       const row = { id:doc.id, title:doc.title, updated:doc.updated, created:doc.created, preview:firstLine(doc.lines) };
       const at = ix.findIndex(r=>r.id===doc.id);
