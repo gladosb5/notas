@@ -4,7 +4,15 @@ import assert from 'node:assert/strict';
 import {startServer} from '../scripts/serve.mjs';
 import {samples as authored} from './fixtures/math-notes.mjs';
 
-const corpus=JSON.parse(await readFile('experiments/ocr-quality/mathwriting-notebook/test-corpus.json','utf8'));
+// experiments/ is gitignored: without the local MathWriting corpus there is nothing to route
+const corpusFile=new URL('../experiments/ocr-quality/mathwriting-notebook/test-corpus.json',import.meta.url);
+let corpusText;
+try{corpusText=await readFile(corpusFile,'utf8');}catch(e){
+  if(e.code!=='ENOENT')throw e;
+  console.log('SKIPPED ink routing: experiments/ocr-quality/mathwriting-notebook/test-corpus.json is not present (gitignored dataset).');
+  process.exit(0);
+}
+const corpus=JSON.parse(corpusText);
 const online=corpus.samples.find(s=>s.id==='004c9413be3ff1be-isolated');
 assert.ok(online,'known held-out online sample exists');
 const fallback=authored.find(s=>s.id==='61+1=-isolated');

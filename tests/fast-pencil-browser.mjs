@@ -8,7 +8,10 @@ try{
   const page=await browser.newPage({viewport:{width:820,height:1180},hasTouch:true,deviceScaleFactor:2});
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(`http://127.0.0.1:${server.address().port}/notas.html?debug=pointers`);
-  await page.locator('#prep-skip').click();
+  /* the preparing screen no longer offers a skip button; it closes itself
+     once the core libraries load. Click one only if a build still has it. */
+  await page.waitForFunction(()=>window.N?.ui);
+  if(await page.locator('#prep-skip:visible').count())await page.locator('#prep-skip').click();
   await page.waitForFunction(()=>document.getElementById('preparing').classList.contains('done'));
   await page.evaluate(()=>{
     N.tutorial.finish(false);N.core.S.settings.aiOn=false;

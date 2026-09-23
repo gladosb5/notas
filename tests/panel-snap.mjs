@@ -40,9 +40,15 @@ try{
    /* the heading is a grip too, so the reach is the width of the sheet */
    await drag(page.locator('.sheet .head h2'),-140);
    assert.equal(await page.locator('.sheet.expanded').count(),1,'the heading drags the sheet as well as the handle');
-   /* a flick down, rather than a measured drag, leaves in one gesture */
+   /* a flick down from the top lands at the resting height, like a slow
+      drag (notas.html end(): "a throw down from the top lands at the resting
+      height, not off the screen"); a flick from the resting height leaves */
    await drag(grab,140,{pause:8});
-   await page.waitForTimeout(300);assert.equal(await page.locator('.sheet').count(),0,'a flick down dismisses from the top in one gesture');
+   await page.waitForTimeout(300);
+   assert.equal(await page.locator('.sheet:not(.leave)').count(),1,'a flick down from the top does not dismiss');
+   assert.equal(await page.locator('.sheet.expanded').count(),0,'a flick down from the top settles at the resting height');
+   await drag(grab,140,{pause:8});
+   await page.waitForTimeout(300);assert.equal(await page.locator('.sheet').count(),0,'a flick down from the resting height dismisses in one gesture');
   }
   await page.evaluate(()=>{N.ink.setTool('text');N.text.add(120,true);});
   const input=page.locator('.line .txt').last();

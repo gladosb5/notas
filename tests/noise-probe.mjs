@@ -16,7 +16,8 @@ try{
     const worker=new Worker('./text-worker.js');let seq=0;
     const send=(payload,transfer=[])=>new Promise((resolve,reject)=>{
       const id=++seq;
-      const on=e=>{if(e.data.id!==id)return;worker.removeEventListener('message',on);e.data.error?reject(new Error(e.data.error)):resolve(e.data);};
+      // setup streams {progress:true} messages under the same id; wait for the answer
+      const on=e=>{if(e.data.id!==id||e.data.progress)return;worker.removeEventListener('message',on);e.data.error?reject(new Error(e.data.error)):resolve(e.data);};
       worker.addEventListener('message',on);worker.postMessage({...payload,id},transfer);
     });
     await send({type:'setup'});
@@ -44,12 +45,18 @@ try{
     worker.terminate();return out;
   });
   console.log(JSON.stringify(rows,null,2));
-  const iam=JSON.parse(await readFile(new URL('../experiments/ocrv6-small/results-iam100.json',import.meta.url),'utf8'));
-  const retention=iam.rows.filter(r=>r.confidence>=threshold).length;
   const falsePositives=rows.filter(r=>Number(r.confidence)>=threshold&&/[\p{L}\p{N}]/u.test(String(r.text||'')));
-  assert.ok(retention>=90,`OCR noise floor keeps at least 90/100 IAM handwriting lines, got ${retention}`);
   assert.deepEqual(falsePositives,[],`Noise fixtures must not become searchable text at threshold ${threshold}`);
-  console.log(`OCR noise calibration passed at ${threshold}: IAM ${retention}/100 retained, 0/${rows.length} negative text false positives`);
+  // experiments/ is gitignored: the IAM retention half needs the local results file
+  const iamFile=new URL('../experiments/ocrv6-small/results-iam100.json',import.meta.url);
+  let iam=null;try{iam=JSON.parse(await readFile(iamFile,'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}
+  if(iam){
+    const retention=iam.rows.filter(r=>r.confidence>=threshold).length;
+    assert.ok(retention>=90,`OCR noise floor keeps at least 90/100 IAM handwriting lines, got ${retention}`);
+    console.log(`OCR noise calibration passed at ${threshold}: IAM ${retention}/100 retained, 0/${rows.length} negative text false positives`);
+  }else{
+    console.log(`OCR noise calibration passed at ${threshold}: 0/${rows.length} negative text false positives. SKIPPED IAM retention: experiments/ocrv6-small/results-iam100.json is not present (gitignored dataset).`);
+  }
 }finally{
   await context.close();await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));
 }
