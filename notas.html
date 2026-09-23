@@ -2257,7 +2257,7 @@ function render(onPaint){
     }
     if(S.imageSelection){
       const im=S.images.find(i=>i.id===S.imageSelection);
-      if(im&&cropping&&cropping.id===im.id) drawCrop(xCommit, im);
+      if(im&&cropping&&cropping.id===im.id) drawCrop(xCommit);
       else if(im) drawFrame(xCommit, frameOf(im, moving?moving.dx:0, moving?moving.dy:0));
     }
     /* in text mode the ink canvas is normally out of the way; while a picture
@@ -2591,6 +2591,11 @@ addEventListener('resize', ()=>{ if(penPopOpen()) placePenPop(); });
 
 /* ---- selection ---- */
 function selectionBox(){
+  if(cropping && cropping.id === S.imageSelection){
+    const F = cropping.F, f = frameOf(F), hw = F.w/2, hh = F.h/2;
+    const ps = [[-hw,-hh],[hw,-hh],[-hw,hh],[hw,hh]].map(([a,c])=>framePoint(f,a,c));
+    return [Math.min(...ps.map(q=>q.x)), Math.min(...ps.map(q=>q.y)), Math.max(...ps.map(q=>q.x)), Math.max(...ps.map(q=>q.y))];
+  }
   if(S.imageSelection){
     const im=S.images.find(i=>i.id===S.imageSelection);
     if(im)return [im.x,im.y,im.x+im.w,im.y+im.h];
@@ -2934,11 +2939,13 @@ async function removeBackground(id){
   const im=S.images.find(i=>i.id===id); if(!im) return false;
   if(cutoutBusy){ C.toast('still removing a background.'); return false; }
   cutoutBusy=true;
-  const note=S.id, before=im.src;
+  /* a cropped picture loses the background of its whole original, so a
+     later crop that widens the box does not bring the background back */
+  const note=S.id, before=im.src, beforeFull=im.full, crop=im.full&&im.crop?im.crop:null, base=crop?im.full:im.src;
   C.toast('removing the background.', 600000);
   let told=false;
   try{
-    const el=await loadPicture(before);
+    const el=await loadPicture(base);
     const n=CUTOUT_SIZE, small=document.createElement('canvas'); small.width=small.height=n;
     const sx=small.getContext('2d',{willReadFrequently:true});
     sx.imageSmoothingQuality='high'; sx.drawImage(el,0,0,n,n);
@@ -2950,12 +2957,13 @@ async function removeBackground(id){
     const mask=sx.createImageData(n,n);
     for(let i=0;i<alpha.length;i++) mask.data[i*4+3]=alpha[i];
     sx.putImageData(mask,0,0);
-    const src=cutoutEncode(el,small);
+    const cut=cutoutEncode(el,small);
+    const src=crop?cropEncode(await loadPicture(cut),crop,false):cut;
     /* the note, or the picture, may have changed during the few seconds */
     const live=S.images.find(i=>i.id===id);
-    if(note!==S.id||!live||live.src!==before){ C.toast('that picture changed, so its background was left.'); return false; }
-    const set=s=>{ const x=S.images.find(i=>i.id===id); if(x) x.src=s; };
-    C.act('remove background',()=>set(src),()=>set(before));
+    if(note!==S.id||!live||live.src!==before||live.full!==beforeFull){ C.toast('that picture changed, so its background was left.'); return false; }
+    const set=(s,f)=>{ const x=S.images.find(i=>i.id===id); if(!x) return; x.src=s; if(f) x.full=f; else delete x.full; };
+    C.act('remove background',()=>set(src,crop?cut:beforeFull),()=>set(before,beforeFull));
     after(); showSelBar();
     C.toast('background removed.');
     return true;
@@ -2966,17 +2974,21 @@ async function removeBackground(id){
   }finally{ cutoutBusy=false; }
 }
 /* ---- cropping a picture ----
-   Two taps on a picture (a double click with a mouse) open its crop: a box
-   with a handle at each corner and edge, and the part being cut away dimmed.
-   Drag a handle to move that side, drag inside to slide the box. done, a tap
-   off the picture or Enter keeps the box; cancel or Escape leaves the picture
-   as it was. The box is kept as fractions of the picture, so it works the
-   same on a turned picture, and the kept part stays where it was on the page. */
+   Two taps on a picture (a double click with a mouse) open its crop: the
+   whole original picture with a box on it, a handle at each corner and edge,
+   and the part being cut away dimmed. Drag a handle to move that side, drag
+   inside to slide the box; two fingers pinch the box (spread to zoom in,
+   pinch to zoom out) and twist the picture. done, a tap off the picture or
+   Enter keeps the box; cancel or Escape leaves the picture as it was.
+   Cropping keeps the original (im.full, with im.crop the box as fractions of
+   it), so a later crop starts from the whole picture and can take back what
+   an earlier one cut away. The kept part stays where it was on the page,
+   turned pictures included. */
 let cropping=null, cropDrag=null, lastImgTap=null;
 const CROP_MIN=24;
 function noteImageTap(id,ev){
   const now=Date.now(), p=lastImgTap;
-  if(p&&p.id===id&&now-p.t<400&&Math.hypot(ev.clientX-p.x,ev.clientY-p.y)<40){   /* two finger taps rarely land on one spot */ lastImgTap=null; return startCrop(id); }
+  if(p&&p.id===id&&now-p.t<400&&Math.hypot(ev.clientX-p.x,ev.clientY-p.y)<40){ lastImgTap=null; return startCrop(id); }   /* two finger taps rarely land on one spot */
   lastImgTap={id,t:now,x:ev.clientX,y:ev.clientY};
   return false;
 }
@@ -2990,41 +3002,55 @@ function pictureMove(w,ev,kind,id){
   const slop=kind==='mouse'?0:(second?DOUBLE_TAP_SLOP:(TAP_SLOP[kind]||TAP_SLOP.touch));
   return {x:w.x, y:w.y, dx:0, dy:0, box:selectionBox(), sx:ev.clientX, sy:ev.clientY, slop, held:slop>0};
 }
+/* where the whole original sits on the page, worked back from the cropped
+   picture and its box: the same turn, and the box where the picture is */
+function fullFrame(im){
+  const c=im.full&&im.crop?im.crop:{l:0,t:0,r:1,b:1};
+  const w=im.w/(c.r-c.l), h=im.h/(c.b-c.t), rot=im.rot||0;
+  const ox=((c.l+c.r)/2-.5)*w, oy=((c.t+c.b)/2-.5)*h, co=Math.cos(rot), si=Math.sin(rot);
+  const cx=im.x+im.w/2-(ox*co-oy*si), cy=im.y+im.h/2-(ox*si+oy*co);
+  return {frame:{x:cx-w/2, y:cy-h/2, w, h, rot}, box:{...c}};
+}
 function startCrop(id){
-  if(!S.images.some(i=>i.id===id)) return false;
+  const im=S.images.find(i=>i.id===id); if(!im) return false;
   S.selection=[]; S.imageSelection=id;
-  cropping={id,l:0,t:0,r:1,b:1}; cropDrag=null;
+  const {frame,box}=fullFrame(im), full=im.full||im.src;
+  cropping={id, ...box, F:frame, full, el:null}; cropDrag=null;
+  const el=new Image(); el.onload=()=>{ if(cropping&&cropping.full===full){ cropping.el=el; render(); } }; el.src=full;
   render(); showSelBar(); return true;
 }
 function cancelCrop(){
   if(!cropping) return false;
   cropping=null; cropDrag=null; render(); showSelBar(); return true;
 }
-/* a page point in the picture's own upright frame, as fractions of it */
-function cropLocal(im,w){
-  let x=w.x, y=w.y; const r=im.rot||0;
-  if(r){ const cx=im.x+im.w/2, cy=im.y+im.h/2, c=Math.cos(-r), sn=Math.sin(-r), px=x-cx, py=y-cy; x=px*c-py*sn+cx; y=px*sn+py*c+cy; }
-  return {u:(x-im.x)/im.w, v:(y-im.y)/im.h};
+/* a page point in the frame's own upright box, as fractions of it */
+function cropLocal(F,w){
+  let x=w.x, y=w.y; const r=F.rot||0;
+  if(r){ const cx=F.x+F.w/2, cy=F.y+F.h/2, c=Math.cos(-r), sn=Math.sin(-r), px=x-cx, py=y-cy; x=px*c-py*sn+cx; y=px*sn+py*c+cy; }
+  return {u:(x-F.x)/F.w, v:(y-F.y)/F.h};
 }
-function cropPoint(im,u,v){
-  return framePoint(frameOf(im),(u-.5)*im.w,(v-.5)*im.h);
+function cropPoint(F,u,v){
+  return framePoint(frameOf(F),(u-.5)*F.w,(v-.5)*F.h);
 }
-function cropHandles(im){
+function cropHandles(F){
   const c=cropping, mu=(c.l+c.r)/2, mv=(c.t+c.b)/2;
   return [['nw',c.l,c.t],['ne',c.r,c.t],['sw',c.l,c.b],['se',c.r,c.b],
-          ['n',mu,c.t],['s',mu,c.b],['w',c.l,mv],['e',c.r,mv]].map(([k,u,v])=>({k,...cropPoint(im,u,v)}));
+          ['n',mu,c.t],['s',mu,c.b],['w',c.l,mv],['e',c.r,mv]].map(([k,u,v])=>({k,...cropPoint(F,u,v)}));
 }
-function cropHandleAt(im,w,touch){
+function cropHandleAt(F,w,touch){
   const r=(touch?20:HANDLE_HIT)/M.zoom;
-  for(const h of cropHandles(im)) if(Math.hypot(w.x-h.x,w.y-h.y)<=r) return h.k;
+  for(const h of cropHandles(F)) if(Math.hypot(w.x-h.x,w.y-h.y)<=r) return h.k;
   return null;
 }
-function drawCrop(ctx,im){
-  const c=cropping;
-  ctx.save(); ctx.translate(im.x+im.w/2,im.y+im.h/2); ctx.rotate(im.rot||0);
-  const x0=-im.w/2, y0=-im.h/2, L=x0+c.l*im.w, T=y0+c.t*im.h, R=x0+c.r*im.w, B=y0+c.b*im.h;
+function inCropBox(p){ return p.u>=cropping.l&&p.u<=cropping.r&&p.v>=cropping.t&&p.v<=cropping.b; }
+function drawCrop(ctx){
+  const c=cropping, F=c.F;
+  ctx.save(); ctx.translate(F.x+F.w/2,F.y+F.h/2); ctx.rotate(F.rot||0);
+  const x0=-F.w/2, y0=-F.h/2, L=x0+c.l*F.w, T=y0+c.t*F.h, R=x0+c.r*F.w, B=y0+c.b*F.h;
+  /* the whole original, so what an earlier crop cut away can be taken back */
+  if(c.el) ctx.drawImage(c.el,x0,y0,F.w,F.h);
   ctx.fillStyle='rgba(0,0,0,.45)';
-  ctx.beginPath(); ctx.rect(x0,y0,im.w,im.h); ctx.rect(L,T,R-L,B-T); ctx.fill('evenodd');
+  ctx.beginPath(); ctx.rect(x0,y0,F.w,F.h); ctx.rect(L,T,R-L,B-T); ctx.fill('evenodd');
   ctx.strokeStyle=colors.blue; ctx.lineWidth=1.5/M.zoom; ctx.setLineDash([]);
   ctx.strokeRect(L,T,R-L,B-T);
   /* thirds, faintly, as a guide for where to cut */
@@ -3032,24 +3058,23 @@ function drawCrop(ctx,im){
   for(const f of [1/3,2/3]){ ctx.moveTo(L+(R-L)*f,T); ctx.lineTo(L+(R-L)*f,B); ctx.moveTo(L,T+(B-T)*f); ctx.lineTo(R,T+(B-T)*f); }
   ctx.stroke(); ctx.restore();
   ctx.save(); ctx.fillStyle=colors.paper; ctx.strokeStyle=colors.blue; ctx.lineWidth=1.5/M.zoom; ctx.setLineDash([]);
-  for(const h of cropHandles(im)){ ctx.beginPath(); ctx.arc(h.x,h.y,HANDLE_R/M.zoom,0,6.284); ctx.fill(); ctx.stroke(); }
+  for(const h of cropHandles(F)){ ctx.beginPath(); ctx.arc(h.x,h.y,HANDLE_R/M.zoom,0,6.284); ctx.fill(); ctx.stroke(); }
   ctx.restore();
 }
-/* a press while cropping: a handle or the box takes it; off the picture it
-   is done; on the dimmed part of the picture it does nothing */
+/* a press while cropping: a handle or the box takes it; on the dimmed part
+   it does nothing; off the picture, a tap is done (decided when it lifts,
+   so a two-finger pinch of the page that starts there does not end it) */
 function cropDown(ev,kind){
-  const im=S.images.find(i=>i.id===cropping.id);
-  if(!im){ cropping=null; return; }
-  const w=toWorld(ev), p=cropLocal(im,w), k=cropHandleAt(im,w,kind==='touch');
+  if(!S.images.some(i=>i.id===cropping.id)){ cropping=null; return; }
+  const F=cropping.F, w=toWorld(ev), p=cropLocal(F,w), k=cropHandleAt(F,w,kind==='touch');
   if(k){ cropDrag={k,start:p,from:{...cropping}}; return; }
-  if(p.u>=cropping.l&&p.u<=cropping.r&&p.v>=cropping.t&&p.v<=cropping.b){ cropDrag={k:'move',start:p,from:{...cropping}}; return; }
-  cropDrag={k:'none'};
-  if(!inImage(w.x,w.y,im)) applyCrop();
+  if(inCropBox(p)){ cropDrag={k:'move',start:p,from:{...cropping}}; return; }
+  cropDrag={k:inImage(w.x,w.y,F)?'none':'outside'};
 }
 function cropMove(w){
-  const im=S.images.find(i=>i.id===cropping.id), d=cropDrag; if(!im||d.k==='none') return;
-  const p=cropLocal(im,w), f=d.from, du=p.u-d.start.u, dv=p.v-d.start.v;
-  const mu=Math.min(.5,CROP_MIN/im.w), mv=Math.min(.5,CROP_MIN/im.h);
+  const F=cropping.F, d=cropDrag; if(d.k==='none'||d.k==='outside') return;
+  const p=cropLocal(F,w), f=d.from, du=p.u-d.start.u, dv=p.v-d.start.v;
+  const mu=Math.min(.5,CROP_MIN/F.w), mv=Math.min(.5,CROP_MIN/F.h);
   let {l,t,r,b}=f;
   if(d.k==='move'){
     const cw=r-l, ch=b-t;
@@ -3063,41 +3088,122 @@ function cropMove(w){
   Object.assign(cropping,{l,t,r,b});
   render(); showSelBar();
 }
-function cropCursor(im,w){
-  const k=cropHandleAt(im,w,false);
+function cropCursor(w){
+  const F=cropping.F, k=cropHandleAt(F,w,false);
   if(k) return k.length===2?((k==='nw'||k==='se')?'nwse-resize':'nesw-resize'):((k==='n'||k==='s')?'ns-resize':'ew-resize');
-  const p=cropLocal(im,w);
-  return p.u>=cropping.l&&p.u<=cropping.r&&p.v>=cropping.t&&p.v<=cropping.b?'move':'';
+  return inCropBox(cropLocal(F,w))?'move':'';
 }
-/* The kept part becomes the picture: cut from the full-resolution pixels,
-   JPEG kept as JPEG and anything else as PNG (a cut-out keeps its
-   transparency), placed so it does not move on the page. One undo. */
+/* the part of a picture inside box c, cut from its full-resolution pixels;
+   JPEG stays JPEG and anything else is PNG (a cut-out keeps its transparency) */
+function cropEncode(el,c,jpeg){
+  const NW=el.naturalWidth, NH=el.naturalHeight;
+  const sx=Math.round(c.l*NW), sy=Math.round(c.t*NH);
+  const sw=Math.max(1,Math.round(c.r*NW)-sx), sh=Math.max(1,Math.round(c.b*NH)-sy);
+  const cv=document.createElement('canvas'); cv.width=sw; cv.height=sh;
+  cv.getContext('2d').drawImage(el,sx,sy,sw,sh,0,0,sw,sh);
+  const src=jpeg?cv.toDataURL('image/jpeg',.92):cv.toDataURL('image/png');
+  if(typeof src!=='string'||src.length>CUTOUT_MAX_CHARS||src.length<='data:,'.length) throw new Error('that crop is too large to keep in a note.');
+  return src;
+}
+const PICTURE_KEYS=['src','x','y','w','h','rot','full','crop'];
+function pictureState(im){ const o={}; for(const k of PICTURE_KEYS) o[k]=im[k]; return o; }
+function setPicture(id,v){
+  const x=S.images.find(i=>i.id===id); if(!x) return;
+  for(const k of PICTURE_KEYS){ if(v[k]===undefined||(k==='rot'&&!v[k])) delete x[k]; else x[k]=v[k]; }
+}
+/* The box becomes the picture, cut from the original; the whole box gives
+   the original back. Where it sits and its turn come from the frame, so a
+   twist made while cropping is kept too. One undo. */
 async function applyCrop(){
   const c=cropping; if(!c) return false;
   cropping=null; cropDrag=null;
   const im=S.images.find(i=>i.id===c.id);
-  if(!im||(c.l<=.001&&c.t<=.001&&c.r>=.999&&c.b>=.999)){ render(); showSelBar(); return false; }
-  const note=S.id, before={src:im.src,x:im.x,y:im.y,w:im.w,h:im.h};
-  const mid=cropPoint(im,(c.l+c.r)/2,(c.t+c.b)/2);
-  let src;
-  try{
-    const el=await loadPicture(before.src);
-    const NW=el.naturalWidth, NH=el.naturalHeight;
-    const sx=Math.round(c.l*NW), sy=Math.round(c.t*NH);
-    const sw=Math.max(1,Math.round(c.r*NW)-sx), sh=Math.max(1,Math.round(c.b*NH)-sy);
-    const cv=document.createElement('canvas'); cv.width=sw; cv.height=sh;
-    cv.getContext('2d').drawImage(el,sx,sy,sw,sh,0,0,sw,sh);
-    src=/^data:image\/jpeg/i.test(before.src)?cv.toDataURL('image/jpeg',.92):cv.toDataURL('image/png');
-    if(typeof src!=='string'||src.length>CUTOUT_MAX_CHARS||src.length<='data:,'.length) throw new Error('that crop is too large to keep in a note.');
-  }catch(e){ C.toast(e.message||'that picture could not be cropped.'); render(); showSelBar(); return false; }
+  if(!im){ render(); showSelBar(); return false; }
+  const before=pictureState(im), note=S.id, F=c.F;
+  const whole=c.l<=.001&&c.t<=.001&&c.r>=.999&&c.b>=.999;
+  const same=before.full===c.full&&before.crop&&['l','t','r','b'].every(k=>Math.abs(before.crop[k]-c[k])<1e-6);
+  const turnSame=Math.abs((before.rot||0)-(F.rot||0))<1e-9;
+  if((whole&&!before.full||same)&&turnSame){ render(); showSelBar(); return false; }
+  let now;
+  if(whole) now={src:c.full, x:F.x, y:F.y, w:F.w, h:F.h, rot:F.rot};
+  else{
+    let src;
+    try{ src=cropEncode(c.el||await loadPicture(c.full),c,/^data:image\/jpeg/i.test(c.full)); }
+    catch(e){ C.toast(e.message||'that picture could not be cropped.'); render(); showSelBar(); return false; }
+    const w=(c.r-c.l)*F.w, h=(c.b-c.t)*F.h, mid=cropPoint(F,(c.l+c.r)/2,(c.t+c.b)/2);
+    now={src, x:mid.x-w/2, y:Math.max(0,mid.y-h/2), w, h, rot:F.rot, full:c.full, crop:{l:c.l,t:c.t,r:c.r,b:c.b}};
+  }
   const live=S.images.find(i=>i.id===c.id);
   if(note!==S.id||!live||live.src!==before.src||live.x!==before.x||live.y!==before.y||live.w!==before.w) return false;
-  const w=(c.r-c.l)*before.w, h=(c.b-c.t)*before.h;
-  const now={src,x:mid.x-w/2,y:Math.max(0,mid.y-h/2),w,h};
-  const set=v=>{ const x=S.images.find(i=>i.id===c.id); if(x) Object.assign(x,v); };
-  C.act('crop image',()=>set(now),()=>set(before));
+  C.act('crop image',()=>setPicture(c.id,now),()=>setPicture(c.id,before));
   C.growDoc(now.y+now.h); after(); showSelBar();
   return true;
+}
+/* ---- two fingers on a selection ----
+   With a picture or lassoed ink selected, two fingers that start on it move,
+   scale and turn it together, about the point between them, as one undo; in
+   a crop they pinch the box and turn the picture. Two fingers anywhere else
+   still pan and zoom the page. */
+let twin=null, twinIgnore=null;
+function twinSpan(){
+  const a=pointers.get(twin.ids[0]), b=pointers.get(twin.ids[1]); if(!a||!b) return null;
+  return {x:(a.x+b.x)/2, y:(a.y+b.y)/2, d:Math.max(1,Math.hypot(b.x-a.x,b.y-a.y)), a:Math.atan2(b.y-a.y,b.x-a.x)};
+}
+function snapTurn(rot){
+  const q=Math.round(rot/(Math.PI/2))*(Math.PI/2); if(Math.abs(rot-q)<0.05) rot=q;
+  return Math.atan2(Math.sin(rot),Math.cos(rot));
+}
+function startTwin(){
+  const ids=[...pointers.entries()].filter(([,r])=>r.type==='touch').map(([id])=>id).slice(0,2);
+  if(ids.length<2) return false;
+  if(moving){ moving=null; }
+  if(cropDrag){ if(cropDrag.from) Object.assign(cropping,{l:cropDrag.from.l,t:cropDrag.from.t,r:cropDrag.from.r,b:cropDrag.from.b}); cropDrag=null; }
+  twin={ids};
+  const s=twinSpan(); if(!s){ twin=null; return false; }
+  Object.assign(twin,s0(s));
+  if(cropping){ twin.kind='crop'; twin.box={l:cropping.l,t:cropping.t,r:cropping.r,b:cropping.b}; twin.rot0=cropping.F.rot||0; }
+  else if(S.imageSelection){ const im=S.images.find(i=>i.id===S.imageSelection); twin.kind='image'; twin.id=im.id; twin.was=pictureState(im); }
+  else{ twin.kind='ink'; twin.orig=grabStrokes(S.selection); }
+  activeId=null; clearLive(); render(); showSelBar();
+  return true;
+}
+function s0(s){ return {c0:toWorld({clientX:s.x,clientY:s.y}), d0:s.d, a0:s.a, s:1, da:0}; }
+function twinMove(){
+  const s=twinSpan(); if(!s) return;
+  const c1=toWorld({clientX:s.x,clientY:s.y}), c0=twin.c0;
+  let k=s.d/twin.d0, da=s.a-twin.a0;
+  if(twin.kind==='crop'){
+    /* spread to zoom in: the box shrinks about its centre; pinch to zoom out */
+    const b=twin.box, F=cropping.F, mu=Math.min(1,CROP_MIN/F.w), mv=Math.min(1,CROP_MIN/F.h);
+    const cw=C.clamp((b.r-b.l)/k,mu,1), ch=C.clamp((b.b-b.t)/k,mv,1);
+    const mx=C.clamp((b.l+b.r)/2,cw/2,1-cw/2), my=C.clamp((b.t+b.b)/2,ch/2,1-ch/2);
+    Object.assign(cropping,{l:mx-cw/2,r:mx+cw/2,t:my-ch/2,b:my+ch/2});
+    cropping.F.rot=snapTurn(twin.rot0+da);
+  }else if(twin.kind==='image'){
+    const w0=twin.was; k=C.clamp(k,40/w0.w,6000/w0.w);
+    const rot=snapTurn((w0.rot||0)+da); da=rot-(w0.rot||0);
+    const co=Math.cos(da), si=Math.sin(da), px=w0.x+w0.w/2-c0.x, py=w0.y+w0.h/2-c0.y;
+    const cx=c1.x+(px*co-py*si)*k, cy=c1.y+(px*si+py*co)*k, w=w0.w*k, h=w0.h*k;
+    const im=S.images.find(i=>i.id===twin.id);
+    if(im){ im.w=w; im.h=h; im.x=cx-w/2; im.y=Math.max(0,cy-h/2); if(rot) im.rot=rot; else delete im.rot; }
+  }else{
+    k=C.clamp(k,.1,20);
+    const co=Math.cos(da), si=Math.sin(da);
+    layStrokes(twin.orig,(x,y)=>{ const px=x-c0.x, py=y-c0.y; return [c1.x+(px*co-py*si)*k, c1.y+(px*si+py*co)*k]; },k);
+  }
+  twin.s=k; twin.da=da; twin.moved=true;
+  render(); showSelBar();
+}
+function endTwin(liftedId){
+  const t=twin; twin=null;
+  twinIgnore=t.ids.find(id=>id!==liftedId&&pointers.has(id))??null;
+  if(t.moved){
+    if(t.kind==='image'){
+      const im=S.images.find(i=>i.id===t.id);
+      if(im){ const now=pictureState(im); setPicture(t.id,t.was); C.act('turn and scale image',()=>setPicture(t.id,now),()=>setPicture(t.id,t.was)); C.growDoc(now.y+now.h); }
+    }else if(t.kind==='ink') commitLaid(t.orig,'turn and scale ink');
+  }
+  after(); showSelBar();
 }
 /* ---- ink clipboard ---- */
 /* Copied ink lives in localStorage, not on the system clipboard. A tablet has
@@ -3449,6 +3555,12 @@ cInk.addEventListener('pointerdown', ev=>{
   /* Two and three finger gestures are exactly that: fingers. A pen was allowed
      to make up the count, so any stray pointer alongside the pencil turned the
      stroke into a scroll and threw it away. A pen never joins a gesture. */
+  if(twin) return;   /* a third finger while two turn a selection */
+  if(kind === 'touch' && !penIsDown() && touchesDown() === 2 &&
+     ((moving && (S.imageSelection || S.selection.length)) || (cropping && cropDrag && cropDrag.k !== 'outside'))){
+    if(startTwin()) return;
+  }
+  if(kind === 'touch' && cropDrag && cropDrag.k === 'outside') cropDrag = null;   /* a pinch of the page from off the picture */
   const touches = touchesDown();
   if(kind === 'touch' && !penIsDown() && (touches === 2 || touches === 3)){
     /* The first finger of a pinch lands a few dozen milliseconds before the
@@ -3558,6 +3670,8 @@ function avgPoint(){ let x=0,y=0,n=0; pointers.forEach(p=>{ x+=p.x;y+=p.y;n++; }
 cInk.addEventListener('pointermove', ev=>{
   const rec = pointers.get(ev.pointerId);
   if(rec){ rec.moved += Math.hypot(ev.clientX-rec.x, ev.clientY-rec.y); rec.x=ev.clientX; rec.y=ev.clientY; rec.seen=Date.now(); }
+  if(twin){ if(twin.ids.includes(ev.pointerId)) twinMove(); return; }
+  if(twinIgnore !== null && ev.pointerId === twinIgnore) return;
 
   if(gesture){
     const a=avgPoint(),dx=a.x-gesture.lastX,dy=a.y-gesture.lastY;
@@ -3590,7 +3704,7 @@ cInk.addEventListener('pointermove', ev=>{
   /* a mouse over the selected picture or ink says what a press would do */
   if(activeId === null && cropping && ev.pointerType === 'mouse'){
     const im = S.images.find(i=>i.id===cropping.id);
-    cInk.style.cursor = im ? cropCursor(im, toWorld(ev)) : '';
+    cInk.style.cursor = im ? cropCursor(toWorld(ev)) : '';
   } else if(activeId === null && (S.imageSelection || S.selection.length) && ev.pointerType === 'mouse'){
     const w = toWorld(ev), im = S.imageSelection ? S.images.find(i=>i.id===S.imageSelection) : null;
     const k = handleAt(w.x, w.y, frameOf(im));
@@ -3659,6 +3773,8 @@ function endPointer(ev){
   const rec = pointers.get(ev.pointerId);
   pointers.delete(ev.pointerId);
   trace(ev.type === 'pointercancel' ? 'CANCEL' : 'up', ev);
+  if(twin && twin.ids.includes(ev.pointerId)){ endTwin(ev.pointerId); return; }
+  if(twinIgnore !== null && ev.pointerId === twinIgnore){ twinIgnore = null; return; }
 
   /* a palm lifting while the pen is still writing must not end the stroke */
   if(activeId !== null && ev.pointerId !== activeId) return;
@@ -3691,7 +3807,13 @@ function endPointer(ev){
     return;
   }
 
-  if(cropDrag){ cropDrag = null; render(); showSelBar(); return; }
+  if(cropDrag){
+    const d = cropDrag; cropDrag = null;
+    /* a tap off the picture keeps the crop; a pan or pinch from there does not */
+    if(d.k === 'outside' && rec && Date.now() - rec.t < 500 && rec.moved < TAP_SLOP.touch) applyCrop();
+    else { render(); showSelBar(); }
+    return;
+  }
   if(turning){ endTurn(); return; }
   if(scaling){ endScale(); return; }
   if(resizing){

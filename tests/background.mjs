@@ -70,6 +70,24 @@ try{
   assert.ok(out.centre>224,'the subject stayed opaque');
   assert.ok(out.selected,'the lasso selected the picture');
   assert.ok(out.undone&&out.redone,'one undo restores the original, redo the cut-out');
+  // a cropped picture: the background goes from its whole original, so a
+  // later, wider crop does not bring it back, and the crop stays as it was
+  const cropped=await page.evaluate(async id=>{
+    const S=N.core.S,C=N.core,im=S.images.find(i=>i.id===id);
+    C.undo();   // back to the photo with its backdrop
+    const full=im.src,el=new Image();await new Promise(r=>{el.onload=r;el.src=full;});
+    const cv=document.createElement('canvas');cv.width=el.naturalWidth/2;cv.height=el.naturalHeight;
+    cv.getContext('2d').drawImage(el,el.naturalWidth/4,0,cv.width,cv.height,0,0,cv.width,cv.height);
+    Object.assign(im,{src:cv.toDataURL('image/jpeg',.92),full,crop:{l:.25,t:0,r:.75,b:1},w:im.w/2,x:im.x+im.w/4});
+    const ok=await N.ink.removeBackground(id);
+    const size=src=>new Promise(r=>{const i=new Image();i.onload=()=>r([i.naturalWidth,i.naturalHeight,src.slice(5,14)]);i.src=src;});
+    const alphaAt=async(src,u,v)=>{const i=new Image();await new Promise(r=>{i.onload=r;i.src=src;});const c=document.createElement('canvas');c.width=i.naturalWidth;c.height=i.naturalHeight;const x=c.getContext('2d');x.drawImage(i,0,0);return x.getImageData(Math.round(u*c.width),Math.round(v*c.height),1,1).data[3];};
+    return {ok,src:await size(im.src),full:await size(im.full),crop:im.crop,fullCorner:await alphaAt(im.full,.02,.02),fullChanged:im.full!==full};
+  },before.id);
+  assert.ok(cropped.ok&&cropped.fullChanged,'the original loses its background too');
+  assert.equal(cropped.fullCorner,0,"the original backdrop is transparent");
+  assert.deepEqual(cropped.src,[300,400,'image/png'],'the picture is the same crop of the cut-out: '+JSON.stringify(cropped.src));
+  assert.deepEqual(cropped.crop,{l:.25,t:0,r:.75,b:1},'the crop is unchanged');
   assert.deepEqual(errors,[]);
   console.log('background removal: ok');
 }finally{await context.close();server.close();}

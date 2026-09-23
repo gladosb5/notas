@@ -83,6 +83,27 @@ try{
   await page.evaluate(()=>N.core.redo());
   assert.equal((await box()).src,b1.src,'redo crops again');
 
+  // 5b. cropping keeps the original: opening the crop again shows the box
+  //     where it was on the whole picture, and widening it to the edges
+  //     brings the whole picture back
+  const kept=await page.evaluate(id=>{const im=N.core.S.images.find(i=>i.id===id);return {full:im.full,crop:im.crop};},id);
+  assert.equal(kept.full,b0.src,'the original is kept beside the crop');
+  assert.ok(Math.abs(kept.crop.l-.25)<.02&&Math.abs(kept.crop.r-.5)<.02&&kept.crop.t===0&&Math.abs(kept.crop.b-.5)<.02,'the box is kept as fractions of the original');
+  const b1mid=await screen(b1.x+b1.w/2,b1.y+b1.h/2);
+  await page.evaluate(()=>{N.ink.clearSelection();N.ink.setTool('select');});
+  await page.mouse.dblclick(b1mid.x,b1mid.y);
+  const again=await page.evaluate(()=>N.ink.cropping());
+  assert.ok(Math.abs(again.l-.25)<.01&&Math.abs(again.r-.5)<.01&&again.t===0&&Math.abs(again.b-.5)<.01,'a second crop opens on the box it left');
+  assert.ok(Math.abs(again.F.x-b0.x)<2&&Math.abs(again.F.y-b0.y)<2&&Math.abs(again.F.w-b0.w)<2,'with the whole original where it was: '+JSON.stringify(again.F));
+  await drag(await screen(b0.x+b0.w/2,b0.y+b0.h/2),await screen(b0.x+b0.w,b0.y+b0.h));   // se corner out to the corner
+  await drag(await screen(b0.x+b0.w/4,b0.y+b0.h/2),await screen(b0.x,b0.y+b0.h/2));       // west edge (now mid-height) back to the side
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(([id,src])=>N.core.S.images.find(i=>i.id===id).src===src,[id,b0.src]);
+  const whole=await page.evaluate(id=>{const im=N.core.S.images.find(i=>i.id===id);return {x:im.x,y:im.y,w:im.w,h:im.h,full:im.full??null,crop:im.crop??null};},id);
+  assert.ok(Math.abs(whole.x-b0.x)<2&&Math.abs(whole.y-b0.y)<2&&Math.abs(whole.w-b0.w)<2&&Math.abs(whole.h-b0.h)<2&&!whole.full&&!whole.crop,'widening the box to the edges restores the whole picture: '+JSON.stringify(whole));
+  await page.evaluate(()=>N.core.undo());
+  assert.equal((await box()).src,b1.src,'and one undo goes back to the crop');
+
   // 6. a turned picture crops in its own frame, and the kept part stays put:
   //    turned a quarter, its right edge ('e') is at the bottom of what is seen
   await page.evaluate(id=>{const im=N.core.S.images.find(i=>i.id===id);im.rot=Math.PI/2;N.ink.clearSelection();N.ink.setTool('select');N.ink.render();},id);
@@ -92,7 +113,9 @@ try{
   assert.ok(await page.evaluate(()=>!!N.ink.cropping()),'a turned picture opens its crop');
   await drag(await screen(cx,cy+t0.w/2),await screen(cx,cy));
   const tf=await page.evaluate(()=>N.ink.cropping());
-  assert.ok(Math.abs(tf.r-.5)<.02&&tf.l===0&&tf.t===0&&tf.b===1,'the handle moves the side in the picture frame: '+JSON.stringify(tf));
+  // the crop from step 4 is kept (the box is on the whole original now), and
+  // the right side moved half way across it
+  assert.ok(Math.abs(tf.l-.25)<.01&&Math.abs(tf.r-.375)<.02&&tf.t===0&&Math.abs(tf.b-.5)<.01,'the handle moves the side in the picture frame: '+JSON.stringify({l:tf.l,t:tf.t,r:tf.r,b:tf.b}));
   await page.keyboard.press('Enter');
   await page.waitForFunction(([id,src])=>N.core.S.images.find(i=>i.id===id).src!==src,[id,t0.src]);
   const t1=await page.evaluate(id=>{const im=N.core.S.images.find(i=>i.id===id);return {cx:im.x+im.w/2,cy:im.y+im.h/2,w:im.w,h:im.h,rot:im.rot};},id);
@@ -139,6 +162,57 @@ try{
   await touch(tm,[[10,0],[30,0],[60,0],[80,0]],60);   // a real drag
   const moved=await tbox();
   assert.ok(Math.abs(moved.x-at0.x-80/await tp.evaluate(()=>N.core.M.zoom))<3&&moved.y===at0.y,'a real drag still moves the picture: '+JSON.stringify([at0,moved]));
+  // 8. two fingers on a selected picture: spread to twice the size and turn a
+  //    quarter, about the point between them; one undo puts it back
+  const multi=async(a,b,steps)=>{
+    const pt=(p,id)=>({x:p.x,y:p.y,radiusX:12,radiusY:12,force:.5,id});
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[pt(a,1)]});
+    await tp.waitForTimeout(30);
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[pt(a,1),pt(b,2)]});
+    for(const [A,B] of steps){ await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[pt(A,1),pt(B,2)]}); }
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+    await tp.waitForTimeout(60);
+  };
+  // spread from 40px apart to 80px apart while turning a quarter, about the picture's centre
+  const around=(c,r,a)=>[{x:c.x-r*Math.cos(a),y:c.y-r*Math.sin(a)},{x:c.x+r*Math.cos(a),y:c.y+r*Math.sin(a)}];
+  const path=n=>[...Array(n)].map((_,i)=>{const f=(i+1)/n;return around(pc,20+20*f,Math.PI/2*f);});
+  // lower on the page, so doubling it does not reach the paper's top edge
+  await tp.evaluate(id=>{const im=N.core.S.images.find(i=>i.id===id);im.y=320;N.ink.clearSelection();N.ink.setTool('select');N.ink.selectImage(id);},tid);
+  const g0=await tp.evaluate(id=>{const im=N.core.S.images.find(i=>i.id===id);return {x:im.x,y:im.y,w:im.w,h:im.h,rot:im.rot||0};},tid);
+  const pc=await tscreen(g0.x+g0.w/2,g0.y+g0.h/2);
+  const [a0,b0t]=around(pc,20,0);
+  await multi(a0,b0t,path(12));
+  const g1=await tp.evaluate(id=>{const im=N.core.S.images.find(i=>i.id===id);return {x:im.x,y:im.y,w:im.w,h:im.h,rot:im.rot||0};},tid);
+  assert.ok(Math.abs(g1.w-g0.w*2)<3&&Math.abs(g1.rot-Math.PI/2)<.02,'two fingers scale and turn a picture: '+JSON.stringify([g0,g1]));
+  assert.ok(Math.abs(g1.x+g1.w/2-(g0.x+g0.w/2))<3&&Math.abs(g1.y+g1.h/2-(g0.y+g0.h/2))<3,'about the point between the fingers');
+  await tp.evaluate(()=>N.core.undo());
+  const g2=await tp.evaluate(id=>{const im=N.core.S.images.find(i=>i.id===id);return {x:im.x,y:im.y,w:im.w,h:im.h,rot:im.rot||0};},tid);
+  assert.deepEqual(g2,g0,'one undo puts the picture back');
+
+  // 9. two fingers in a crop pinch the box (spread: zoom in) and turn the picture
+  await tp.evaluate(id=>N.ink.startCrop(id),tid);
+  await multi(a0,b0t,[...Array(8)].map((_,i)=>{const f=(i+1)/8;return around(pc,20+20*f,Math.PI/2*f);}));
+  const cz=await tp.evaluate(()=>N.ink.cropping());
+  assert.ok(Math.abs((cz.r-cz.l)-.5)<.03&&Math.abs((cz.b-cz.t)-.5)<.03&&Math.abs(cz.F.rot-Math.PI/2)<.02,'spreading zooms into the crop and twisting turns it: '+JSON.stringify({l:cz.l,r:cz.r,t:cz.t,b:cz.b,rot:cz.F.rot}));
+  await tp.keyboard.press('Enter');
+  await tp.waitForFunction(id=>!!N.core.S.images.find(i=>i.id===id).crop,tid);
+  const cr=await tp.evaluate(id=>{const im=N.core.S.images.find(i=>i.id===id);return {w:im.w,rot:im.rot||0};},tid);
+  assert.ok(Math.abs(cr.w-g0.w/2)<3&&Math.abs(cr.rot-Math.PI/2)<.02,'the pinched, turned crop is kept: '+JSON.stringify(cr));
+
+  // 10. two fingers on lassoed ink scale and turn it too
+  await tp.evaluate(()=>{
+    const S=N.core.S;N.ink.clearSelection();
+    S.strokes.push({id:'ink1',author:'user',pts:[500,200,0,560,200,10,560,240,20],bbox:[500,200,560,240],w:2,color:''});
+    N.ink.setTool('select');N.ink.render();
+  });
+  await tp.evaluate(()=>N.ink.selectAll());
+  const ic=await tscreen(530,220);
+  const [ia,ib]=around(ic,20,0);
+  await multi(ia,ib,[...Array(8)].map((_,i)=>around(ic,20+20*(i+1)/8,0)));
+  const inked=await tp.evaluate(()=>N.core.S.strokes.find(s=>s.id==='ink1').bbox);
+  assert.ok(Math.abs((inked[2]-inked[0])-120)<3&&Math.abs((inked[3]-inked[1])-80)<3,'two fingers scale lassoed ink: '+JSON.stringify(inked));
+  await tp.evaluate(()=>N.core.undo());
+  assert.deepEqual(await tp.evaluate(()=>N.core.S.strokes.find(s=>s.id==='ink1').bbox),[500,200,560,240],'one undo puts the ink back');
   await tctx.close();
   console.log('crop: ok');
 }finally{await browser.close();server.close();}

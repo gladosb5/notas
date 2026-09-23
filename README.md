@@ -228,11 +228,22 @@ gets, and about 20 on the single thread `npm start` gives.
 
 Double-tap a picture (double-click with a mouse) to crop it. A box with a
 handle at each corner and edge appears and the part being cut away is dimmed;
-drag a handle to move that side, or drag inside the box to slide it. **done**,
-Enter or a tap off the picture keeps the box; **cancel** or Escape leaves the
-picture as it was. The kept part is cut from the full-resolution pixels and
-stays where it was on the page, turned pictures included, and one undo brings
-the whole picture back. `node tests/crop.mjs` (`npm run test:crop`) covers it.
+drag a handle to move that side, or drag inside the box to slide it. With two
+fingers, spread to zoom into the crop, pinch to zoom out and twist to turn
+the picture. **done**, Enter or a tap off the picture keeps the box;
+**cancel** or Escape leaves the picture as it was. Cropping keeps the whole
+original beside the crop, so cropping again opens on the whole picture with
+the box where it was left, and widening it takes back what was cut; dragging
+it out to the edges restores the original. The kept part is cut from the
+full-resolution pixels and stays where it was on the page, turned pictures
+included, and one undo reverses a crop. Removing the background of a cropped
+picture removes it from the original too. A double tap tolerates a hand that
+moves a little: a finger only drags a picture once it has clearly moved.
+`node tests/crop.mjs` (`npm run test:crop`) covers it.
+
+With the lasso (select) tool, two fingers that start on a selected picture or
+on lassoed ink move, scale and turn it together, about the point between
+them, as one undo. Two fingers anywhere else pan and zoom the page as before.
 
 ## Using handwriting
 

@@ -75,7 +75,8 @@ function strokeSig(st){
   return c.json;
 }
 function lineAttrs(ln){ const o={}; for(const k in ln){ if(k==='id'||k==='text'||k==='wait'||k[0]==='_')continue; o[k]=ln[k]; } return o; }
-function imageSig(im){ return JSON.stringify({...im,src:undefined})+'|'+(im.src||'').length; }
+/* the pictures themselves by length: a cropped picture carries its original (full) too */
+function imageSig(im){ return JSON.stringify({...im,src:undefined,full:undefined})+'|'+(im.src||'').length+'|'+(im.full||'').length; }
 function editText(ytext,from,to){
   let a=0; while(a<from.length&&a<to.length&&from[a]===to[a])a++;
   let b=0; while(b<from.length-a&&b<to.length-a&&from[from.length-1-b]===to[to.length-1-b])b++;
