@@ -6840,7 +6840,9 @@ async function renderExport(){
   N.mathcore.run();
   const loaded = await loadImages();
   const w = M.colW, h = contentBottom();
-  const scale = Math.min(2, Math.max(1, 2400/Math.max(w,h)));
+  /* iPadOS gives a canvas at most about 16.7 million pixels and hands back
+     nothing past that, so a long note is drawn smaller rather than lost */
+  const scale = Math.min(Math.min(2, Math.max(1, 2400/Math.max(w,h))), Math.sqrt(16e6/(w*h)));
   const cv = document.createElement('canvas');
   cv.width = Math.round(w*scale); cv.height = Math.round(h*scale);
   const x = cv.getContext('2d');
@@ -6900,20 +6902,27 @@ async function exportPNG(){
   try{
     const cv = await renderExport();
     cv.toBlob(b=>{
-      download((S.title||'notas')+'.png', URL.createObjectURL(b));
+      if(!b) return C.toast('could not export that image.');
+      const u = URL.createObjectURL(b);
+      download((S.title||'notas')+'.png', u); setTimeout(()=>URL.revokeObjectURL(u), 60000);
     });
   }catch(e){ C.toast('could not export that image.'); }
 }
 function exportJSON(){
   const blob = new Blob([JSON.stringify(C.serialize(), null, 1)], {type:'application/json'});
-  download((S.title||'notas')+'.notas.json', URL.createObjectURL(blob));
+  const u = URL.createObjectURL(blob);
+  download((S.title||'notas')+'.notas.json', u); setTimeout(()=>URL.revokeObjectURL(u), 60000);
 }
 $('#save-retry').onclick=()=>C.save({announce:true});
 $('#save-export').onclick=()=>exportJSON();
 async function printNote(){
-  const url = (await renderExport()).toDataURL('image/png');
+  /* opened inside the tap, before the drawing is awaited: Safari refuses a
+     window opened after an await as a pop-up */
   const w = window.open('', '_blank');
   if(!w) return C.toast('allow pop-ups to print this note.');
+  let url;
+  try{ url = (await renderExport()).toDataURL('image/png'); }
+  catch(e){ w.close(); return C.toast('could not print this note.'); }
   w.document.write('<title>'+esc(S.title)+'</title><style>body{margin:0}img{width:100%}</style><img src="'+url+'">');
   w.document.close();
   w.onload = ()=>{ w.focus(); w.print(); };
