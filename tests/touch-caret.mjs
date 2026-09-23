@@ -59,6 +59,17 @@ try{
   assert.equal((await caretIs()).text,'hel lo there','typing after the tap lands at the tapped character');
   p=await at(1,4);await page.touchscreen.tap(p.x,p.y);await page.waitForTimeout(400);
   assert.deepEqual(await caretIs(),{text:'second line',start:4,end:4},'a tap in another line moves the caret into it');
+  // Safari may end a tap on text in pointercancel, not pointerup, and snap
+  // the caret late: both still land the caret on the tapped character
+  await page.evaluate(()=>N.text.focusLast());
+  p=await at(0,7);
+  await page.evaluate(({x,y})=>{
+    const t=document.elementFromPoint(x,y),o={pointerType:'touch',clientX:x,clientY:y,bubbles:true,pointerId:7};
+    t.dispatchEvent(new PointerEvent('pointerdown',o));t.dispatchEvent(new PointerEvent('pointercancel',o));
+    setTimeout(()=>{const c=document.querySelectorAll('#lines .line .txt')[0];c.setSelectionRange(c.value.length,c.value.length);},500);
+  },p);
+  await page.waitForTimeout(1300);
+  assert.deepEqual(await caretIs(),{text:'hel lo there',start:7,end:7},'a tap ending in pointercancel with a late snap lands on the tapped character');
   // a double tap's word selection is left alone
   p=await at(1,2);await page.touchscreen.tap(p.x,p.y);
   await page.evaluate(()=>N.text.currentText().setSelectionRange(0,6));await page.waitForTimeout(400);
@@ -68,6 +79,17 @@ try{
   assert.equal((await caretIs()).text,'second line','focus() by script still lands in the line');
   assert.deepEqual(errors,[]);
   await ipad.close();
+
+  // ?tapdebug shows the on-screen log a device without an inspector can screenshot
+  const dbg=await (await browser.newContext({viewport:{width:1180,height:820},hasTouch:true,isMobile:true})).newPage();
+  await dbg.goto(base+'/notas.html?tapdebug');await dbg.waitForFunction(()=>window.N&&N.text);
+  await dbg.evaluate(()=>{const s=[...document.querySelectorAll('.tut button')].find(b=>b.textContent.trim()==='skip');if(s)s.click();N.text.focusLast();});
+  await dbg.keyboard.type('abc');
+  const box=await dbg.evaluate(()=>{const t=document.querySelector('#lines .line .txt'),r=document.createRange();r.setStart(t.firstChild,1);r.setEnd(t.firstChild,1);const c=r.getBoundingClientRect();return {x:c.left+1,y:c.top+c.height/2};});
+  await dbg.touchscreen.tap(box.x,box.y);await dbg.waitForTimeout(300);
+  const log=await dbg.evaluate(()=>[...document.querySelectorAll('pre')].map(p=>p.textContent).join(' | '));
+  assert.ok(/pointerdown touch/.test(log)&&/want 1/.test(log),'?tapdebug logs the tap: '+log);
+  await dbg.context().close();
 
   // a mouse: unchanged, the native caret stays hidden even over a range
   const desk=await browser.newContext({viewport:{width:1180,height:820}});

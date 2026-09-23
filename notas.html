@@ -4049,34 +4049,69 @@ layer.addEventListener('pointerdown', ()=>{ pressed = Date.now(); }, true);
    placement lands just after the finger lifts). A double tap (a word
    selected), a long press, a drag and a mouse are left to the browser. */
 let tapAt = null, tapWant = null;
+/* ?tapdebug shows what the tap handling sees, for a device that cannot be
+   inspected: the pointer and touch events, each selection change and what
+   was done about it */
+const tapLog = /[?&]tapdebug\b/.test(location.search) ? (()=>{
+  const box = document.createElement('pre');
+  box.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:99999;max-width:92vw;max-height:40vh;overflow:hidden;margin:0;padding:6px 8px;font:11px/1.35 ui-monospace,monospace;background:rgba(0,0,0,.78);color:#fff;border-radius:6px;pointer-events:none;white-space:pre-wrap';
+  document.body.appendChild(box);
+  const rows = [], t0 = Date.now();
+  return msg=>{ rows.push(((Date.now()-t0)/1000).toFixed(2)+' '+msg); if(rows.length>18) rows.shift(); box.textContent = rows.join('\n'); };
+})() : null;
 function caretFromPoint(x, y){
-  if(document.caretPositionFromPoint){ const p = document.caretPositionFromPoint(x, y); return p ? {node:p.offsetNode, off:p.offset} : null; }
-  if(document.caretRangeFromPoint){ const r = document.caretRangeFromPoint(x, y); return r ? {node:r.startContainer, off:r.startOffset} : null; }
+  if(document.caretPositionFromPoint){ const p = document.caretPositionFromPoint(x, y); if(p) return {node:p.offsetNode, off:p.offset}; }
+  if(document.caretRangeFromPoint){ const r = document.caretRangeFromPoint(x, y); if(r) return {node:r.startContainer, off:r.startOffset}; }
   return null;
 }
-function holdTap(){
+/* the caret straight into the line's text node: placeSel rewrites the node
+   first, and a node replaced under iOS while it settles its own caret made
+   it place that caret again */
+function caretTo(el, off){
+  const sel = document.getSelection(), t = el.firstChild;
+  if(sel && t && t.nodeType === 3 && el.childNodes.length === 1) sel.setBaseAndExtent(t, Math.min(off, t.length), t, Math.min(off, t.length));
+  else placeSel(el, off, off);
+}
+function holdTap(why){
   const w = tapWant; if(!w) return;
   if(Date.now() > w.until || !w.el.isConnected){ tapWant = null; return; }
   const sel = document.getSelection();
-  if(sel && !sel.isCollapsed){ tapWant = null; return; }   /* a word or range was selected: leave it */
+  if(sel && !sel.isCollapsed){ tapWant = null; tapLog && tapLog('range selected: left alone'); return; }   /* a word or range was selected: leave it */
   const x = selIn(w.el);
-  if(!x || x[0] !== w.off || x[1] !== w.off){ if(!inHost()) root.focus({preventScroll:true}); placeSel(w.el, w.off, w.off); setCurrent(w.el.dataset.id); }
+  if(!x || x[0] !== w.off || x[1] !== w.off){
+    if(!inHost()) root.focus({preventScroll:true});
+    caretTo(w.el, w.off); setCurrent(w.el.dataset.id);
+    tapLog && tapLog('hold '+why+': caret '+(x?x[0]:'-')+' -> '+w.off);
+  }
+}
+/* A tap ends in pointerup, or in pointercancel when iOS takes the touch for
+   its own text handling, and always in touchend: whichever comes first is
+   the tap, measured where the finger landed. */
+function endTap(x, y, how){
+  const a = tapAt; tapAt = null;
+  if(!a) return;
+  if(Date.now() - a.t > 350 || Math.hypot(x - a.x, y - a.y) > 10){ tapLog && tapLog(how+': not a tap'); return; }
+  const hit = document.elementFromPoint(a.x, a.y), el = hit && hit.closest && hit.closest('.txt');
+  if(!el || !root.contains(el)){ tapLog && tapLog(how+': not on a line'); return; }
+  const p = caretFromPoint(a.x, a.y);
+  if(!p || !el.contains(p.node)){ tapLog && tapLog(how+': no caret point'); return; }
+  tapWant = {el, off:Math.min(offsetIn(el, p.node, p.off), el.value.length), until:Date.now() + 1200};
+  tapLog && tapLog(how+': want '+tapWant.off+' in "'+el.value.slice(0,24)+'"');
+  holdTap('now');
+  for(const ms of [0, 60, 250, 400, 600, 900]) setTimeout(()=>holdTap(ms+'ms'), ms);
 }
 layer.addEventListener('pointerdown', e=>{
   tapWant = null;
   tapAt = (e.pointerType === 'touch' || e.pointerType === 'pen') ? {x:e.clientX, y:e.clientY, t:Date.now()} : null;
+  tapLog && tapLog('pointerdown '+e.pointerType+' '+(e.target.className||e.target.id));
 }, true);
-layer.addEventListener('pointerup', e=>{
-  const a = tapAt; tapAt = null;
-  if(!a || Date.now() - a.t > 350 || Math.hypot(e.clientX - a.x, e.clientY - a.y) > 10) return;
-  const el = e.target && e.target.closest && e.target.closest('.txt');
-  if(!el || !root.contains(el)) return;
-  const p = caretFromPoint(e.clientX, e.clientY);
-  if(!p || !el.contains(p.node)) return;
-  tapWant = {el, off:Math.min(offsetIn(el, p.node, p.off), el.value.length), until:Date.now() + 800};
-  holdTap(); setTimeout(holdTap, 0); setTimeout(holdTap, 60); setTimeout(holdTap, 250);
-}, true);
-document.addEventListener('selectionchange', ()=>{ if(tapWant) holdTap(); });
+layer.addEventListener('pointerup', e=>endTap(e.clientX, e.clientY, 'pointerup'), true);
+layer.addEventListener('pointercancel', e=>{ tapLog && tapLog('pointercancel'); const a = tapAt; if(a) endTap(a.x, a.y, 'pointercancel'); }, true);
+layer.addEventListener('touchend', e=>{ const t = e.changedTouches && e.changedTouches[0]; if(t) endTap(t.clientX, t.clientY, 'touchend'); }, {capture:true, passive:true});
+document.addEventListener('selectionchange', ()=>{
+  if(tapLog){ const c = currentText(); tapLog('selectionchange '+(c ? c.selectionStart+'-'+c.selectionEnd : 'none')); }
+  if(tapWant) holdTap('selectionchange');
+});
 root.addEventListener('input', ()=>{ tapWant = null; });
 root.addEventListener('focusin', e=>{
   const t = e.target;
