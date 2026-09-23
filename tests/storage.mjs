@@ -56,6 +56,25 @@ try{
     C.Store.set=originalSet;
     const overlap={stored:(await C.Store.get('notas.note.'+S.id)).title,dirty:S.dirty};
 
+    /* another note trashed while this note's save is rewriting the list of
+       notes stays trashed: the save does not write back the list it read */
+    const originalPut=C.Store.putIndex;
+    let releaseIndex,indexHeld;
+    const indexWaiting=new Promise(r=>indexHeld=r);
+    C.Store.putIndex=async ix=>{
+      if(releaseIndex===undefined){indexHeld(); await new Promise(r=>releaseIndex=r);}
+      return originalPut.call(C.Store,ix);
+    };
+    S.title='Index race'; C.markDirty();
+    const racingSave=C.save();
+    await indexWaiting;
+    const trashing=C.patchIndexRows([first],()=>({trashed:1}));
+    await new Promise(r=>setTimeout(r,150));
+    releaseIndex(); await racingSave; await trashing;
+    C.Store.putIndex=originalPut;
+    const indexRace=!!(await C.Store.index()).find(r=>r.id===first)?.trashed;
+    await C.patchIndexRows([first],()=>({trashed:undefined}));
+
     C.Store.set=async()=>false;
     S.title='Unsaved'; C.markDirty();
     await N.ui.newNote();
@@ -71,11 +90,12 @@ try{
     const fallback=await C.Store.get('storage-regression');
     await C.Store.del('storage-regression');
     const deleted=await C.Store.get('storage-regression');
-    return {switched,delayed,overlap,failed,first,second,saved,fallback,deleted};
+    return {switched,delayed,overlap,indexRace,failed,first,second,saved,fallback,deleted};
   });
   assert.deepEqual(result.switched,{first:'Saved before new',second:'Saved before open'});
   assert.equal(result.delayed.row.title,'Snapshot title');
   assert.equal(result.delayed.dirty,true);
+  assert.equal(result.indexRace,true,'A note trashed during the save of another stays trashed');
   assert.deepEqual(result.overlap,{stored:'Overlap two',dirty:false},'An edit made during a save is written by the next save');
   assert.deepEqual(result.failed,{id:result.second,title:'Unsaved',dirty:true});
   assert.equal(result.saved,true);

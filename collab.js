@@ -384,8 +384,11 @@ async function keepCopy(id){
     const copy={...doc,id:copyId,title:C.displayTitle(doc.title,doc.lines)+' (my copy)',created:now,updated:now,rev:1};
     if(!await C.Store.set('notas.note.'+copyId,copy))return null;
     const first=(doc.lines||[]).slice().sort((a,b)=>a.y-b.y).find(l=>l.text&&l.text.trim());
-    const ix=await C.Store.index(); ix.unshift({id:copyId,title:copy.title,updated:now,preview:first?first.text.trim().replace(/\s+/g,' ').slice(0,60):''});
-    if(!await C.Store.putIndex(ix)){ await C.Store.del('notas.note.'+copyId); return null; }
+    const listed=await C.withIndexLock(async()=>{
+      const ix=await C.Store.index(); ix.unshift({id:copyId,title:copy.title,updated:now,preview:first?first.text.trim().replace(/\s+/g,' ').slice(0,60):''});
+      return C.Store.putIndex(ix);
+    });
+    if(!listed){ await C.Store.del('notas.note.'+copyId); return null; }
     return copyId;
   }catch(e){ return null; }
 }

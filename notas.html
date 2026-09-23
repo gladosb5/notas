@@ -1680,15 +1680,24 @@ function withNoteLock(id, fn){
     ? locks.request('notas-note-'+id,{mode:'exclusive'},fn)
     : withIdbNoteLock(id,fn);
 }
+/* The list of notes is one stored value that every note's save, rename,
+   move, copy and delete rewrites. A note's lock kept two edits of one row
+   apart but not edits of two rows: an autosave of one note could write back
+   the list it read before another note was trashed or imported, and the
+   change was lost. Every read-and-rewrite of it holds this lock too, always
+   taken inside a note's lock and never the other way round. */
+function withIndexLock(fn){ return withNoteLock(':index', fn); }
 async function deleteStoredNote(id){
   return withNoteLock(id,async()=>{
     const key='notas.note.'+id,current=await Store.get(key);
     if(!current)return true;
-    const ix=await Store.index(),next=ix.filter(r=>r.id!==id);
-    if(!await Store.del(key))return false;
-    if(!await Store.putIndex(next)){
-      await Store.set(key,current);return false;
-    }
+    const gone=await withIndexLock(async()=>{
+      const ix=await Store.index(),next=ix.filter(r=>r.id!==id);
+      if(!await Store.del(key))return false;
+      if(!await Store.putIndex(next)){ await Store.set(key,current); return false; }
+      return true;
+    });
+    if(!gone)return false;
     await Store.del('notas.thumb.'+id);
     sync?.postMessage({id,deleted:true,rev:(current.rev||0)+1});
     return true;
@@ -1700,14 +1709,14 @@ async function deleteStoredNote(id){
 async function patchIndexRows(ids, patch){
   let ok = true;
   for(const id of ids){
-    ok = await withNoteLock(id, async()=>{
+    ok = await withNoteLock(id, ()=>withIndexLock(async()=>{
       const ix = await Store.index(), at = ix.findIndex(r=>r.id===id);
       if(at<0) return true;
       const next = {...ix[at], ...patch(ix[at])};
       for(const k of Object.keys(next)) if(next[k]===undefined) delete next[k];
       ix[at] = next;
       return await Store.putIndex(ix);
-    }) && ok;
+    })) && ok;
   }
   sync?.postMessage({index:true});
   return ok;
@@ -1781,10 +1790,12 @@ async function save(opts){
         const conflictId=uid();
         const conflict={...doc,id:conflictId,title:(doc.title||'untitled')+(deletedElsewhere?' (recovered copy)':' (conflict copy)'),created:Date.now(),updated:Date.now(),rev:1};
         if(!await Store.set('notas.note.'+conflictId, conflict)) throw new Error('Conflict copy write failed');
-        const cix=await Store.index();
-        const was=cix.find(r=>r.id===doc.id);
-        cix.unshift({id:conflictId,title:conflict.title,updated:conflict.updated,created:conflict.created,preview:firstLine(conflict.lines),...(was&&was.folder?{folder:was.folder}:{})});
-        if(!await Store.putIndex(cix)) throw new Error('Conflict index write failed');
+        await withIndexLock(async()=>{
+          const cix=await Store.index();
+          const was=cix.find(r=>r.id===doc.id);
+          cix.unshift({id:conflictId,title:conflict.title,updated:conflict.updated,created:conflict.created,preview:firstLine(conflict.lines),...(was&&was.folder?{folder:was.folder}:{})});
+          if(!await Store.putIndex(cix)) throw new Error('Conflict index write failed');
+        });
         locallyWrittenRevs.set(conflictId,{rev:1,revision:savedRevision});
         if(S.id===doc.id && revision===savedRevision){
           S.id=conflictId; S.title=conflict.title; S.savedRev=1; S.remoteRev=0; S.dirty=false;
@@ -1797,17 +1808,19 @@ async function save(opts){
       doc.rev=Math.max(expectedRev,doc.rev||0)+1;
       if(!await Store.set('notas.note.'+doc.id, doc)) throw new Error('Note write failed');
       locallyWrittenRevs.set(doc.id,{rev:doc.rev,revision:savedRevision});
-      const ix = await Store.index();
-      const row = { id:doc.id, title:doc.title, updated:doc.updated, created:doc.created, preview:firstLine(doc.lines) };
-      const at = ix.findIndex(r=>r.id===doc.id);
-      /* the library's own fields (folder, pinned, trashed) belong to the row,
-         not to the note, so a save carries them over rather than dropping them */
-      if(at<0){
-        /* a note started from inside a folder is filed there on its first save */
-        if(S.newFolder && S.newFolder.id===doc.id && S.newFolder.folder) row.folder = S.newFolder.folder;
-        ix.unshift(row);
-      } else ix[at] = {...ix[at], ...row};
-      if(!await Store.putIndex(ix)) throw new Error('Index write failed');
+      await withIndexLock(async()=>{
+        const ix = await Store.index();
+        const row = { id:doc.id, title:doc.title, updated:doc.updated, created:doc.created, preview:firstLine(doc.lines) };
+        const at = ix.findIndex(r=>r.id===doc.id);
+        /* the library's own fields (folder, pinned, trashed) belong to the row,
+           not to the note, so a save carries them over rather than dropping them */
+        if(at<0){
+          /* a note started from inside a folder is filed there on its first save */
+          if(S.newFolder && S.newFolder.id===doc.id && S.newFolder.folder) row.folder = S.newFolder.folder;
+          ix.unshift(row);
+        } else ix[at] = {...ix[at], ...row};
+        if(!await Store.putIndex(ix)) throw new Error('Index write failed');
+      });
       askPersistence();
       /* Autosave is silent. "Saved" flashing in the corner after every stroke
          was constant blinking while writing; it is only said when the student
@@ -2110,7 +2123,7 @@ function anonId(){
 applyPrefs();
 N.core = { S, M, Store, uid, clamp, $, layout, growDoc, setZoom, firstLine, displayTitle, whenLabel, ZOOM_MIN, ZOOM_MAX, markDirty, save, serialize,
            act, undo, redo, Undo, paintUndo, typed, toast, status, anonId, LINE_H, CONTENT_MAX, strokeById, reducedMotion, smoothWheel, glideTarget,
-           FEEDBACK_URL, savePrefs, applyPrefs, setActive, getActive, saveView, getView, flushView, setSaveError, clearSaveError, withNoteLock, deleteStoredNote, patchIndexRows, isBlank, swipeAway };
+           FEEDBACK_URL, savePrefs, applyPrefs, setActive, getActive, saveView, getView, flushView, setSaveError, clearSaveError, withNoteLock, withIndexLock, deleteStoredNote, patchIndexRows, isBlank, swipeAway };
 })();
 </script>
 
@@ -8305,8 +8318,10 @@ async function rename(id, name){
       const doc = await C.Store.get('notas.note.'+id); if(!doc) return false;
       doc.title = name; doc.rev = (doc.rev||0) + 1;
       if(!await C.Store.set('notas.note.'+id, doc)) return false;
-      const ix = await C.Store.index(), at = ix.findIndex(r=>r.id===id);
-      if(at >= 0){ ix[at] = {...ix[at], title:name}; await C.Store.putIndex(ix); }
+      await C.withIndexLock(async()=>{
+        const ix = await C.Store.index(), at = ix.findIndex(r=>r.id===id);
+        if(at >= 0){ ix[at] = {...ix[at], title:name}; await C.Store.putIndex(ix); }
+      });
       chan && chan.postMessage({id, rev:doc.rev});
       return true;
     });
@@ -8346,10 +8361,12 @@ async function duplicate(id){
   const copy = {...JSON.parse(JSON.stringify(doc)), id:nid, title:C.displayTitle(doc.title, doc.lines)+' copy', created:now, updated:now, rev:1};
   const ok = await C.withNoteLock(nid, async()=>{
     if(!await C.Store.set('notas.note.'+nid, copy)) return false;
-    const ix = await C.Store.index(), at = ix.findIndex(r=>r.id===id);
-    const fresh = {id:nid, title:copy.title, updated:now, created:now, preview:C.firstLine(copy.lines), ...(row && row.folder ? {folder:row.folder} : {})};
-    ix.splice(at < 0 ? 0 : at, 0, fresh);
-    return await C.Store.putIndex(ix);
+    return await C.withIndexLock(async()=>{
+      const ix = await C.Store.index(), at = ix.findIndex(r=>r.id===id);
+      const fresh = {id:nid, title:copy.title, updated:now, created:now, preview:C.firstLine(copy.lines), ...(row && row.folder ? {folder:row.folder} : {})};
+      ix.splice(at < 0 ? 0 : at, 0, fresh);
+      return await C.Store.putIndex(ix);
+    });
   });
   if(!ok) return C.toast('could not copy that note.');
   const t = await thumbOf(id); if(t) await storeThumb(nid, {...t, at:now});
@@ -8413,8 +8430,7 @@ async function importBundle(raw, intoFolder){
     }catch(e){ bad++; }
   }
   if(rows.length){
-    const ix = await C.Store.index();
-    await C.Store.putIndex([...rows, ...ix]);
+    await C.withIndexLock(async()=>{ const ix = await C.Store.index(); await C.Store.putIndex([...rows, ...ix]); });
     if(folders.size) await saveFolders([...(await C.Store.get('notas.folders')||[]), ...folders]);
     broadcast();
   }
