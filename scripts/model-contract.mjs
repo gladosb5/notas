@@ -15,7 +15,9 @@ const contract={};
 // each production worker to request the actual content hash it is stamped with.
 for(const [worker,files] of Object.entries({
   'ink-worker.js':['assets/ink/encoder.onnx','assets/ink/decoder_step.onnx','assets/ink/vocab.json',...runtime],
-  'text-worker.js':['assets/text/ppocrv6-small.onnx','assets/text/ppocrv6_dict.txt',...runtime]
+  'text-worker.js':['assets/text/ppocrv6-small.onnx','assets/text/ppocrv6_dict.txt',...runtime],
+  // the service worker precaches the same URLs, so it must name the same hashes
+  'sw.js':['assets/text/ppocrv6-small.onnx','assets/text/ppocrv6_dict.txt',...runtime]
 })){
   const source=readFileSync(worker,'utf8');
   for(const file of files){

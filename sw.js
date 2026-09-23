@@ -1,5 +1,5 @@
 'use strict';
-const CACHE='notas-local-v92';
+const CACHE='notas-local-v93';
 const RECOGNITION_ASSET=/\/assets\/(?:text|smart|ink)\//;
 const INK_MODEL=/\/assets\/ink\/[^?]*\.onnx$/;
 const SHELL=['./notas.html','./model-contract.js','./local-recognition.js','./ink-worker.js','./ink-features.js','./model-store.js','./text-worker.js','./bg-worker.js',
@@ -7,6 +7,11 @@ const SHELL=['./notas.html','./model-contract.js','./local-recognition.js','./in
   // install so a newly activated build cannot pair fresh worker code with stale
   // weights, and text recognition still works on the first offline reopen.
   './assets/text/ppocrv6-small.onnx?v=5435fd74','./assets/text/ppocrv6_dict.txt?v=b5f2bfe2','./assets/ink/HAND-TO-TEX-LICENSE.txt',
+  // The ONNX runtime both readers load. Left to the lazy cache below it was
+  // never stored on a first visit, whose workers start before this worker
+  // controls the page, so "available offline" came with neither reader
+  // able to start offline. scripts/model-contract.mjs checks these hashes.
+  './assets/smart/ort.wasm.min.js?v=4043d2de','./assets/smart/ort-wasm-simd-threaded.js?v=5687566b','./assets/smart/ort-wasm-simd-threaded.wasm?v=be0e1299',
   './local-math-help.js','./nota.js','./collab.js','./manifest.webmanifest','./asset-manifest.json',
   './assets/icon-16.png','./assets/icon-32.png','./assets/icon-192.png','./assets/icon-512.png',
   './assets/icon-maskable-512.png','./assets/apple-touch-icon.png',
