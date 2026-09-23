@@ -209,6 +209,20 @@ pasted worksheet can be written on. **manage images** does the same without
 dragging. One undo removes
 a pasted image.
 
+**remove background** sits beside **delete** on a selected picture, whether
+it was tapped or taken with a lasso drawn round it. It keeps the subject and
+makes everything else transparent, at the picture's own size, and one undo
+brings the original back. It runs on the device with BiRefNet lite
+(`studioludens/birefnet-lite-512`, MIT, a 512x512 re-export of
+ZhengPeng7/BiRefNet_lite) in `bg-worker.js`. The model is about 94 MB, more
+than the site can serve as one file, so the first use downloads it from
+Hugging Face at a pinned revision, checks it against its SHA-256 and keeps it
+in the model store; after that it works offline. It needs about 2 GB of memory
+while it runs, so the worker is let go a minute after the last picture. A
+picture takes a few seconds with the threads a cross-origin isolated site
+gets, and about 20 on the single thread `npm start` gives.
+`node tests/background.mjs` (`npm run test:background`) drives it end to end.
+
 ## Using handwriting
 
 Write a short maths expression, end it with `=`, and pause. Readings that pass the stroke acceptance check calculate automatically. Other readings appear beside **solve**, so you can check or correct the expression before calculating it. Image-model readings and names repaired by the text model require an explicit Solve.
@@ -259,7 +273,7 @@ Both recognisers run in workers on this device: Hand-to-TeX for pen strokes and 
 
 ## Licensing
 
-The stroke model is Hand-to-TeX's `htt-mini`, **MIT** (`assets/ink/HAND-TO-TEX-LICENSE.txt`; provenance and hashes in `experiments/hand-to-tex/model-metadata.json`). The ONNX Runtime Web build the workers share is MIT (`assets/smart/NOTICE.md`). The former Smart model's AGPL-3.0 and CROHME obligations no longer apply to the shipped app; they remain recorded with the experiment under `experiments/onnx-seq2seq/NOTICE.md`.
+The stroke model is Hand-to-TeX's `htt-mini`, **MIT** (`assets/ink/HAND-TO-TEX-LICENSE.txt`; provenance and hashes in `experiments/hand-to-tex/model-metadata.json`). The ONNX Runtime Web build the workers share is MIT (`assets/smart/NOTICE.md`). The former Smart model's AGPL-3.0 and CROHME obligations no longer apply to the shipped app; they remain recorded with the experiment under `experiments/onnx-seq2seq/NOTICE.md`. The background remover is BiRefNet lite, **MIT**, fetched from `huggingface.co/studioludens/birefnet-lite-512` rather than shipped.
 
 The PP-OCRv6-small handwriting-search model comes from PaddleOCR and is distributed under the Apache-2.0 license. Its provenance is recorded in `assets/text/NOTICE.md`.
 

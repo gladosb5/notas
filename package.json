@@ -12,6 +12,7 @@
     "quality:99": "node scripts/quality-gate.mjs",
     "assets": "node scripts/prepare-assets.mjs",
     "test:collab": "node tests/collab.mjs",
+    "test:background": "node tests/background.mjs",
     "test:collab-usage": "node --test tests/collab-usage.test.mjs",
     "build:collab": "node scripts/build-collab.mjs"
   },

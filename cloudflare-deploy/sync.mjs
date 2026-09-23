@@ -15,7 +15,7 @@ const root=path.resolve(here,'..');
 const out=path.join(here,'public');
 
 const SHELL=['notas.html','sw.js','model-contract.js','local-recognition.js','ink-worker.js',
-  'ink-features.js','model-store.js','text-worker.js','local-math-help.js','nota.js','manifest.webmanifest','asset-manifest.json',
+  'ink-features.js','model-store.js','text-worker.js','bg-worker.js','local-math-help.js','nota.js','manifest.webmanifest','asset-manifest.json',
   'assets/icon-16.png','assets/icon-32.png','assets/icon-192.png','assets/icon-512.png',
   'assets/icon-maskable-512.png','assets/apple-touch-icon.png','assets/logo.png'];
 const MODEL_DIRS=['assets/smart','assets/ink','assets/text'];
@@ -27,7 +27,7 @@ for(const dir of MODEL_DIRS)for(const name of await readdir(path.join(root,dir))
 
 // sw.js caches only these, but the page and workers are scanned too so a
 // new reference cannot ship without its file.
-const sources=await Promise.all(['notas.html','sw.js','local-recognition.js','ink-worker.js','text-worker.js','nota.js']
+const sources=await Promise.all(['notas.html','sw.js','local-recognition.js','ink-worker.js','text-worker.js','bg-worker.js','nota.js']
   .map(f=>readFile(path.join(root,f),'utf8')));
 for(const m of sources.join('\n').matchAll(/['"]\.\/((?:assets\/)?[\w./-]+\.(?:js|css|json|png|woff2|ttf|txt|onnx|wasm|webmanifest))['"]/g))wanted.add(m[1]);
 
@@ -47,7 +47,7 @@ for(const rel of [...wanted].sort()){
 // picked up; the model files are content-addressed (?v=<hash>) so they
 // may be cached for good.
 const noCache=['/','/notas.html','/sw.js','/model-contract.js','/asset-manifest.json','/manifest.webmanifest',
-  '/local-recognition.js','/ink-worker.js','/ink-features.js','/model-store.js','/text-worker.js','/local-math-help.js','/nota.js'];
+  '/local-recognition.js','/ink-worker.js','/ink-features.js','/model-store.js','/text-worker.js','/bg-worker.js','/local-math-help.js','/nota.js'];
 const onnx=[...wanted].filter(f=>f.endsWith('.onnx')).map(f=>'/'+f);
 const headers=[
   '/*','  Cross-Origin-Opener-Policy: same-origin','  Cross-Origin-Embedder-Policy: require-corp','  X-Content-Type-Options: nosniff',

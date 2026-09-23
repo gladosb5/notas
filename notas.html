@@ -2198,8 +2198,14 @@ function drawImages(ctx){
     if(!visible([im.x, im.y, im.x+im.w, im.y+im.h])) continue;
     let el = imgCache.get(im.id);
     if(!el){
-      el = new Image(); el.onload = ()=>render(); el.src = im.src;
+      el = new Image(); el._src = im.src; el.onload = ()=>render(); el.src = im.src;
       imgCache.set(im.id, el);
+    }else if(el._src !== im.src && (!el._next || el._next._src !== im.src)){
+      /* a new picture under the same id (its background removed, or that
+         undone): the old one stays on the page until the new one has loaded */
+      const next = new Image(); next._src = im.src;
+      next.onload = ()=>{ if(imgCache.get(im.id) === el) imgCache.set(im.id, next); render(); };
+      next.src = im.src; el._next = next;
     }
     if(el.complete && el.naturalWidth){
       const sh=peerShift.get(im.id);
@@ -2816,6 +2822,97 @@ function deleteImage(id){
   C.act('delete image',()=>{S.images=S.images.filter(i=>i.id!==id);},()=>{S.images.splice(Math.max(0,at),0,gone);});
   if(S.imageSelection===id)clearSelection();after();return true;
 }
+/* ---- background removal ---- */
+/* bg-worker.js holds a 94 MB model and needs about 2 GB while it runs, so it
+   is let go a minute after the last picture rather than kept all session. The
+   model itself stays in the model store, so the next use only restarts it. */
+const CUTOUT_SIZE=512, CUTOUT_IDLE=60000, CUTOUT_MAX_CHARS=8*1024*1024;  /* IMAGE_MAX_CHARS */
+let cutoutWorker=null, cutoutIdle=0, cutoutSeq=0, cutoutBusy=false;
+function cutoutRun(rgba){
+  clearTimeout(cutoutIdle);
+  if(!cutoutWorker) cutoutWorker=new Worker('./bg-worker.js');
+  const w=cutoutWorker, id=++cutoutSeq;
+  let told=false;
+  return new Promise((resolve,reject)=>{
+    w.onmessage=e=>{
+      const d=e.data||{}; if(d.id!==id) return;
+      if(d.progress){
+        if(d.phase==='download'){
+          N.downloads&&N.downloads.set('cutout','download','',null,d.loaded,d.total);
+          if(!told){ told=true; C.toast('downloading the background remover, about 94 MB. this happens once.', 600000); }
+        }else if(d.phase==='running'){
+          N.downloads&&N.downloads.set('cutout','ready');
+          if(told) C.toast('removing the background.', 600000);
+        }
+        return;
+      }
+      if(d.error) reject(new Error(d.error)); else resolve(d.alpha);
+    };
+    w.onerror=e=>{
+      if(e&&e.preventDefault) e.preventDefault();
+      if(cutoutWorker===w) cutoutWorker=null;
+      w.terminate();
+      reject(new Error('the background remover stopped. this device may be short of memory.'));
+    };
+    w.postMessage({id,rgba:rgba.buffer},[rgba.buffer]);
+  }).finally(()=>{
+    cutoutIdle=setTimeout(()=>{ if(cutoutWorker===w){ w.terminate(); cutoutWorker=null; } },CUTOUT_IDLE);
+  });
+}
+/* The picture with the matte as its alpha, at full size, as a PNG. Like a
+   pasted picture it shrinks until the data URL fits the note. */
+function cutoutEncode(el,mask){
+  const W=el.naturalWidth, H=el.naturalHeight, big=Math.max(W,H);
+  let side=big;
+  for(;;){
+    const k=side/big, cw=Math.max(1,Math.round(W*k)), ch=Math.max(1,Math.round(H*k));
+    const cv=document.createElement('canvas'); cv.width=cw; cv.height=ch;
+    const x=cv.getContext('2d');
+    x.imageSmoothingQuality='high';
+    x.drawImage(el,0,0,cw,ch);
+    x.globalCompositeOperation='destination-in';
+    x.drawImage(mask,0,0,cw,ch);
+    const src=cv.toDataURL('image/png');
+    if(typeof src==='string'&&src.length<=CUTOUT_MAX_CHARS&&src.length>'data:,'.length) return src;
+    if(side<=200) throw new Error('that picture is too large to keep without its background.');
+    side=Math.max(200,Math.round(side*.7));
+  }
+}
+async function removeBackground(id){
+  const im=S.images.find(i=>i.id===id); if(!im) return false;
+  if(cutoutBusy){ C.toast('still removing a background.'); return false; }
+  cutoutBusy=true;
+  const note=S.id, before=im.src;
+  C.toast('removing the background.', 600000);
+  try{
+    const el=await new Promise((resolve,reject)=>{
+      const img=new Image();
+      img.onload=()=>img.naturalWidth?resolve(img):reject(new Error('that picture is empty.'));
+      img.onerror=()=>reject(new Error('that picture could not be opened.'));
+      img.src=before;
+    });
+    const n=CUTOUT_SIZE, small=document.createElement('canvas'); small.width=small.height=n;
+    const sx=small.getContext('2d',{willReadFrequently:true});
+    sx.imageSmoothingQuality='high'; sx.drawImage(el,0,0,n,n);
+    const alpha=await cutoutRun(sx.getImageData(0,0,n,n).data);
+    const mask=sx.createImageData(n,n);
+    for(let i=0;i<alpha.length;i++) mask.data[i*4+3]=alpha[i];
+    sx.putImageData(mask,0,0);
+    const src=cutoutEncode(el,small);
+    /* the note, or the picture, may have changed during the few seconds */
+    const live=S.images.find(i=>i.id===id);
+    if(note!==S.id||!live||live.src!==before){ C.toast('that picture changed, so its background was left.'); return false; }
+    const set=s=>{ const x=S.images.find(i=>i.id===id); if(x) x.src=s; };
+    C.act('remove background',()=>set(src),()=>set(before));
+    after(); showSelBar();
+    C.toast('background removed.');
+    return true;
+  }catch(e){
+    N.downloads&&N.downloads.set('cutout','error');
+    C.toast(e.message||'could not remove the background.');
+    return false;
+  }finally{ cutoutBusy=false; }
+}
 /* ---- ink clipboard ---- */
 /* Copied ink lives in localStorage, not on the system clipboard. A tablet has
    to be asked before a page may read the clipboard, and the clipboard can only
@@ -2926,6 +3023,7 @@ function showSelBar(){
       /* moving, sizing and turning are done on the picture itself, by its
          frame; the bar keeps only what the frame cannot do */
       if(turned) mk('straighten',()=>straightenImage(S.imageSelection));
+      mk('remove background',()=>removeBackground(S.imageSelection));
       mk('delete',()=>deleteImage(S.imageSelection));
     }else{
       mk('solve this', ()=>{ N.recog && N.recog.solveSelection(); });
@@ -3433,6 +3531,15 @@ function endPointer(ev){
       S.imageSelection=null;
       S.selection = S.strokes.filter(s=>(s.author==='user' || s.author==='ai') &&
         pointInPoly((s.bbox[0]+s.bbox[2])/2, (s.bbox[1]+s.bbox[3])/2, poly)).map(s=>s.id);
+      /* a loop round a picture and no ink selects the picture (the topmost
+         one whose centre it encloses), with its own bar: remove background,
+         delete. Ink and a picture are never one selection. */
+      if(!S.selection.length){
+        for(let i=S.images.length-1;i>=0;i--){
+          const im=S.images[i];
+          if(pointInPoly(im.x+im.w/2, im.y+im.h/2, poly)){ S.imageSelection=im.id; break; }
+        }
+      }
       showSelBar();
     }
     render(); return;
@@ -3573,7 +3680,7 @@ pill.addEventListener('wheel', ev=>{
 pill.addEventListener('keydown', ev=>{ if(ev.key === 'Escape' && pillOpen()){ setPillOpen(false); moreBtn.focus(); } });
 
 N.ink = { render, renderAI, resize, setTool, setPen, pen, setPillOpen, setPenPop, toWorld, viewOrigin, bboxOf, hitStroke, drawStroke,
-          clearSelection, showSelBar, inkColor, colors, refreshColors, isTyping, after, flush, selectImage, nudgeImage, resizeImage, deleteImage, straightenImage, frameOf, frameHandles,
+          clearSelection, showSelBar, inkColor, colors, refreshColors, isTyping, after, flush, selectImage, nudgeImage, resizeImage, deleteImage, straightenImage, removeBackground, frameOf, frameHandles,
           copySelection, duplicateSelection, deleteSelection, pasteInk, readClip, clipMarker, selectAll, imageAt, pickImage,
           now:inkNow, drawing:()=>!!cur, peerShift, drag:()=>moving?{dx:moving.dx,dy:moving.dy}:null,
           /* what the pointer is in the middle of, for the others on a shared
@@ -6806,8 +6913,8 @@ $('#btn-share').onclick = ()=>N.collab && N.collab.share();
    offline copy, the algebra engine) so a chip can ask after them, but only
    the models are shown. */
 const DL = new Map();
-const DL_MODELS = ['ink','text'];
-const DL_NAMES = { ink:'hand-to-tex stroke reader', text:'pp-ocrv6 small text reader', offline:'offline copy of notas', cas:'algebra engine' };
+const DL_MODELS = ['ink','text','cutout'];
+const DL_NAMES = { ink:'hand-to-tex stroke reader', text:'pp-ocrv6 small text reader', cutout:'birefnet lite background remover', offline:'offline copy of notas', cas:'algebra engine' };
 const DL_BUSY = new Set(['download','starting','loading','preparing']);
 const dlPop = $('#dlpop'), dlBtn = $('#btn-downloads');
 function dlSet(key, phase, detail, retry, loaded, total){

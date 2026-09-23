@@ -1,8 +1,8 @@
 'use strict';
-const CACHE='notas-local-v91';
+const CACHE='notas-local-v92';
 const RECOGNITION_ASSET=/\/assets\/(?:text|smart|ink)\//;
 const INK_MODEL=/\/assets\/ink\/[^?]*\.onnx$/;
-const SHELL=['./notas.html','./model-contract.js','./local-recognition.js','./ink-worker.js','./ink-features.js','./model-store.js','./text-worker.js',
+const SHELL=['./notas.html','./model-contract.js','./local-recognition.js','./ink-worker.js','./ink-features.js','./model-store.js','./text-worker.js','./bg-worker.js',
   // Workers request content-addressed model URLs. Cache those exact keys during
   // install so a newly activated build cannot pair fresh worker code with stale
   // weights, and text recognition still works on the first offline reopen.
