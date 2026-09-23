@@ -1,0 +1,3 @@
+# model-contract.js pins sha256 of text files (notas.html, vocab.json, ...);
+# never let git rewrite line endings or the hashes stop matching
+* -text
