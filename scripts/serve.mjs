@@ -12,9 +12,14 @@ export function startServer(port=4173){
 // cloudflare worker.
 const NOTA_UPSTREAM='https://api.cerebras.ai/v1/chat/completions';
 async function notaProxy(req,res){
+  // As the worker does: another website open in this browser may not spend
+  // the key (a text/plain POST needs no preflight), and the body is bounded.
+  const origin=req.headers.origin;
+  if(origin&&!/^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(origin)){res.writeHead(403,{'Content-Type':'text/plain'});res.end('nota answers its own page only.');return;}
   const key=process.env.CEREBRAS_API_KEY||(req.headers.authorization||'').replace(/^Bearer\s+/i,'');
   if(!key){res.writeHead(501,{'Content-Type':'text/plain'});res.end('nota has no key here.');return;}
-  const chunks=[];for await(const c of req)chunks.push(c);
+  const chunks=[];let size=0;
+  for await(const c of req){size+=c.length;if(size>256*1024){res.writeHead(413,{'Content-Type':'text/plain'});res.end('the question is too long.');return;}chunks.push(c);}
   let upstream;
   try{
     upstream=await fetch(NOTA_UPSTREAM,{method:'POST',body:Buffer.concat(chunks),
@@ -33,7 +38,10 @@ const server=http.createServer(async(req,res)=>{
     if(!file.startsWith(root+path.sep)){res.writeHead(403).end();return;}
     const bytes=await readFile(file);
     res.writeHead(200,{'Content-Type':types[path.extname(file)]||'application/octet-stream','Content-Length':bytes.length,'Cache-Control':'no-cache','X-Content-Type-Options':'nosniff'});res.end(bytes);
-  }catch{res.writeHead(404).end('Not found');}
+  }catch{
+    // a reply that broke mid-stream has already sent its head: end it there
+    if(res.headersSent)res.destroy();else res.writeHead(404).end('Not found');
+  }
 });
 return new Promise((resolve,reject)=>{
   server.once('error',reject);
