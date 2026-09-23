@@ -30,15 +30,23 @@ async function download(url,id){
   const r=await fetch(url);if(!r.ok)throw Error('the background remover could not download. check the connection and try again.');
   const total=Number(r.headers.get('content-length'))||0;
   if(!r.body)return new Uint8Array(await r.arrayBuffer());
-  const reader=r.body.getReader(),chunks=[];let loaded=0,last=0;
+  // Written straight into one buffer when the length is known: gathering
+  // the chunks and then joining them held the 94 MB twice at once, on a
+  // tablet already running the notebook.
+  const reader=r.body.getReader();let chunks=null,loaded=0,last=0;
+  let bytes=total?new Uint8Array(total):null;
+  if(!bytes)chunks=[];
   for(;;){
     const {done,value}=await reader.read();
     if(done)break;
-    chunks.push(value);loaded+=value.length;
+    if(bytes&&loaded+value.length>bytes.length){chunks=[bytes.subarray(0,loaded)];bytes=null;}
+    if(bytes)bytes.set(value,loaded);else chunks.push(value);
+    loaded+=value.length;
     const now=Date.now();if(now-last<200)continue;last=now;
     announce(id,'download',{loaded,total});
   }
-  const bytes=new Uint8Array(loaded);let at=0;
+  if(bytes)return loaded===bytes.length?bytes:bytes.slice(0,loaded);
+  bytes=new Uint8Array(loaded);let at=0;
   for(const chunk of chunks){bytes.set(chunk,at);at+=chunk.length;}
   return bytes;
 }
@@ -59,6 +67,8 @@ async function prefetch(id){
   let have=[];try{have=await store.keys();}catch(e){}
   if(have.includes(store.keyOf(MODEL.url)))return 'stored';
   await fetchModel(id);
+  // stored now: the bytes are let go, and a picture later reads them back
+  fetching=null;
   return 'downloaded';
 }
 
