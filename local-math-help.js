@@ -44,7 +44,7 @@ function verifyPair(a,b){
     }
     if(m.freeVars(A).length||m.freeVars(B).length)return null;
     const x=m.evalRaw(A,m.baseScope()),y=m.evalRaw(B,m.baseScope());
-    return typeof x==='number'&&typeof y==='number'&&Number.isFinite(x)&&Number.isFinite(y)?x===y:null;
+    return typeof x==='number'&&typeof y==='number'&&Number.isFinite(x)&&Number.isFinite(y)?Math.abs(x-y)<=Number.EPSILON*8*Math.max(1,Math.abs(x),Math.abs(y)):null;
   }catch{return null;}
 }
 function help(question,level,nodes){

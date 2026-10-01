@@ -32,7 +32,20 @@ export class WebsocketProvider extends Provider {
     class Socket extends Base {
       set onmessage(fn){
         super.onmessage=fn&&(event=>{
-          if(typeof event.data!=='string')return fn(event);
+          if(typeof event.data!=='string'){
+            const bytes=new Uint8Array(event.data);
+            if(bytes.length>=12&&bytes[0]===255&&bytes[1]===78&&bytes[2]===84&&bytes[3]===1){
+              const header=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),total=header.getUint32(4),at=header.getUint32(8);
+              if(total<1||total>128*1024*1024||at+bytes.length-12>total){this.close(4413,'invalid document chunks');return;}
+              if(at===0){this.notasChunk=new Uint8Array(total);this.notasAt=0;}
+              if(!this.notasChunk||this.notasChunk.length!==total||this.notasAt!==at){this.close(4413,'incomplete document chunks');return;}
+              this.notasChunk.set(bytes.subarray(12),at);this.notasAt+=bytes.length-12;
+              if(self)self.wsLastMessageReceived=now();
+              if(this.notasAt===total){const data=this.notasChunk.buffer;this.notasChunk=null;fn({data});}
+              return;
+            }
+            return fn(event);
+          }
           if(event.data==='pong'&&self)self.wsLastMessageReceived=now();
         });
       }

@@ -2,12 +2,11 @@
 // assets and never reach this script; only what assets cannot serve arrives
 // here: the room's websocket and the "hey nota" forward.
 export { NoteRoom } from './room.js';
+import { notaBody, MAX_BODY } from './nota-body.mjs';
 const UPSTREAM='https://api.cerebras.ai/v1/chat/completions';
-// what nota.js asks for (CONFIG.model, CONFIG.maxTokens), with room to spare
-const MODEL='gpt-oss-120b',MAX_TOKENS=1024,MAX_BODY=256*1024;
 // /collab/<note id>: the websocket of the note's room. Ids are what the page
 // makes with uid(): lowercase base 36.
-const ROOM=/^\/collab\/([a-z0-9]{8,40})(\/(?:close|nota))?$/;
+const ROOM=/^\/collab\/([a-z0-9]{8,40})(\/(?:close|nota|open))?$/;
 export default {
   async fetch(request,env,ctx){
     const url=new URL(request.url);
@@ -18,10 +17,38 @@ export default {
     // here; this is the same rule for a public/ made without it.
     if(url.pathname==='/')return env.ASSETS.fetch(new Request(new URL('/notas.html',url),request));
 
+    // /collab/status: asked by a page whose room will not connect, to tell
+    // "the day's allowance is spent" from any other failure. A websocket
+    // that fails shows the page no status at all. When the Workers
+    // allowance is spent, Cloudflare answers this route itself with a 429
+    // (error 1027); when the Durable Objects allowance is spent, this call
+    // to a room throws and the answer here says so. The room it asks is
+    // named "status", shorter than any note id, so no note is ever woken.
+    if(url.pathname==='/collab/status'){
+      try{
+        await env.ROOMS.get(env.ROOMS.idFromName('status')).fetch(new Request(new URL('/collab/status',url)));
+        return Response.json({ok:true},{headers:{'Cache-Control':'no-store'}});
+      }catch(e){
+        return overQuota(e)?quotaResponse():Response.json({ok:false},{status:503,headers:{'Cache-Control':'no-store'}});
+      }
+    }
+
     const room=ROOM.exec(url.pathname);
     if(room){
       if(!room[2]&&request.headers.get('Upgrade')!=='websocket')return new Response('expected a websocket',{status:426});
-      return env.ROOMS.get(env.ROOMS.idFromName(room[1])).fetch(request);
+      // Every connection and POST wakes a room and counts against the day:
+      // one address opening rooms by the hundred (made-up ids included) is
+      // turned away before it reaches one.
+      if(env.COLLAB_LIMIT){
+        const {success}=await env.COLLAB_LIMIT.limit({key:request.headers.get('cf-connecting-ip')||'unknown'});
+        if(!success)return new Response('too many requests. try again in a minute.',{status:429,headers:{'Content-Type':'text/plain','Retry-After':'60'}});
+      }
+      try{
+        return await env.ROOMS.get(env.ROOMS.idFromName(room[1])).fetch(request);
+      }catch(e){
+        if(overQuota(e))return quotaResponse();
+        throw e;
+      }
     }
 
     // "hey nota" forward: the key is the CEREBRAS_API_KEY secret, or the
@@ -30,6 +57,9 @@ export default {
     // back to calling the provider itself. Mirrors notaProxy in
     // scripts/serve.mjs.
     if(url.pathname==='/nota/chat'){
+      // a preflight is answered without any Access-Control headers: the
+      // browser then refuses the other site's request, as intended
+      if(request.method==='OPTIONS')return new Response(null,{status:204,headers:{Allow:'POST'}});
       if(request.method!=='POST')return new Response(null,{status:405,headers:{Allow:'POST'}});
       // The key is spent on whoever calls this, so a browser on another
       // site is refused: it always names its origin on a cross-site POST.
@@ -57,9 +87,16 @@ export default {
         const text=await request.text();
         if(text.length>MAX_BODY)return new Response('the question is too long.',{status:413,headers:{'Content-Type':'text/plain'}});
         let json;try{json=JSON.parse(text);}catch{json=null;}
-        if(!json||typeof json!=='object'||json.model!==MODEL||!Array.isArray(json.messages))return new Response('invalid request',{status:400,headers:{'Content-Type':'text/plain'}});
-        json.max_tokens=Math.min(+json.max_tokens||MAX_TOKENS,MAX_TOKENS);
-        body=JSON.stringify(json);
+        const clean=notaBody(json);
+        if(!clean)return new Response('invalid request',{status:400,headers:{'Content-Type':'text/plain'}});
+        body=JSON.stringify(clean);
+        // Origin is not authentication. Reserve the worst case before using
+        // the public site's key, across all IP addresses and Worker isolates.
+        const tokens=clean.max_tokens+clean.messages.reduce((n,m)=>n+new TextEncoder().encode(m.content).byteLength+32,0);
+        let budget;
+        try{budget=await env.ROOMS.get(env.ROOMS.idFromName('site-budget')).fetch(new Request(new URL('/site-budget',url),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tokens})}));}
+        catch{return new Response('nota could not check its allowance.',{status:503});}
+        if(!budget.ok)return new Response('nota has reached its daily allowance. try again tomorrow.',{status:429,headers:{'Retry-After':String(Math.ceil((86400000-Date.now()%86400000)/1000))}});
       }
       let upstream;
       try{
@@ -75,3 +112,10 @@ export default {
     return new Response('Not found',{status:404,headers:{'Content-Type':'text/plain'}});
   }
 };
+
+// A free plan's daily allowance, spent: the runtime's errors name the free
+// tier or say the allowance was exceeded. It returns at midnight UTC.
+function overQuota(e){ return /free tier|exceeded allowed|daily limit|quota/i.test(String(e&&e.message||e)); }
+function quotaResponse(){
+  return Response.json({quota:true},{status:429,headers:{'Cache-Control':'no-store','Retry-After':'3600'}});
+}

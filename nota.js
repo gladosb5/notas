@@ -38,9 +38,99 @@ function apiKey(){
 }
 function hasKey(){ const k=apiKey(); return k.length>12&&!/PASTE/.test(k); }
 
+/* A rate limit pauses requests briefly. The provider's error wording must
+   not disable a notebook for the rest of the day. */
+const LOAD_KEY='notas.nota.highload',LOAD_RETRY_MS=60*1000;
+const LOAD_TEXT='nota is busy. try again in a minute.';
+function loadState(){ try{ const s=JSON.parse(localStorage.getItem(LOAD_KEY)||'null')||{until:0,tried:0};s.until=Math.min(s.until||0,(s.tried||0)+LOAD_RETRY_MS);return s; }catch(e){ return {until:0,tried:0}; } }
+function overloaded(){ return Date.now()<loadState().until; }
+/* whether this question should not be sent at all; the cooldown retry
+   counts as the one let through */
+function holdBack(){
+  const s=loadState(),now=Date.now();
+  if(now>=s.until)return false;
+  if(now-s.tried>=LOAD_RETRY_MS){ s.tried=now; try{ localStorage.setItem(LOAD_KEY,JSON.stringify(s)); }catch(e){} return false; }
+  return true;
+}
+function setOverloaded(on){
+  if(on===overloaded()&&!on)return;
+  try{ if(on)localStorage.setItem(LOAD_KEY,JSON.stringify({until:Date.now()+LOAD_RETRY_MS,tried:Date.now()})); else localStorage.removeItem(LOAD_KEY); }catch(e){}
+  paintOverloaded();
+}
+/* a written "hey nota," is not blue while nota cannot answer */
+function paintOverloaded(){
+  const on=overloaded();
+  if(!!document.body.dataset.notaBusy===on)return;
+  if(on)document.body.dataset.notaBusy='1'; else delete document.body.dataset.notaBusy;
+  if(N.ink&&N.ink.render)N.ink.render();
+}
+/* An answer refused because an allowance is spent, told apart from a
+   refusal that clears in a minute (the worker's own per-address limit, or
+   the model's per-minute one): Cloudflare's page for a worker over its day
+   is error 1027; the worker marks a spent allowance of its own as quota;
+   Cerebras names the day in its message. */
+function spentAllowance(status,text){
+  if(status===500&&/error(?:\s+code)?\s*:?\s*1027\b/i.test(text))return true;
+  if(status!==429)return false;
+  let j=null; try{ j=JSON.parse(text); }catch(e){}
+  if(!j)return false;
+  if(j.quota===true)return true;
+  const said=JSON.stringify(j.error||j);
+  return /per[ _]day|\bdaily\b|\bday\b/i.test(said);
+}
+
+/* the message, beside the question: on the page's column, so it scrolls and
+   zooms with the paper, but not a stroke or a line, so it is never saved,
+   shared or undone. It goes when the page is written on, typed in, or
+   swapped for another note. */
+const loadNote=document.createElement('div');
+loadNote.className='nota-busy'; loadNote.setAttribute('role','status'); loadNote.setAttribute('aria-live','polite');
+loadNote.hidden=true;
+let loadNoteFor=null,loadNoteWatch=0;
+(function(){
+  const s=document.createElement('style');
+  s.textContent='.nota-busy{position:absolute;z-index:4;pointer-events:none;box-sizing:border-box;padding:3px 10px;border-radius:10px;'+
+    'background:var(--paper);color:var(--ink-2);font:italic 400 14px/1.4 var(--ui);box-shadow:0 0 0 1px var(--rule,rgba(0,0,0,.08));'+
+    'animation:notaBusyIn .2s ease}'+
+    '@keyframes notaBusyIn{from{opacity:0;transform:translateY(-2px)}to{opacity:1;transform:none}}'+
+    '@media (prefers-reduced-motion:reduce){.nota-busy{animation:none}}'+
+    'body[data-nota-busy] .line.call .ghost-layer .call{color:var(--ink-3)}';
+  document.head.appendChild(s);
+})();
+function showOverloaded(at){
+  const col=document.getElementById('col'); if(!col||!at)return;
+  hideOverloaded();
+  const x=Math.max(2,at.x||0);
+  loadNote.style.left=x+'px'; loadNote.style.top=(at.y+4)+'px';
+  loadNote.style.maxWidth=Math.max(160,M.contentW-x-8)+'px';
+  loadNote.textContent=LOAD_TEXT;
+  if(loadNote.parentNode!==col)col.appendChild(loadNote);
+  loadNote.hidden=false;
+  loadNoteFor={note:S.id,line:at.lineId||null,text:at.lineId?(S.lines.find(l=>l.id===at.lineId)||{}).text:null};
+  /* the note changing has no event here; checked while the message shows */
+  loadNoteWatch=setInterval(()=>{
+    if(!loadNoteFor)return;
+    if(S.id!==loadNoteFor.note)return hideOverloaded();
+    if(loadNoteFor.line){ const ln=S.lines.find(l=>l.id===loadNoteFor.line); if(!ln||ln.text!==loadNoteFor.text)hideOverloaded(); }
+  },400);
+}
+function hideOverloaded(){
+  clearInterval(loadNoteWatch); loadNoteWatch=0;
+  loadNoteFor=null; loadNote.hidden=true;
+}
+/* writing or erasing on the page puts the message away; the tap that
+   shows it (the lasso's button) does not */
+document.addEventListener('pointerdown',e=>{
+  if(!loadNoteFor||loadNoteFor.line)return;
+  if(e.target&&e.target.closest&&e.target.closest('#selbar'))return;
+  if(e.target&&e.target.closest&&e.target.closest('#scroller'))hideOverloaded();
+},true);
+paintOverloaded();
+
 const SYSTEM=[
   'You are nota, the red pen inside a handwritten notebook. The notebook is used for anything: maths and science homework, recipes, shopping and to-do lists, notes from a lesson or a meeting, a diary, plans, drafts of writing, languages.',
-  'The person wrote or typed "hey nota," followed by a question on the page, or circled some handwriting and asked about it. The page contents are given as rows in reading order; "this" or "that" or "it" means the nearest thing above or beside the question: a sum, a list, a paragraph, a recipe, whatever is there.',
+  'The person wrote or typed "hey nota," followed by a question on the page, or circled some handwriting and asked about it. The page contents are given as rows in reading order; "this" or "that" or "it" means the nearest thing above or beside the question: a sum, a list, a paragraph, a recipe, whatever is there. Rows between [box] and [end of box] were written inside a box drawn on the page, usually a heading and its notes; boxes side by side are separate topics.',
+  'The rows are machine readings of handwriting and can contain misread words or stray symbols. Read them for their meaning and ignore fragments that make no sense, rather than explaining them.',
   'Answer whatever is asked: work out or check maths, explain an idea, suggest what to cook with what is listed and how, convert units or currencies, fix spelling or grammar, translate, summarise the notes, plan the steps, define a word, give a fact. Be accurate; if you are not sure, say so briefly.',
   'Answer in plain text only: no markdown, no bullets, no LaTeX, no code fences, no emoji, no headings. Write maths in plain notation such as 2x + 3 = 11, sqrt(16), 3/4, 2^3, 12 x 7. Use only plain letters, digits and punctuation, since the answer is handwritten onto the page.',
   'Be brief: one to three short sentences, at most about 45 words, unless the person asks for the full working, the steps, a list or a recipe, then give short numbered lines, one per line.',
@@ -179,7 +269,7 @@ function spell(text){
     }
     if(FALLBACK[ch]!==undefined){out+=FALLBACK[ch];continue;}
     const plain=ch.normalize('NFKD').replace(/\p{M}+/gu,'');
-    out+=[...plain].every(c=>GLYPHS.has(c))?plain:'';
+    out+=[...plain].every(c=>GLYPHS.has(c))?plain:ch;
   }
   return out.replace(/ {2,}/g,' ');
 }
@@ -223,48 +313,105 @@ function animate(){
 }
 function lengthOf(pts){let L=0;for(let i=3;i<pts.length;i+=3)L+=Math.hypot(pts[i]-pts[i-3],pts[i+1]-pts[i-2]);return L;}
 
+/* everything the answer must not be written over: ink (the student's and
+   nota's earlier answers), typed lines, pictures, and the answer chips
+   beside the working. The question's own ink, and its own chip, are left
+   out: the answer starts under it. */
 function obstacles(skip){
   const out=[];
-  for(const st of S.strokes)if(st.author==='user'&&!skip.has(st.id))out.push(st.bbox);
-  for(const ln of S.lines)if(ln.text&&ln.text.trim())out.push([0,ln.y,M.contentW,ln.y+Math.max(C.LINE_H,ln.h||C.LINE_H)]);
-  for(const im of S.images)out.push([im.x,im.y,im.x+im.w,im.y+im.h]);
+  for(const st of S.strokes)if((st.author==='user'||st.author==='ai')&&st.bbox&&!skip.has(st.id))out.push(st.bbox);
+  for(const ln of S.lines)if(ln.text&&ln.text.trim())out.push([ln.x||0,ln.y,M.contentW,ln.y+Math.max(C.LINE_H,ln.h||C.LINE_H)]);
+  for(const im of S.images){
+    if(!im.rot){out.push([im.x,im.y,im.x+im.w,im.y+im.h]);continue;}
+    /* a turned picture covers the box round its turned corners */
+    const cx=im.x+im.w/2,cy=im.y+im.h/2,c=Math.abs(Math.cos(im.rot)),s=Math.abs(Math.sin(im.rot));
+    const hw=(im.w*c+im.h*s)/2,hh=(im.w*s+im.h*c)/2;
+    out.push([cx-hw,cy-hh,cx+hw,cy+hh]);
+  }
+  for(const el of document.querySelectorAll('#margin .chip')){
+    const n=(S.nodes||[]).find(x=>x.id===el.dataset.node);
+    if(n&&n.ref&&n.ref.strokeIds&&n.ref.strokeIds.some(id=>skip.has(id)))continue;
+    const r=el.getBoundingClientRect();if(!r.width||!r.height)continue;
+    const a=N.ink.toWorld({clientX:r.left,clientY:r.top}),b=N.ink.toWorld({clientX:r.right,clientY:r.bottom});
+    out.push([a.x,a.y,b.x,b.y]);
+  }
   return out;
 }
 function Writer(anchor){
-  /* anchor: {x,y,rowH,skip} - the question's left edge, its bottom, the
-     height of its handwriting and the stroke ids that are the question */
+  /* anchor: {x,y,right,rowH,skip} - the question's left edge, its bottom,
+     its right edge, the height of its handwriting and the stroke ids that
+     are the question */
   const unit=Math.max(0.7,Math.min(1.25,(anchor.rowH*0.62)/(BASE-CAP)));
-  const rowPx=ROW*unit,gap=Math.max(6,anchor.rowH*0.3);
-  const x0=Math.max(8,anchor.x),maxW=Math.max(160,M.contentW-x0-10);
+  const rowPx=ROW*unit,gap=Math.max(6,anchor.rowH*0.3),padX=10*unit;
+  /* The answer is as wide as the question was written, and at least as wide
+     as the text column: a question written across the whole page, zoomed
+     out, gets its answer across the whole page, not squeezed into the
+     column. The paper's left edge is the only limit on the left. */
+  const paperL=-M.colLeft/M.zoom;
+  const x0=Math.max(paperL+8,anchor.x);
+  const right=Math.max(x0+160,M.contentW-10,(anchor.right!=null?anchor.right:0));
+  const minW=Math.max(140,SPACE_W*unit*9);
   const rnd=wobble(Math.round(anchor.x*7+anchor.y*13));
-  const blocks=obstacles(anchor.skip||new Set());
-  const list=[];let registered=false,aborted=false;
-  const cursor={x:x0,y:0};
-  const clearRow=(y)=>{
-    /* a row must not cross the student's own work: drop below anything in the way */
-    for(let guard=0;guard<24;guard++){
-      const top=y+CAP*unit,bottom=y+(BASE+12)*unit;let hit=null;
-      for(const b of blocks){
-        if(b[2]<x0||b[0]>x0+maxW||b[3]<top||b[1]>bottom)continue;
-        if(!hit||b[3]>hit)hit=b[3];
+  const list=[],textList=[];let registered=false,aborted=false,textFallback=false;
+  /* the answer belongs to the note it was asked in: another note opened
+     while it is being written stops it, rather than letting the rest land
+     on that note */
+  let noteId=S.id;
+  const cursor={x:x0,y:0},row={l:x0,r:right};
+  /* Where a row can go. The answer used to take the full width under the
+     question and drop below anything that reached into it, so a picture
+     beside the question sent the whole answer under the picture, however
+     much paper was free beside it. A row now takes the free stretch of its
+     own height: from the question's left edge up to whatever is in the
+     way, when that leaves room for a few words; failing that, a wide free
+     stretch further along; failing both, it moves down to just below the
+     nearest thing in the way and looks again. The next row goes back to
+     the left edge, so the answer wraps round a picture the way text does. */
+  const roomAt=(y)=>{
+    const skip=new Set([...(anchor.skip||[]),...list.map(st=>st.id)]);
+    const blocks=obstacles(skip);
+    for(let guard=0;guard<60;guard++){
+      const top=y+CAP*unit-2,bottom=y+(BASE+12)*unit;
+      const hits=blocks.filter(b=>b[3]>=top&&b[1]<=bottom&&b[2]>=x0-padX&&b[0]<=right+padX);
+      let free=[[x0,right]];
+      for(const b of hits){
+        const a=b[0]-padX,c=b[2]+padX,next=[];
+        for(const [l,r] of free){
+          if(c<=l||a>=r){next.push([l,r]);continue;}
+          if(a-l>0)next.push([l,a]);
+          if(r-c>0)next.push([c,r]);
+        }
+        free=next;
       }
-      if(hit===null)return y;
-      y=hit+gap-CAP*unit;
+      const home=free.find(([l,r])=>l<=x0+0.5&&r-x0>=minW);
+      if(home)return {y,l:x0,r:home[1]};
+      const wide=free.find(([l,r])=>r-l>=Math.max(minW,(right-x0)*0.4));
+      if(wide)return {y,l:wide[0],r:wide[1]};
+      /* nothing wide enough on this row: below the first thing in the way to end */
+      let next=Infinity;for(const b of hits)if(b[3]+gap-CAP*unit>y)next=Math.min(next,b[3]+gap-CAP*unit);
+      if(!isFinite(next))next=y+rowPx;
+      y=next;
     }
-    return y;
+    return {y,l:x0,r:right};
   };
-  cursor.y=clearRow(anchor.y+gap-CAP*unit);
-  const newRow=()=>{cursor.x=x0;cursor.y=clearRow(cursor.y+rowPx);};
+  const startRow=(y)=>{const p=roomAt(y);cursor.y=p.y;cursor.x=p.l;row.l=p.l;row.r=p.r;};
+  startRow(anchor.y+gap-CAP*unit);
+  const newRow=()=>startRow(cursor.y+rowPx);
   const t=N.ink.now();
   const place=(st)=>{
+    /* a save that forked this page into a conflict copy keeps the page as
+       it was, under the copy's id: the answer carries on there */
+    if(S.id!==noteId&&S.forkedFrom&&S.forkedFrom.from===noteId&&S.forkedFrom.to===S.id)noteId=S.id;
+    if(!aborted&&S.id!==noteId)aborted=true;
     if(aborted)return;
     if(!registered){
       registered=true;
-      C.act('nota',()=>{const have=new Set(S.strokes.map(s=>s.id));for(const s of list)if(!have.has(s.id))S.strokes.push(s);},
-                    ()=>{const ids=new Set(list.map(s=>s.id));S.strokes=S.strokes.filter(s=>!ids.has(s.id));aborted=true;});
+      C.act(anchor.label||'nota',()=>{const have=new Set(S.strokes.map(s=>s.id));for(const s of list)if(!have.has(s.id))S.strokes.push(s);for(const ln of textList)if(!S.lines.some(l=>l.id===ln.id))S.lines.push(ln);N.text.render();},
+                    ()=>{const ids=new Set(list.map(s=>s.id));S.strokes=S.strokes.filter(s=>!ids.has(s.id));const lines=new Set(textList.map(l=>l.id));S.lines=S.lines.filter(l=>!lines.has(l.id));N.text.render();aborted=true;});
     }
+    if(!st)return;
     list.push(st);S.strokes.push(st);
-    if(C.reducedMotion()){N.ink.render();}
+    if(anchor.instant||C.reducedMotion()){N.ink.render();}
     else{st._show=0;queue.push({st,at:0,left:lengthOf(st.pts)});animate();}
     C.growDoc(st.bbox[3]);C.markDirty();
   };
@@ -278,7 +425,7 @@ function Writer(anchor){
                  Math.round((base+s[i+1]*unit+rnd()*0.5*unit)*10)/10,
                  Math.round((0.5+rnd()*0.16)*100)/100);
       }
-      const st={id:C.uid(),author:'ai',tool:'pen',w:3,pts,t0:t,t1:t};
+      const st={id:C.uid(),author:'ai',tool:'pen',w:3,pts,t0:t,t1:t,...(anchor.color?{color:anchor.color}:{})};
       st.bbox=N.ink.bboxOf(pts);
       place(st);
     }
@@ -288,21 +435,57 @@ function Writer(anchor){
   const word=(w)=>{
     if(!w)return;
     const width=wordWidth(w,unit);
-    if(cursor.x>x0&&cursor.x+width>x0+maxW)newRow();
-    for(const ch of w)glyph(ch);
+    if(cursor.x>row.l&&cursor.x+width>row.r)newRow();
+    for(const ch of w){
+      const width=wordWidth(ch,unit);
+      const p=roomAt(cursor.y);
+      if(p.y!==cursor.y||cursor.x<p.l){startRow(p.y);}
+      else if(cursor.x+width>p.r){newRow();}
+      else{row.l=p.l;row.r=p.r;}
+      if(cursor.x>row.l&&cursor.x+width>row.r)newRow();
+      glyph(ch);
+    }
   };
-  /* markup is stripped from the whole reply so far, and only words that a
-     space or a line break has closed are written: a half-received token is
-     never on the page */
-  const commit=(final)=>{
-    const clean=tidy(raw),text=clean.slice(written);
-    let upto=final?text.length:Math.max(text.lastIndexOf(' '),text.lastIndexOf('\n'))+1;
-    if(upto<=0)return;
-    const done=spell(text.slice(0,upto));written+=upto;
-    for(const piece of done.split(/(\n| )/)){
+  const equation=source=>prose(source);
+  const prose=text=>{
+    for(const piece of spell(tidy(text)).split(/(\n| )/)){
       if(piece==='\n')newRow();
-      else if(piece===' '){if(cursor.x>x0)cursor.x+=SPACE_W*unit;}
+      else if(piece===' '){if(cursor.x>row.l)cursor.x+=SPACE_W*unit;}
       else word(piece);
+    }
+  };
+  const commit=final=>{
+    // Use editable text when the pen alphabet cannot represent the answer.
+    // Preserve the original Unicode, including CJK and emoji, in one undo step.
+    if(textFallback||[...spell(tidy(raw))].some(ch=>ch!=='\n'&&!GLYPHS.has(ch))){
+      textFallback=true;place(null);if(aborted)return;
+      const ids=new Set(list.map(st=>st.id));S.strokes=S.strokes.filter(st=>!ids.has(st.id));queue=queue.filter(q=>!ids.has(q.st.id));list.length=0;
+      if(!textList.length){const p=roomAt(anchor.y+gap-CAP*unit);const ln={id:C.uid(),x:p.l,y:p.y+CAP*unit,text:'',h:C.LINE_H,tutor:true};textList.push(ln);S.lines.push(ln);}
+      textList[0].text=tidy(raw,true);N.text.render();C.growDoc(textList[0].y+Math.max(C.LINE_H,textList[0].h||0));C.markDirty();N.ink.render();written=raw.length;return;
+    }
+
+    while(written<raw.length){
+      const rest=raw.slice(written),match=mathMatches(rest)[0];
+      if(match){
+        if(match.index)prose(rest.slice(0,match.index));
+        equation(match[1]??match[2]??match[3]??match[4]);
+        written+=match.index+match[0].length;continue;
+      }
+      let n=final?rest.length:Math.max(rest.lastIndexOf(' '),rest.lastIndexOf('\n'))+1;
+      if(!final){
+        const open=/(?<!\\)\$\$|(?<![\\\w$])\$(?!\s)|\\\(|\\\[/.exec(rest);
+        // Hold possible maths, but an unclosed price or prose dollar must
+        // never stop subsequent words from appearing.
+        if(open){
+          const tail=rest.slice(open.index+open[0].length);
+          const literal=open[0]==='$'&&(/^(?:\d[\d,.]*\s+[A-Za-z]|[^\n]*\b[A-Za-z]{2,}\s)/.test(tail)||tail.includes('\n')||tail.length>256);
+          if(!literal)n=Math.min(n,open.index);
+        }
+        const escape=rest.lastIndexOf('\\');
+        if(escape>=0&&escape>=n-1)n=Math.min(n,escape);
+      }
+      if(n<=0)return;
+      prose(rest.slice(0,n));written+=n;
     }
   };
   return {
@@ -311,7 +494,9 @@ function Writer(anchor){
     feed(text){if(aborted)return;raw+=text;commit(false);},
     finish(){if(aborted)return;commit(true);},
     get aborted(){return aborted;},
-    get count(){return list.length;}
+    get count(){return list.length+textList.length;},
+    get ids(){return list.map(st=>st.id);},
+    setColor(color){anchor.color=color;}
   };
 }
 
@@ -320,9 +505,23 @@ const TEX={le:'<=',leq:'<=',ge:'>=',geq:'>=',ne:'!=',neq:'!=',pm:'+/-',mp:'-/+',
   sin:'sin',cos:'cos',tan:'tan',sec:'sec',csc:'csc',cot:'cot',arcsin:'arcsin',arccos:'arccos',arctan:'arctan',sinh:'sinh',cosh:'cosh',tanh:'tanh',log:'log',ln:'ln',lg:'lg',exp:'exp',min:'min',max:'max',mod:' mod ',lim:'lim',deg:'deg',
   alpha:'alpha',beta:'beta',gamma:'gamma',delta:'delta',epsilon:'epsilon',varepsilon:'epsilon',zeta:'zeta',eta:'eta',theta:'theta',vartheta:'theta',iota:'iota',kappa:'kappa',lambda:'lambda',mu:'mu',nu:'nu',xi:'xi',pi:'pi',rho:'rho',sigma:'sigma',tau:'tau',upsilon:'upsilon',phi:'phi',varphi:'phi',chi:'chi',psi:'psi',omega:'omega',
   Gamma:'Gamma',Delta:'Delta',Theta:'Theta',Lambda:'Lambda',Xi:'Xi',Pi:'Pi',Sigma:'Sigma',Phi:'Phi',Psi:'Psi',Omega:'Omega'};
-function tidy(text){
-  return String(text)
-    .replace(/\\\(|\\\)|\\\[|\\\]|\$\$?/g,'')
+/* Dollar math requires tight delimiters and no following price digit.
+   Escaped dollars are literal; prose such as "$5 and $10" stays prose. */
+function mathMatches(text){
+  return [...String(text).matchAll(/(?<!\\)\$\$([\s\S]*?)\$\$|(?<![\\\w$])\$(?!\s)([^$\n]*?\S)\$(?![\d$])|\\\(([\s\S]*?)\\\)|\\\[([\s\S]*?)\\\]/g)].filter(m=>m[2]===undefined||!/(?:^|\s)[A-Za-z]{2,}(?:\s|$)/.test(m[2]));
+}
+function tidy(text,keepMath=false){
+  const math=mathMatches(text),parts=[];let at=0;
+  for(const m of math){parts.push(String(text).slice(at,m.index),m[1]??m[2]??m[3]??m[4]);at=m.index+m[0].length;}
+  // Protected math is restored after ordinary prose has been tidied.
+  if(keepMath&&math.length){
+    let protectedText='',offset=0;
+    math.forEach((m,i)=>{protectedText+=String(text).slice(offset,m.index)+'\u0001'+i+'\u0002';offset=m.index+m[0].length;});
+    return tidy(protectedText+String(text).slice(offset)).replace(/\u0001(\d+)\u0002/g,(_,i)=>math[+i][0]);
+  }
+  parts.push(String(text).slice(at));
+  return parts.join('')
+    .replace(/\\\$/g,'$').replace(/\\\(|\\\)|\\\[|\\\]/g,'')
     .replace(/\\sqrt\{([^}]*)\}/g,'sqrt($1)').replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g,'($1)/($2)')
     .replace(/\\times/g,'x').replace(/\\cdot/g,'*').replace(/\\div/g,'/')
     .replace(/\\(?:text|mathrm|mathbf|operatorname)\{([^}]*)\}/g,'$1')
@@ -343,29 +542,61 @@ function pageRows(question){
      search transcript. The tutor's own lines and strokes stay out. */
   const rows=[];
   const skip=question.skip||new Set();
+  const groups=N.recog&&N.recog.textGroups?N.recog.textGroups():[];
+  const byHash=new Map((S.textTranscripts||[]).map(t=>[t.hash,t.text]));
+  /* Ink the text reader read as words is words. The maths reader reads
+     every stroke as a formula, and its reading of a written sentence or a
+     boxed definition ("((((499*99)/500)/...") went to nota beside the real
+     words, which nota then tried to explain. Such a reading is left out,
+     unless the student asked for it to be worked out. */
+  const prose=new Set();
+  const isProse=t=>N.mathcore&&N.mathcore.readsAsProse?N.mathcore.readsAsProse(t):(String(t).match(/[A-Za-z]{3,}/g)||[]).length>=2;
+  for(const g of groups){const t=byHash.get(g.hash);if(t&&isProse(t))for(const id of g.strokeIds)prose.add(id);}
+  const wordy=cl=>{
+    if(!prose.size||cl.confirmed||cl.asked)return false;
+    let n=0;for(const id of cl.strokeIds)if(prose.has(id))n++;
+    return n>=cl.strokeIds.length*0.6;
+  };
   for(const n of S.nodes||[]){
     if(!n.src||!String(n.src).trim())continue;
     if(n.kind==='line'&&n.ref&&n.ref.tutor)continue;
     if(n.kind==='line'&&question.lineId===n.id)continue;
     if(n.kind==='cluster'&&n.ref&&n.ref.strokeIds&&n.ref.strokeIds.some(id=>skip.has(id)))continue;
     if(n.kind==='cluster'&&n.ref&&n.ref.review)continue;
+    if(n.kind==='cluster'&&n.ref&&n.ref.strokeIds&&wordy(n.ref))continue;
     let text=String(n.src).trim();
     if(n.result&&!n.stated)text+='   [= '+n.result+']';
     if(n.error&&n.kind==='cluster')continue;
     rows.push({y:n.y,x:n.x||0,text});
   }
-  const groups=N.recog&&N.recog.textGroups?N.recog.textGroups():[];
-  const byHash=new Map((S.textTranscripts||[]).map(t=>[t.hash,t.text]));
   for(const g of groups){
     if(g.strokeIds.some(id=>skip.has(id)))continue;
     const text=byHash.get(g.hash);if(!text)continue;
     rows.push({y:g.bbox[1],x:g.bbox[0],text:'"'+text+'"'});
   }
   rows.push({y:question.y,x:question.x,marker:true});
-  rows.sort((a,b)=>(Math.round(a.y/24)-Math.round(b.y/24))||(a.x-b.x));
-  const at=rows.findIndex(r=>r.marker);
-  const near=rows.filter((r,i)=>Math.abs(i-at)<=40);
-  return near.map(r=>r.marker?'>>> the question is written here':r.text).join('\n');
+  const order=(a,b)=>(Math.round(a.y/24)-Math.round(b.y/24))||(a.x-b.x);
+  /* Writing inside a drawn box is read as one block, box by box: two boxes
+     side by side read row by row made every line half of one box and half
+     of the other. A block stands in the page's order at its box's corner. */
+  const boxes=(N.recog&&N.recog.frames&&N.recog.frames().boxes)||[];
+  const within=(r)=>{let best=-1,area=Infinity;boxes.forEach((b,i)=>{if(r.x>=b[0]-4&&r.x<=b[2]&&r.y>=b[1]-4&&r.y<=b[3]){const a=(b[2]-b[0])*(b[3]-b[1]);if(a<area){area=a;best=i;}}});return best;};
+  const blocks=new Map(),flat=[];
+  for(const r of rows){
+    const at=r.marker?-1:within(r);
+    if(at<0){flat.push(r);continue;}
+    if(!blocks.has(at))blocks.set(at,{y:boxes[at][1],x:boxes[at][0],rows:[]});
+    blocks.get(at).rows.push(r);
+  }
+  for(const b of blocks.values())flat.push({y:b.y,x:b.x,block:b.rows.sort(order)});
+  flat.sort(order);
+  const MARK='>>> the question is written here',lines=[];
+  for(const r of flat){
+    if(r.block){lines.push('[box]');for(const x of r.block)lines.push(x.text);lines.push('[end of box]');}
+    else lines.push(r.marker?MARK:r.text);
+  }
+  const at=lines.indexOf(MARK);
+  return lines.filter((r,i)=>Math.abs(i-at)<=48).join('\n');
 }
 /* ---- context diagnostics ----
    Open the page with ?debug=context to see what nota is told. The panel
@@ -426,7 +657,7 @@ async function stream(question,context,onDelta,signal){
     if(url===CONFIG.url&&!hasKey()){error=new Error('nota needs a key. add it in nota.js.');break;}
     let unreachable=false;
     const headers={'Content-Type':'application/json','Accept':'text/event-stream'};
-    if(hasKey())headers.Authorization='Bearer '+apiKey();
+    if(url===CONFIG.url&&hasKey())headers.Authorization='Bearer '+apiKey();
     for(const payload of [body,plain]){
       try{
         response=await fetch(url,{method:'POST',signal,headers,body:JSON.stringify(payload)});
@@ -436,32 +667,34 @@ async function stream(question,context,onDelta,signal){
       /* the forward explains itself in a line of plain text (a call from
          another site, no key, the model out of reach); that is shown as it
          is, rather than guessed from the status */
-      let said='';
-      if(/^text\/plain/i.test(response.headers.get('content-type')||'')){ try{ said=(await response.text()).trim().slice(0,140); }catch(e){} }
+      let said='',whole='';
+      try{ whole=await response.text(); }catch(e){}
+      if(spentAllowance(response.status,whole)){ error=Object.assign(new Error(LOAD_TEXT),{overloaded:true}); response=null; break; }
+      if(/^text\/plain/i.test(response.headers.get('content-type')||''))said=whole.trim().slice(0,140);
       error=new Error(said||(response.status===401||response.status===403?'nota\'s key was refused.':'nota could not answer ('+response.status+').'));
       if(response.status!==400){response=null;break;}
       response=null;
     }
-    if(response||!unreachable)break;
+    if(response||!unreachable||error?.overloaded)break;
   }
   if(!response)throw error||new Error('nota could not reach the model.');
   const reader=response.body.getReader(),decoder=new TextDecoder();
   let buffer='',total='';
   for(;;){
     const {value,done}=await reader.read();
-    if(done)break;
-    buffer+=decoder.decode(value,{stream:true});
+    buffer+=done?decoder.decode()+'\n':decoder.decode(value,{stream:true});
     let nl;
     while((nl=buffer.indexOf('\n'))>=0){
       const line=buffer.slice(0,nl).trim();buffer=buffer.slice(nl+1);
       if(!line.startsWith('data:'))continue;
       const data=line.slice(5).trim();
-      if(data==='[DONE]')return total;
+      if(data==='[DONE]'){await reader.cancel();return total;}
       let json;try{json=JSON.parse(data);}catch(e){continue;}
       const delta=json.choices&&json.choices[0]&&json.choices[0].delta;
       const piece=delta&&typeof delta.content==='string'?delta.content:'';
       if(piece){total+=piece;onDelta(piece,total);}
     }
+    if(done)break;
   }
   return total;
 }
@@ -501,7 +734,8 @@ function onTranscript(item,group){
   if(!item||!group)return;
   readings.set(item.hash,{text:item.text,confidence:item.confidence,group});
   const call=parseCall(item.text);
-  if(call&&item.confidence>=0.5)N.ink.render();
+  /* the call turns blue, and the maths reader's chip on it goes */
+  if(call&&item.confidence>=0.5){N.ink.render();N.mathcore&&N.mathcore.run();}
   if(item.asked)return;
   /* a row written under a call still waiting to be asked carries the
      question on, so the wait starts over from this row */
@@ -559,12 +793,16 @@ function fireInk(hash,tries){
   if(asked.has(key))return;
   /* red ink already sitting under the question means it was answered before
      this page was reopened: the answer is on the paper, not in memory */
-  if(answeredBelow(bbox,rowH))return;
+  if(hashes.some(h=>(S.textTranscripts||[]).some(t=>t.hash===h&&t.asked)))return;
   asked.add(key);
-  for(const h of hashes){const t=(S.textTranscripts||[]).find(t=>t.hash===h);if(t)t.asked=true;}
-  C.markDirty();
-  const writer=Writer({x:bbox[0],y:bbox[3],rowH,skip:ids});
-  answer(call.question,{x:bbox[0],y:bbox[1],skip:ids},writer);
+  const noteId=S.id;
+  const writer=Writer({x:bbox[0],y:bbox[3],right:bbox[2],rowH,skip:ids});
+  answer(call.question,{x:bbox[0],y:bbox[1],below:bbox[3],skip:ids},writer).then(ok=>{
+    if(!ok){asked.delete(key);return;}
+    if(S.id!==noteId)return;
+    for(const h of hashes){const t=(S.textTranscripts||[]).find(t=>t.hash===h);if(t)t.asked=true;}
+    C.markDirty();
+  });
 }
 
 /* ---- asked outright: lassoed ink the page could not read, sent to nota ----
@@ -577,9 +815,13 @@ async function askSelection(){
   const ids=(S.selection||[]).slice();
   if(!ids.length){C.toast('circle some handwriting with the lasso first.');return;}
   if(askingSelection||busy){C.toast('nota is still busy.');return;}
+  /* the day's allowance is spent: the message goes under the circled ink,
+     and nothing is read or asked */
+  if(overloaded()){ const b=selectedBox(ids); if(b){ N.ink.clearSelection(); showOverloaded({x:b[0],y:b[3]}); } return; }
   if(!navigator.onLine){C.toast('nota needs a connection.');return;}
   if(!N.recog||!N.recog.readStrokesText){C.toast('enable handwriting in settings to ask nota.');return;}
   askingSelection=true;
+  const selectedNote=S.id;
   const skip=new Set(ids);
   N.ink.clearSelection();
   C.status('nota is reading.');
@@ -587,20 +829,38 @@ async function askSelection(){
   try{reading=await N.recog.readStrokesText(ids);}
   catch(e){askingSelection=false;C.status('');C.toast(String(e.message||'nota could not read this.').toLowerCase());return;}
   askingSelection=false;
-  const text=reading.text&&reading.confidence>=0.2?reading.text:'',maths=reading.maths||'';
+  if(S.id!==selectedNote){C.status('');return;}
+  const text=reading.text&&reading.confidence>=0.2?reading.text:'';
+  /* The maths reader reads everything as a formula, so words come out of it
+     as nonsense ("hey nota" as =2y*y*y*y=), and that nonsense, handed to
+     nota as a second opinion, was then explained as if it were on the page.
+     It goes along only when it looks like maths and the text reader did not
+     find words. */
+  const words=text&&N.mathcore&&N.mathcore.readsAsProse?N.mathcore.readsAsProse(text):/[A-Za-z]{3,}/.test(text);
+  const looksMaths=s=>N.mathcore&&N.mathcore.looksLikeMath?N.mathcore.looksLikeMath(s):/[0-9=+*\/^-]/.test(s);
+  const maths=reading.maths&&(!text||reading.confidence<0.6||!words)&&looksMaths(reading.maths)?reading.maths:'';
   /* the text reader failing is not the end of it while the maths reader
      had something; with neither, say which */
   if(!text&&!maths){C.status('');C.toast(reading.error?String(reading.error).toLowerCase():'nota could not read this either. try writing it larger, or type it.');return;}
-  let question='the person circled some handwriting the notebook could not read well.';
-  if(text)question+=' the text reader makes it: "'+text+'".';
-  if(maths&&maths!==text)question+=' the maths reader makes it: "'+maths+'".';
-  question+=' say what it most likely says, then deal with it: answer it if it is a question, work it out if it is maths, help with it if it is a list, a recipe, a note or a draft.';
   const bbox=reading.bbox,rowH=Math.min(60,Math.max(12,bbox[3]-bbox[1]));
-  const writer=Writer({x:bbox[0],y:bbox[3],rowH,skip});
-  await answer(question,{x:bbox[0],y:bbox[1],skip},writer);
+  /* circled ink that is itself "hey nota, ..." is simply that question */
+  const call=text&&parseCall(text);
+  let question;
+  if(call&&call.question)question=call.question;
+  else{
+    question='the person circled some handwriting the notebook could not read well.';
+    if(text)question+=' the text reader makes it: "'+text+'".';
+    if(maths&&maths!==text)question+=' the maths reader makes it: "'+maths+'".';
+    question+=' say what it most likely says, then deal with it: answer it if it is a question, work it out if it is maths, help with it if it is a list, a recipe, a note or a draft.';
+  }
+  const questionKey=call&&call.question?noteKey()+normalizeQ(call.question):null;
+  if(questionKey)asked.add(questionKey);
+  const writer=Writer({x:bbox[0],y:bbox[3],right:bbox[2],rowH,skip});
+  if(!await answer(question,{x:bbox[0],y:bbox[1],below:bbox[3],skip},writer)&&questionKey)asked.delete(questionKey);
 }
 /* ---- typed: a line that starts with the call, answered as a red ghost ---- */
 function isCallStroke(id){
+  if(overloaded())return false;
   return [...readings.values()].some(t=>t.confidence>=0.5&&parseCall(t.text)&&t.group.strokeIds.includes(id));
 }
 const typedTimers=new Map(),typedRuns=new Map();
@@ -619,7 +879,7 @@ function onTyped(ln){
      Removing the call while the reply is still arriving stops it; a
      different question replaces the reply that stood for the old one */
   if(!call){ if(run&&!run.done){run.abort();typedRuns.delete(ln.id);} return; }
-  if(run&&normalizeQ(run.question)===normalizeQ(call.question))return;
+  if(run&&!run.failed&&normalizeQ(run.question)===normalizeQ(call.question))return;
   if(!call.question||call.question.split(/\s+/).length<2)return;
   const delay=/\?\s*$/.test(ln.text)?500:1500;
   typedTimers.set(ln.id,setTimeout(()=>fireTyped(ln.id),delay));
@@ -638,6 +898,8 @@ async function fireTyped(id){
     if(claim.state==='claimed')await claim.finish(false).catch(()=>{});
     return;
   }
+  /* the shared note's room is out of its day too: no one can be asked */
+  if(claim.state==='overloaded'){ showOverloaded(lineBottom(id)); return; }
   if(claim.state==='busy'||claim.state==='offline'){
     /* someone else is asking, or the shared note's room is not up to say
        who may: the question waits, and the page says which, once */
@@ -658,15 +920,16 @@ async function fireTyped(id){
   if(!reply){await claim.finish(false).catch(()=>{});asked.delete(key);return;}
   const control=new AbortController(),run={question:call.question,abort:()=>control.abort(),done:false,superseded:false,answer:'',reply};
   typedRuns.set(id,run);
-  await answer(call.question,{x:0,y:ln.y,lineId:id},{
+  const completed=await answer(call.question,{x:0,y:ln.y,lineId:id},{
     feed(piece){ if(control.signal.aborted)return; run.answer+=piece; if(!reply.update(tidy(run.answer).trim()))control.abort(); },
     finish(){ run.done=true; },
     /* nothing arrived, or the reply was cut short: the lines go too, unless a
        newer question has already taken them over */
-    failed(){ if(!run.superseded)reply.remove(); },
+    failed(){ run.failed=true;if(!run.superseded&&!run.answer.trim())reply.remove(); },
     get aborted(){return control.signal.aborted;}
   },control);
-  await claim.finish(run.done).catch(()=>{});
+  run.done=completed;
+  await claim.finish(completed).catch(()=>{});
   if(!run.done)asked.delete(key);
 }
 
@@ -698,34 +961,53 @@ function drawWaiting(ctx){
 }
 
 /* ---- one answer, wherever it goes ---- */
-async function answer(question,where,writer,control){
-  if(!navigator.onLine){C.toast('nota needs a connection.');if(writer.failed)writer.failed();return;}
-  control=control||new AbortController();
-  const timer=setTimeout(()=>control.abort(),CONFIG.timeoutMs);
-  busy++;C.status('nota is thinking.');
-  receipt.textContent='got it — nota is thinking…'; receipt.hidden=false;
-  if(!where.lineId&&writer.origin)showWaiting(writer.origin);
-  let text='';
-  try{
-    await stream(question,pageRows(where),(piece)=>{
-      if(writer.aborted){control.abort();return;}
-      if(!text)hideWaiting();
-      text+=piece;
-      writer.feed(piece);
-      C.status('nota is writing.');
-      receipt.textContent='nota is writing…';
-    },control.signal);
-    if(text&&!writer.aborted)writer.finish();
-  }catch(e){
-    if(e.name!=='AbortError'){C.toast(String(e.message||'nota could not answer.').toLowerCase());}
-  }finally{
-    clearTimeout(timer);busy--;hideWaiting();
-    if(!busy)receipt.hidden=true;
-    if((!text||writer.aborted)&&writer.failed)writer.failed();
-  }
+/* where the high-load message goes: under the question */
+function lineBottom(id){
+  const ln=S.lines.find(l=>l.id===id); if(!ln)return null;
+  return {x:2,y:ln.y+Math.max(C.LINE_H,ln.h||C.LINE_H),lineId:id};
+}
+function messageAt(where){ return where.lineId?lineBottom(where.lineId):{x:where.x,y:where.below!=null?where.below:where.y}; }
+function selectedBox(ids){
+  let b=null;
+  for(const st of S.strokes)if(ids.includes(st.id)&&st.bbox)b=b?[Math.min(b[0],st.bbox[0]),Math.min(b[1],st.bbox[1]),Math.max(b[2],st.bbox[2]),Math.max(b[3],st.bbox[3])]:st.bbox.slice();
+  return b;
 }
 
-N.nota={isCallStroke,onTranscript,onTyped,askSelection,parseCall,callLength,drawWaiting,tidy,spell,Writer,get busy(){return busy>0;},get writing(){return queue.length;},config:CONFIG,
+async function answer(question,where,writer,control){
+  if(!navigator.onLine){C.toast('nota needs a connection.');writer.failed?.();return false;}
+  if(holdBack()){writer.failed?.();showOverloaded(messageAt(where));return false;}
+  control=control||new AbortController();
+  let timedOut=false,timer;
+  const arm=()=>{clearTimeout(timer);timer=setTimeout(()=>{timedOut=true;control.abort();},CONFIG.timeoutMs);};
+  arm();
+  busy++;C.status('nota is thinking.');
+  receipt.textContent='got it — nota is thinking…';receipt.hidden=false;
+  if(!where.lineId&&writer.origin)showWaiting(writer.origin);
+  let text='',complete=false;
+  try{
+    await stream(question,pageRows(where),piece=>{
+      if(writer.aborted){control.abort();return;}
+      arm();
+      if(!text){hideWaiting();if(overloaded())setOverloaded(false);}
+      text+=piece;writer.feed(piece);C.status('nota is writing.');receipt.textContent='nota is writing…';
+    },control.signal);
+    if(!text.trim())throw Error('nota returned an empty answer. try again.');
+    if(!writer.aborted){writer.finish();complete=true;}
+  }catch(e){
+    // Flush buffered words before reporting a stalled or broken stream.
+    if(text.trim()&&(!writer.aborted||timedOut))writer.finish();
+    if(e.overloaded){setOverloaded(true);showOverloaded(messageAt(where));}
+    else if(timedOut)C.toast('nota timed out. try again.');
+    else if(e.name!=='AbortError')C.toast(String(e.message||'nota could not answer.').toLowerCase());
+  }finally{
+    clearTimeout(timer);busy--;hideWaiting();C.status('');
+    if(!busy)receipt.hidden=true;
+    if(!complete)writer.failed?.();
+  }
+  return complete;
+}
+
+N.nota={overloaded,isCallStroke,onTranscript,onTyped,askSelection,parseCall,callLength,drawWaiting,mathMatches,tidy,spell,Writer,get busy(){return busy>0;},get writing(){return queue.length;},config:CONFIG,
   /* the page as nota reads it, for the console: N.nota.context() */
   context(where){ return pageRows(where||liveWhere()); }};
 })();

@@ -1,0 +1,736 @@
+{
+  "method": "fine-tuned final decoder block, RGB input block and output head; backbone frozen",
+  "best_epoch": 15,
+  "counts": {
+    "train": 55,
+    "validation": 26,
+    "test": 13
+  },
+  "results": {
+    "train": {
+      "loss": 0.024848426612086107,
+      "positive_miou": 0.9089862078312789,
+      "negative_foreground": 0.000805977063301282,
+      "images": [
+        {
+          "file": "IMG_0011.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_0016.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_0017.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_0018.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_0030.png",
+          "positive": true,
+          "iou": 0.9838254933966464,
+          "foreground_fraction": 0.4046630859375
+        },
+        {
+          "file": "IMG_0790.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_0791.png",
+          "positive": true,
+          "iou": 0.9470707070707071,
+          "foreground_fraction": 0.144287109375
+        },
+        {
+          "file": "IMG_0796.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_0919.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_1613.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2024.png",
+          "positive": true,
+          "iou": 0.9676753165125258,
+          "foreground_fraction": 0.65966796875
+        },
+        {
+          "file": "IMG_2025.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2027.png",
+          "positive": false,
+          "iou": 0.0,
+          "foreground_fraction": 0.03143310546875
+        },
+        {
+          "file": "IMG_2028.png",
+          "positive": true,
+          "iou": 0.8318385650224215,
+          "foreground_fraction": 0.0452880859375
+        },
+        {
+          "file": "IMG_2029.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2030.png",
+          "positive": true,
+          "iou": 0.9829457364341085,
+          "foreground_fraction": 0.69659423828125
+        },
+        {
+          "file": "IMG_2038.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2173.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2331.png",
+          "positive": true,
+          "iou": 0.9489726027397261,
+          "foreground_fraction": 0.16912841796875
+        },
+        {
+          "file": "IMG_2332.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2333.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2346.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2347.png",
+          "positive": true,
+          "iou": 1.0,
+          "foreground_fraction": 1.0
+        },
+        {
+          "file": "IMG_2348.png",
+          "positive": true,
+          "iou": 0.9144645340751043,
+          "foreground_fraction": 0.08026123046875
+        },
+        {
+          "file": "IMG_2352.png",
+          "positive": true,
+          "iou": 0.938332511100148,
+          "foreground_fraction": 0.1160888671875
+        },
+        {
+          "file": "IMG_2360.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2363.png",
+          "positive": true,
+          "iou": 0.9732112290311538,
+          "foreground_fraction": 0.70635986328125
+        },
+        {
+          "file": "IMG_2364.png",
+          "positive": true,
+          "iou": 0.9860091211254541,
+          "foreground_fraction": 0.78826904296875
+        },
+        {
+          "file": "IMG_2366.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2367.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2373.png",
+          "positive": true,
+          "iou": 0.9931568966938742,
+          "foreground_fraction": 0.7352294921875
+        },
+        {
+          "file": "IMG_2629.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2633.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2708.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2794.png",
+          "positive": true,
+          "iou": 0.3431372549019608,
+          "foreground_fraction": 0.00213623046875
+        },
+        {
+          "file": "IMG_2795.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2803.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2814.png",
+          "positive": true,
+          "iou": 0.7754806698366756,
+          "foreground_fraction": 0.4632568359375
+        },
+        {
+          "file": "IMG_2815.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2816.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2824.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2825.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2835.png",
+          "positive": true,
+          "iou": 0.9750530785562632,
+          "foreground_fraction": 0.11212158203125
+        },
+        {
+          "file": "IMG_2842.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2844.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2862.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2863.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2968.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3005.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3013.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3017.png",
+          "positive": true,
+          "iou": 0.9826056088036919,
+          "foreground_fraction": 0.17047119140625
+        },
+        {
+          "file": "IMG_3018.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3031.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3035.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3067.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        }
+      ]
+    },
+    "validation": {
+      "loss": 1.3072303918105228,
+      "positive_miou": 0.9871893199554842,
+      "negative_foreground": 0.05561894955842391,
+      "images": [
+        {
+          "file": "IMG_1740.png",
+          "positive": true,
+          "iou": 0.9903005755702409,
+          "foreground_fraction": 0.567138671875
+        },
+        {
+          "file": "IMG_1741.png",
+          "positive": true,
+          "iou": 0.9885321100917431,
+          "foreground_fraction": 0.1318359375
+        },
+        {
+          "file": "IMG_1742.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_1743.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_1744.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2676.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2678.png",
+          "positive": true,
+          "iou": 0.9827352742044685,
+          "foreground_fraction": 0.17742919921875
+        },
+        {
+          "file": "IMG_2867.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2868.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2869.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2870.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2871.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2872.png",
+          "positive": false,
+          "iou": 0.0,
+          "foreground_fraction": 0.0057373046875
+        },
+        {
+          "file": "IMG_2873.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2874.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2875.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2876.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2877.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2878.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2880.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2881.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2882.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2883.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2894.png",
+          "positive": false,
+          "iou": 0.0,
+          "foreground_fraction": 0.72125244140625
+        },
+        {
+          "file": "IMG_2899.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2900.png",
+          "positive": false,
+          "iou": 0.0,
+          "foreground_fraction": 0.55224609375
+        }
+      ]
+    },
+    "test": {
+      "loss": 0.5339743282932502,
+      "positive_miou": 0.7832979855999276,
+      "negative_foreground": 0.0,
+      "images": [
+        {
+          "file": "IMG_2713.png",
+          "positive": true,
+          "iou": 0.5075803517283202,
+          "foreground_fraction": 0.15325927734375
+        },
+        {
+          "file": "IMG_2715.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2716.png",
+          "positive": true,
+          "iou": 0.8884078459091712,
+          "foreground_fraction": 0.61871337890625
+        },
+        {
+          "file": "IMG_2717.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2718.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2719.png",
+          "positive": true,
+          "iou": 0.8429347826086957,
+          "foreground_fraction": 0.56146240234375
+        },
+        {
+          "file": "IMG_2720.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2721.png",
+          "positive": true,
+          "iou": 0.91241455078125,
+          "foreground_fraction": 0.91241455078125
+        },
+        {
+          "file": "IMG_3071.png",
+          "positive": true,
+          "iou": 0.9817882739983551,
+          "foreground_fraction": 0.5101318359375
+        },
+        {
+          "file": "IMG_3072.png",
+          "positive": true,
+          "iou": 0.5666621085737727,
+          "foreground_fraction": 0.5079345703125
+        },
+        {
+          "file": "IMG_3073.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3078.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3080.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        }
+      ]
+    }
+  },
+  "history": [
+    {
+      "epoch": 1,
+      "validation": 0.027218135948548484,
+      "negative_foreground": 0.03824250594429348
+    },
+    {
+      "epoch": 2,
+      "validation": 0.0594990853363426,
+      "negative_foreground": 0.04289710003396739
+    },
+    {
+      "epoch": 3,
+      "validation": 0.2749664168986982,
+      "negative_foreground": 0.04642121688179348
+    },
+    {
+      "epoch": 4,
+      "validation": 0.8829459782547966,
+      "negative_foreground": 0.06230893342391304
+    },
+    {
+      "epoch": 5,
+      "validation": 0.35086750303560515,
+      "negative_foreground": 0.046713124150815216
+    },
+    {
+      "epoch": 6,
+      "validation": 0.9671138109449005,
+      "negative_foreground": 0.061948029891304345
+    },
+    {
+      "epoch": 7,
+      "validation": 0.981846011115787,
+      "negative_foreground": 0.05559241253396739
+    },
+    {
+      "epoch": 8,
+      "validation": 0.9780838840891835,
+      "negative_foreground": 0.055624256963315216
+    },
+    {
+      "epoch": 9,
+      "validation": 0.8413873340743963,
+      "negative_foreground": 0.06608249830163043
+    },
+    {
+      "epoch": 10,
+      "validation": 0.9454629867012248,
+      "negative_foreground": 0.06303339419157608
+    },
+    {
+      "epoch": 11,
+      "validation": 0.9315831094153381,
+      "negative_foreground": 0.047994862432065216
+    },
+    {
+      "epoch": 12,
+      "validation": 0.9820134780502179,
+      "negative_foreground": 0.053480065387228264
+    },
+    {
+      "epoch": 13,
+      "validation": 0.7507125064479806,
+      "negative_foreground": 0.04918372112771739
+    },
+    {
+      "epoch": 14,
+      "validation": 0.9870746254221571,
+      "negative_foreground": 0.06014351222826087
+    },
+    {
+      "epoch": 15,
+      "validation": 0.9870226515360025,
+      "negative_foreground": 0.055555260699728264
+    },
+    {
+      "epoch": 16,
+      "validation": 0.9166114437717715,
+      "negative_foreground": 0.049196989639945655
+    },
+    {
+      "epoch": 17,
+      "validation": 0.9733700002947483,
+      "negative_foreground": 0.06148097826086957
+    },
+    {
+      "epoch": 18,
+      "validation": 0.9853127152264821,
+      "negative_foreground": 0.05923859969429348
+    },
+    {
+      "epoch": 19,
+      "validation": 0.9757356343884593,
+      "negative_foreground": 0.06173042629076087
+    },
+    {
+      "epoch": 20,
+      "validation": 0.8739341302556337,
+      "negative_foreground": 0.06987198539402174
+    },
+    {
+      "epoch": 21,
+      "validation": 0.937016389044519,
+      "negative_foreground": 0.06710682744565218
+    },
+    {
+      "epoch": 22,
+      "validation": 0.6835537687328171,
+      "negative_foreground": 0.07608430281929347
+    },
+    {
+      "epoch": 23,
+      "validation": 0.9638354255689706,
+      "negative_foreground": 0.06272291100543478
+    },
+    {
+      "epoch": 24,
+      "validation": 0.9784787632825216,
+      "negative_foreground": 0.05905814792798913
+    },
+    {
+      "epoch": 25,
+      "validation": 0.9905730264733572,
+      "negative_foreground": 0.060926354449728264
+    },
+    {
+      "epoch": 26,
+      "validation": 0.6539494477824525,
+      "negative_foreground": 0.07206394361413043
+    },
+    {
+      "epoch": 27,
+      "validation": 0.9815332767285107,
+      "negative_foreground": 0.059721573539402176
+    }
+  ],
+  "full_slide_generalization": "unmeasured; dataset contains partial crops only",
+  "labels": "approximate agent-drawn polygons",
+  "deployment": "experimental; not promoted automatically"
+}

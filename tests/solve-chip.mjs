@@ -113,10 +113,7 @@ try{
     await seed('card-zoom-'+zoom,'6+2','6+2');
     const [rx,ry]=await centre(page.locator('.chip.offer .reading'));
     await page.mouse.click(rx,ry);
-    assert.equal(await page.locator('.chip.open').count(),1,'A pen tap on the reading opens the card at zoom '+zoom);
-    // the open card takes its own input, so Playwright can press it directly
-    await page.locator('.chip.open .solve').click({timeout:3000});
-    assert.ok(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result==='8')),'Expanded card Solve works at zoom '+zoom);
+    assert.equal(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result==='8')),false,'A pen tap on the reading solves nothing at zoom '+zoom);
   }
   await page.evaluate(()=>{N.core.setZoom(1,400,350);N.ink.setTool('text');});
 
@@ -127,12 +124,11 @@ try{
   assert.equal(await page.locator('.chip.offer').count(),0,'An equals sign asks for the answer itself');
   assert.ok(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result==='8')),'= still auto-answers');
 
-  // The offer chip still opens the correction card.
+  // The offer is read and solved on the page: tapping its reading opens nothing.
   await seed('s4','6+2','6+2');
   await page.locator('.chip.offer .reading').click();
-  assert.equal(await page.locator('.chip.open').count(),1,'Tapping the reading opens the correction card');
-  assert.ok(await page.locator('.chip.open .fix input').isVisible(),'Correction field is available before any answer');
-  assert.equal(await page.locator('.chip.open .solve').count(),1,'Solve is also offered in the card');
+  assert.equal(await page.locator('.chip input').count(),0,'No correction field opens');
+  assert.equal(await page.locator('.chip.offer .solve').count(),1,'Solve stays on the page');
 
   // A toast answers the latest action: a newer message replaces an older one
   // at once and the swap is visible (67).

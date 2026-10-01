@@ -1,0 +1,7 @@
+
+> test:edges
+> node tests/storage-edges.mjs && node tests/tutor-edges.mjs
+
+Storage edges passed: retry, rejected lock, clean peer reload, metadata repair, rescue, import, eraser, readable export pages.
+Tutor edges passed: literal currency, escaped dollars, math delimiters, Unicode fallback and undo/redo.
+nota: blue call, red reply lines, red ink, waiting dots, save, erase, undo and a handwritten question over two rows all pass

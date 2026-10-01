@@ -327,10 +327,116 @@ function hashOf(list){
   hashMemo.set(key,out);
   return out;
 }
+/* ---- frames: boxes, rules and outlines drawn round the writing ----
+   Notes are set out with boxes ("Definition" beside "Representation"), a
+   rule under a heading, a line across a box under its title, a ring round
+   an answer. None of that is writing, and both readers took it for some:
+   a box edge beside a word, a header rule read as a fraction bar over the
+   words below it. Such strokes are told apart here by shape, before any
+   grouping, and kept out of it. What stays is conservative: a rule must be
+   long for the writing on the page and straight; a box side or corner is
+   made of long straight runs along the page's axes; an outline is closed
+   and has writing inside it. A fraction bar has writing under it, so a
+   horizontal rule counts only when nothing is written right under it,
+   when it runs into a box side at both ends, or when it is far longer
+   than any fraction. */
+const shapeMemo=new Map();
+function simplify(pts,tol){
+  if(pts.length<3)return pts.slice();
+  const keep=new Uint8Array(pts.length);keep[0]=keep[pts.length-1]=1;
+  const stack=[[0,pts.length-1]];
+  while(stack.length){
+    const [a,b]=stack.pop();let far=-1,best=tol;
+    const ax=pts[a][0],ay=pts[a][1],dx=pts[b][0]-ax,dy=pts[b][1]-ay,L=Math.hypot(dx,dy)||1;
+    for(let i=a+1;i<b;i++){const d=Math.abs(dy*(pts[i][0]-ax)-dx*(pts[i][1]-ay))/L;if(d>best){best=d;far=i;}}
+    if(far>=0){keep[far]=1;stack.push([a,far],[far,b]);}
+  }
+  return pts.filter((p,i)=>keep[i]);
+}
+function strokeShape(st){
+  const key=st.id+':'+(st.rev||0)+':'+st.pts.length+':'+st.bbox.join(',');
+  const memo=shapeMemo.get(key);if(memo)return memo;
+  const p=st.pts,n=p.length/3|0,b=st.bbox,w=b[2]-b[0],h=b[3]-b[1],size=Math.max(w,h);
+  let len=0;for(let i=3;i<p.length;i+=3)len+=Math.hypot(p[i]-p[i-3],p[i+1]-p[i-2]);
+  const chord=n>1?Math.hypot(p[p.length-3]-p[0],p[p.length-2]-p[1]):0;
+  const pts=[];for(let i=0;i<n;i++)pts.push([p[i*3],p[i*3+1]]);
+  const kept=simplify(pts,Math.max(2.5,size*.035));
+  let axis=0;
+  for(let i=1;i<kept.length;i++){
+    const dx=Math.abs(kept[i][0]-kept[i-1][0]),dy=Math.abs(kept[i][1]-kept[i-1][1]),L=Math.hypot(dx,dy);
+    if(dy<=dx*.3||dx<=dy*.3)axis+=L;
+  }
+  const straight=len>0&&chord>=len*.92;
+  const shape={w,h,size,len,straight,horiz:straight&&w>=h*4,vert:straight&&h>=w*4,
+    closed:n>8&&chord<=Math.max(8,size*.18)&&len>=size*2.2,axisShare:len?axis/len:0,vertices:kept.length};
+  if(shapeMemo.size>20000)shapeMemo.clear();
+  shapeMemo.set(key,shape);
+  return shape;
+}
+function frameInfo(strokes){
+  const ids=new Set(),boxes=[];
+  if(strokes.length<2)return {ids,boxes};
+  const hs=strokes.map(s=>s.bbox[3]-s.bbox[1]).filter(h=>h>2);
+  const H=Math.max(12,median(hs.length?hs:[12]));
+  const inside=(st,min)=>{
+    const b=st.bbox;let n=0;
+    for(const o of strokes){
+      if(o===st)continue;
+      const cx=(o.bbox[0]+o.bbox[2])/2,cy=(o.bbox[1]+o.bbox[3])/2;
+      if(cx>b[0]&&cx<b[2]&&cy>b[1]&&cy<b[3]&&o.bbox[2]-o.bbox[0]<b[2]-b[0]&&++n>=min)return true;
+    }
+    return false;
+  };
+  const walls=[];
+  for(const st of strokes){
+    if(!Array.isArray(st.pts)||st.pts.length<6||!st.bbox)continue;
+    const s=strokeShape(st);
+    if(s.size<Math.max(80,4*H))continue;
+    const wall=(s.vert&&s.h>=Math.max(90,5*H))||
+      (!s.straight&&s.vertices<=10&&s.axisShare>=.8&&s.size>=Math.max(100,5*H)&&Math.min(s.w,s.h)>=Math.max(24,1.5*H))||
+      (s.closed&&Math.min(s.w,s.h)>=Math.max(40,2.5*H)&&inside(st,2));
+    if(wall){ids.add(st.id);walls.push(st);}
+  }
+  const near=(x,y,b,r)=>x>=b[0]-r&&x<=b[2]+r&&y>=b[1]-r&&y<=b[3]+r;
+  for(const st of strokes){
+    if(ids.has(st.id)||!Array.isArray(st.pts)||st.pts.length<6||!st.bbox)continue;
+    const s=strokeShape(st);
+    if(!s.horiz||s.w<Math.max(90,5*H))continue;
+    const b=st.bbox,p=st.pts;
+    const a=[p[0],p[1]],z=[p[p.length-3],p[p.length-2]];
+    const meets=walls.some(f=>near(a[0],a[1],f.bbox,H*1.2))&&walls.some(f=>near(z[0],z[1],f.bbox,H*1.2));
+    const m0=b[0]+s.w*.2,m1=b[2]-s.w*.2;
+    const under=strokes.some(o=>o!==st&&!ids.has(o.id)&&o.bbox&&o.bbox[3]>b[3]+2&&o.bbox[1]>=b[1]-2&&o.bbox[1]-b[3]<=1.6*H&&o.bbox[0]<m1&&o.bbox[2]>m0);
+    if(s.w>=10*H||meets||!under){ids.add(st.id);if(meets)walls.push(st);}
+  }
+  /* the walls that touch make up a box; its inside is a region of the page
+     whose writing is read on its own */
+  const parent=walls.map((_,i)=>i),find=i=>parent[i]===i?i:(parent[i]=find(parent[i]));
+  for(let i=0;i<walls.length;i++)for(let j=i+1;j<walls.length;j++){
+    const g=gap(walls[i].bbox,walls[j].bbox);
+    if(g.dx<=H*1.5&&g.dy<=H*1.5)parent[find(i)]=find(j);
+  }
+  const sets=new Map();walls.forEach((w,i)=>{const r=find(i);if(!sets.has(r))sets.set(r,[]);sets.get(r).push(w);});
+  for(const set of sets.values()){
+    const b=boxOf(set);
+    if(b[2]-b[0]>=3*H&&b[3]-b[1]>=2.5*H&&set.some(w=>{const s=strokeShape(w);return !s.horiz;}))boxes.push(b);
+  }
+  return {ids,boxes};
+}
+/* which box a point is in: the smallest that holds it, or -1 */
+function boxAt(boxes,x,y){
+  let best=-1,area=Infinity;
+  boxes.forEach((b,i)=>{if(x>b[0]&&x<b[2]&&y>b[1]&&y<b[3]){const a=(b[2]-b[0])*(b[3]-b[1]);if(a<area){area=a;best=i;}}});
+  return best;
+}
+let pageFrames={ids:new Set(),boxes:[]};
 // Maths clusters are deliberately tight so nearby symbols form one expression.
 // Text search needs the opposite: word-sized clusters on the same baseline must
-// be merged back into a whole handwriting line so spaces survive OCR.
-function textGroups(clusters,byId){
+// be merged back into a whole handwriting line so spaces survive OCR. A row
+// is not merged across a box's side, though: two boxes side by side are two
+// columns of writing, not one line.
+function textGroups(clusters,byId,frames){
+  frames=frames||(clusters?null:pageFrames);
   clusters=clusters||S.clusters;byId=byId||C.strokeById;
   const ink=clusters.filter(c=>c.source==='ink').slice().sort((a,b)=>
     ((a.bbox[1]+a.bbox[3])-(b.bbox[1]+b.bbox[3]))||a.bbox[0]-b.bbox[0]);
@@ -359,11 +465,23 @@ function textGroups(clusters,byId){
     best.bbox=[Math.min(best.bbox[0],cl.bbox[0]),Math.min(best.bbox[1],cl.bbox[1]),
       Math.max(best.bbox[2],cl.bbox[2]),Math.max(best.bbox[3],cl.bbox[3])];
   }
-  return lines.map(line=>{
+  const boxes=frames&&frames.boxes&&frames.boxes.length?frames.boxes:null;
+  const parts=[];
+  for(const line of lines){
     line.clusters.sort((a,b)=>a.bbox[0]-b.bbox[0]);
-    const ids=[...new Set(line.clusters.flatMap(c=>c.strokeIds))];
+    if(!boxes){parts.push(line.clusters);continue;}
+    let run=[],was=null;
+    for(const cl of line.clusters){
+      const at=boxAt(boxes,(cl.bbox[0]+cl.bbox[2])/2,(cl.bbox[1]+cl.bbox[3])/2);
+      if(run.length&&at!==was){parts.push(run);run=[];}
+      run.push(cl);was=at;
+    }
+    if(run.length)parts.push(run);
+  }
+  return parts.map(list=>{
+    const ids=[...new Set(list.flatMap(c=>c.strokeIds))];
     const strokes=ids.map(id=>byId(id)).filter(Boolean);
-    return {hash:'text:'+hashOf(strokes),strokeIds:ids,bbox:line.bbox};
+    return {hash:'text:'+hashOf(strokes),strokeIds:ids,bbox:boxOf(list.map(c=>({bbox:c.bbox})))};
   }).sort((a,b)=>a.bbox[1]-b.bbox[1]);
 }
 function validText(text,confidence){
@@ -505,25 +623,41 @@ function edgeOperator(c,other,h){
 // and scripts. Pairwise transitive bbox merging let an equals bar or dot bridge
 // two close notebook lines, so a perfectly good expression was sometimes sent
 // to the model together with ink above or below it.
-function mathStrokeGroups(strokes){
+// `orderOf`, when given, is each stroke's place in the whole page: a part of
+// the page regrouped on its own keeps the drawing order it has in the whole.
+function mathStrokeGroups(strokes,orderOf){
+  strokes=strokes.filter(st=>Array.isArray(st.bbox)&&st.bbox.length===4&&st.bbox.every(Number.isFinite)&&st.bbox[2]>=st.bbox[0]&&st.bbox[3]>=st.bbox[1]&&st.pts?.length>=3&&st.pts.length%3===0&&Array.from(st.pts).every(Number.isFinite));
   if(!strokes.length)return [];
+  // Bound the expensive geometry pass even on the first load of a large note.
+  // Split near the middle at the widest spatial gap, retaining original order.
+  if(strokes.length>240){
+    orderOf=orderOf||new Map(strokes.map((st,i)=>[st,i]));
+    const bounds=boxOf(strokes),axis=bounds[3]-bounds[1]>=bounds[2]-bounds[0]?1:0;
+    const sorted=strokes.slice().sort((a,b)=>(a.bbox[axis]+a.bbox[axis+2])-(b.bbox[axis]+b.bbox[axis+2]));
+    let cut=sorted.length>>1,gap=-Infinity;
+    for(let i=Math.floor(sorted.length/3);i<Math.ceil(sorted.length*2/3);i++){const distance=sorted[i].bbox[axis]-sorted[i-1].bbox[axis+2];if(distance>gap){gap=distance;cut=i;}}
+    return [...mathStrokeGroups(sorted.slice(0,cut),orderOf),...mathStrokeGroups(sorted.slice(cut),orderOf)];
+  }
   const info=strokes.map((st,order)=>{
     const m=boxMetrics(st.bbox),bar=m.w>Math.max(12,m.h*3.2),tiny=!bar&&Math.max(m.w,m.h)<10;
-    return {st,...m,bar,tiny,order};
+    return {st,...m,bar,tiny,order:orderOf?orderOf.get(st):order};
   });
   const anchors=info.filter(m=>!m.bar&&!m.tiny).sort((a,b)=>a.cy-b.cy||a.st.bbox[0]-b.st.bbox[0]);
   const lines=[];
   for(const item of anchors){
     let best=null,bestScore=Infinity;
     for(const line of lines){
-      const lh=median(line.items.map(x=>x.h)),dy=Math.abs(item.cy-line.cy);
+      // The row's median height is kept on the row (see below): recomputing
+      // it here, for every stroke against every row, was a sort per pair and
+      // most of the pen-lift stall on a long note.
+      const lh=line.lh,dy=Math.abs(item.cy-line.cy);
+      const xGap=Math.max(item.st.bbox[0]-line.bbox[2],line.bbox[0]-item.st.bbox[2],0);
       // Use the row's robust center/height band instead of its full bbox. A
       // single long down-stroke can legitimately extend into the next row, but
       // it must not turn that entire vertical reach into evidence that the two
       // rows share a baseline.
       const core=[line.cy-lh*.58,line.cy+lh*.58];
       const ov=overlap(item.st.bbox[1],item.st.bbox[3],core[0],core[1]);
-      const xGap=Math.max(item.st.bbox[0]-line.bbox[2],line.bbox[0]-item.st.bbox[2],0);
       // Vertical alignment alone is not a line relationship. A large heading
       // or diagram hundreds of pixels away must not inflate this line's height
       // and then transitively pull neighboring notebook rows into it.
@@ -543,7 +677,7 @@ function mathStrokeGroups(strokes){
     }
     if(!best){best={items:[],bbox:item.st.bbox.slice(),cy:item.cy};lines.push(best);}
     best.items.push(item);best.bbox=boxOf(best.items.map(x=>x.st));
-    best.cy=median(best.items.map(x=>x.cy));
+    best.cy=median(best.items.map(x=>x.cy));best.lh=median(best.items.map(x=>x.h));
   }
   // Equal-height glyphs with nearly identical centers can seed two fragments
   // simply because the y-sort visits a later character first. Rejoin only
@@ -553,10 +687,10 @@ function mathStrokeGroups(strokes){
   while(lineChanged){
     lineChanged=false;
     outerLines:for(let i=0;i<lines.length;i++)for(let j=i+1;j<lines.length;j++){
-      const a=lines[i],b=lines[j],ah=median(a.items.map(x=>x.h)),bh=median(b.items.map(x=>x.h));
+      const a=lines[i],b=lines[j],ah=a.lh,bh=b.lh;
       const xGap=Math.max(a.bbox[0]-b.bbox[2],b.bbox[0]-a.bbox[2],0),dy=Math.abs(a.cy-b.cy),reachH=Math.max(ah,bh),rowH=Math.min(ah,bh);
       if(xGap>Math.max(64,reachH*1.8)||dy>Math.max(11,rowH*.52))continue;
-      a.items.push(...b.items);a.bbox=boxOf(a.items.map(x=>x.st));a.cy=median(a.items.map(x=>x.cy));
+      a.items.push(...b.items);a.bbox=boxOf(a.items.map(x=>x.st));a.cy=median(a.items.map(x=>x.cy));a.lh=median(a.items.map(x=>x.h));
       lines.splice(j,1);lineChanged=true;break outerLines;
     }
   }
@@ -790,11 +924,13 @@ function mathStrokeGroups(strokes){
   // The operator bridge below only runs once the structural rules have
   // converged, so it cannot reorder fraction or script assembly inside an
   // expression written in one burst.
+  let comparisons=0;
   for(const bridging of [false,true]){
   let coalesced=true;
   while(coalesced){
     coalesced=false;
     outerCoalesce:for(let i=0;i<comps.length;i++)for(let j=i+1;j<comps.length;j++){
+      if(++comparisons>50000){coalesced=false;break outerCoalesce;}
       const a=comps[i],b=comps[j],ah=Math.max(10,a.glyphH),bh=Math.max(10,b.glyphH),h=Math.max(ah,bh);
       const g=gap(a.bbox,b.bbox),yo=overlap(a.bbox[1],a.bbox[3],b.bbox[1],b.bbox[3]);
       const rowH=Math.min(ah,bh),smallLateEdit=c=>c.items.length<=2&&Math.max(c.w,c.h)<=Math.max(18,rowH*1.15);
@@ -975,9 +1111,77 @@ function mathStrokeGroups(strokes){
   }
   return comps.map(c=>c.strokes);
 }
+/* ---- regrouping only where the ink changed ----
+   Grouping the whole page compares every piece of ink with every other, so
+   on a long note it cost more with every line written, and it ran after
+   every pen lift. Nothing groups across more than a couple of rows, so
+   after a stroke only the groups near what changed are worked out again,
+   together with anything the new grouping reaches, and the rest of the page
+   keeps its groups as they were. A group that comes out with the same
+   strokes keeps their order too, so its reading is still found under its
+   hash. A small page, or a large change, is simply grouped whole. */
+const LOCAL_MIN=240;
+let grouped=null;
+function strokeSig(st){return (st.rev||0)+':'+st.pts.length+':'+st.bbox.join(',');}
+function idsKey(list){return list.map(st=>st.id).sort().join(',');}
+function remember(strokes,groups){
+  const sig=new Map(),box=new Map();
+  for(const st of strokes){sig.set(st.id,strokeSig(st));box.set(st.id,st.bbox.slice());}
+  const hs=strokes.map(st=>st.bbox[3]-st.bbox[1]).filter(h=>h>2);
+  grouped={sig,box,groups:groups.map(g=>g.map(st=>st.id)),h:Math.max(12,typicalHeight(hs.length?hs:[12]))};
+  return groups;
+}
+function groupInk(strokes){
+  const prev=grouped;
+  if(!prev||strokes.length<LOCAL_MIN)return remember(strokes,mathStrokeGroups(strokes));
+  const now=new Map(strokes.map(st=>[st.id,st])),dirty=[];
+  for(const st of strokes){
+    const was=prev.sig.get(st.id);
+    if(was===strokeSig(st))continue;
+    dirty.push(st.bbox);if(was!==undefined)dirty.push(prev.box.get(st.id));
+  }
+  for(const [id,b] of prev.box)if(!now.has(id))dirty.push(b);
+  const old=prev.groups.map(ids=>ids.map(id=>now.get(id)).filter(Boolean)).filter(g=>g.length);
+  if(!dirty.length)return remember(strokes,old);
+  if(dirty.length>Math.max(24,strokes.length*.15))return remember(strokes,mathStrokeGroups(strokes));
+  const R=Math.max(160,prev.h*5),boxes=old.map(g=>boxOf(g));
+  const near=(b,region)=>region.some(d=>b[0]<=d[2]+R&&b[2]>=d[0]-R&&b[1]<=d[3]+R&&b[3]>=d[1]-R);
+  const known=new Set();for(const g of old)for(const st of g)known.add(st.id);
+  const orderOf=new Map(strokes.map((st,i)=>[st,i])),take=new Set();
+  let region=dirty;
+  for(let pass=0;pass<6;pass++){
+    boxes.forEach((b,i)=>{if(!take.has(i)&&near(b,region))take.add(i);});
+    const inTaken=new Set();for(const i of take)for(const st of old[i])inTaken.add(st.id);
+    const subset=strokes.filter(st=>inTaken.has(st.id)||!known.has(st.id));
+    const fresh=mathStrokeGroups(subset,orderOf);
+    const before=new Map();for(const i of take)before.set(idsKey(old[i]),old[i]);
+    // a group that came out differently may now reach groups left alone
+    const moved=fresh.filter(g=>!before.has(idsKey(g))).map(g=>boxOf(g));
+    if(boxes.some((b,i)=>!take.has(i)&&near(b,moved))){region=region.concat(moved);continue;}
+    const kept=old.filter((g,i)=>!take.has(i));
+    return remember(strokes,kept.concat(fresh.map(g=>before.get(idsKey(g))||g)));
+  }
+  return remember(strokes,mathStrokeGroups(strokes));
+}
+/* a group that runs across a box's side is two pieces of writing */
+function splitAtBoxes(groups,boxes){
+  if(!boxes.length)return groups;
+  const out=[];
+  for(const g of groups){
+    const by=new Map();
+    for(const st of g){const at=boxAt(boxes,(st.bbox[0]+st.bbox[2])/2,(st.bbox[1]+st.bbox[3])/2);if(!by.has(at))by.set(at,[]);by.get(at).push(st);}
+    if(by.size<2)out.push(g);else out.push(...by.values());
+  }
+  return out;
+}
+function inkOf(strokes){
+  const frames=frameInfo(strokes);
+  return {frames,ink:frames.ids.size?strokes.filter(s=>!frames.ids.has(s.id)):strokes};
+}
 function rebuild(){
-  const strokes=S.strokes.filter(s=>s.author==='user');
-  const groups=mathStrokeGroups(strokes);
+  const {frames,ink:strokes}=inkOf(S.strokes.filter(s=>s.author==='user'));
+  pageFrames=frames;
+  const groups=splitAtBoxes(groupInk(strokes),frames.boxes);
   const previous=new Map(S.clusters.map(c=>[c.hash,c]));
   // An explicit Solve request belongs to the ink, not to one grouping of it.
   // Adding a digit or a bracket to an expression changes its hash, so the
@@ -1025,6 +1229,9 @@ function scheduleText(){
   },3200);
 }
 function crop(cl){
+  if(!Array.isArray(cl?.bbox)||cl.bbox.length!==4||!cl.bbox.every(Number.isFinite)||cl.bbox[2]<cl.bbox[0]||cl.bbox[3]<cl.bbox[1])throw new Error('invalid stroke bounds');
+  const strokes=(cl.strokeIds||[]).map(id=>C.strokeById(id)).filter(Boolean);
+  if(!strokes.length||strokes.some(st=>!st.pts?.length||st.pts.length%3!==0||!Array.from(st.pts).every(Number.isFinite)||!Number.isFinite(st.w)||st.w<=0))throw new Error('invalid or empty strokes');
   const pad=12,w=Math.max(12,cl.bbox[2]-cl.bbox[0])+pad*2,h=Math.max(12,cl.bbox[3]-cl.bbox[1])+pad*2;
   const scale=Math.min(2,1000/w,500/h);
   const cv=document.createElement('canvas');cv.width=Math.ceil(w*scale);cv.height=Math.ceil(h*scale);
@@ -1146,13 +1353,14 @@ function selectionUnread(ids){
 }
 // One reading of the chosen strokes as a line of text, for a question
 // nota is asked outright. What the maths reader made of them, if
-// anything, goes along as a second opinion.
+// anything, goes along as a second opinion. Asking is explicit, so it
+// reads even with handwriting reading turned off in settings.
 async function readStrokesText(ids){
   const strokes=ids.map(id=>C.strokeById(id)).filter(Boolean);
   if(!strokes.length)return {text:'',confidence:0,maths:''};
   const set=new Set(ids),maths=S.clusters.filter(c=>c.strokeIds.some(id=>set.has(id))).map(c=>String(c.ascii||c.latex||'').trim()).filter(Boolean).join(' ');
   const group={hash:'ask:'+hashOf(strokes),strokeIds:strokes.map(s=>s.id),bbox:boxOf(strokes)};
-  const generation=epoch,note=S.id,valid=()=>generation===epoch&&S.id===note&&enabled();
+  const generation=epoch,note=S.id,valid=()=>generation===epoch&&S.id===note;
   if(textState.broken)healText();
   let text='',confidence=0,error='';
   try{const out=await textInfer(textCrop(group),valid);text=String(out.text||'').trim();confidence=Number(out.confidence)||0;}
@@ -1220,8 +1428,9 @@ function textGroupsOfDoc(doc){
   const strokes=(doc.strokes||[]).filter(s=>s&&s.author==='user'&&Array.isArray(s.pts)&&s.pts.length>=3&&Array.isArray(s.bbox)&&s.bbox.length===4);
   if(!strokes.length)return {groups:[],byId:()=>null};
   const map=new Map(strokes.map(s=>[s.id,s])),byId=id=>map.get(id)||null;
-  const clusters=mathStrokeGroups(strokes).map(list=>({source:'ink',strokeIds:list.map(s=>s.id),bbox:boxOf(list)}));
-  return {groups:textGroups(clusters,byId),byId};
+  const {frames,ink}=inkOf(strokes);
+  const clusters=splitAtBoxes(mathStrokeGroups(ink),frames.boxes).map(list=>({source:'ink',strokeIds:list.map(s=>s.id),bbox:boxOf(list)}));
+  return {groups:textGroups(clusters,byId,frames),byId};
 }
 async function indexOthers(){
   if(indexing)return;
@@ -1337,13 +1546,17 @@ function ambiguousGrouping(cl){
   const ids=new Set(cl.strokeIds),inside=S.strokes.filter(s=>ids.has(s.id));
   const h=Math.max(12,typicalHeight(inside.map(s=>s.bbox[3]-s.bbox[1])));
   return S.clusters.some(other=>{
-    if(other===cl||!other.strokeIds?.length||other.strokeIds.some(id=>ids.has(id)))return false;
-    const outside=S.strokes.filter(s=>other.strokeIds.includes(s.id));
+    if(other===cl||!other.strokeIds?.length||!other.bbox)return false;
+    // The scale below is at most twice h: a cluster further off than that
+    // can never count, and is passed over before its strokes are looked up.
+    const g=gap(cl.bbox,other.bbox);
+    if(g.dx>h*3||g.dy>h*2.4)return false;
+    if(other.strokeIds.some(id=>ids.has(id)))return false;
+    const outside=other.strokeIds.map(id=>C.strokeById(id)).filter(Boolean);
     if(!outside.length)return false;
     const a=inside.map(st=>({st})),b=outside.map(st=>({st}));
     if(temporalGap(a,b)>8000)return false;
     const scale=Math.max(h,Math.min(h*2,typicalHeight(outside.map(s=>s.bbox[3]-s.bbox[1]))));
-    const g=gap(cl.bbox,other.bbox);
     return g.dx<=scale*1.5&&g.dy<=scale*1.2;
   });
 }
@@ -1563,13 +1776,13 @@ function equalsGeometryRepair(out,cl){
   const need=stackedBarPairs(strokes).length-(latex.match(RELATION)||[]).length;
   if(need<=0)return out;
     const runs=[...latex.matchAll(/(?<!-)-{1,2}(?!-)/g)];
-  if(!runs.length)return out;
+  if(!runs.length||runs.length>16||need>runs.length)return out;
   const rewrite=chosen=>{let text=latex;for(const run of chosen.slice().sort((x,y)=>y.index-x.index))text=text.slice(0,run.index)+'='+text.slice(run.index+run[0].length);return text;};
   let repaired=null;
   if(runs.length===need)repaired=rewrite(runs);
   else{
     const choices=[];
-    const pick=(start,taken)=>{if(taken.length===need){choices.push(rewrite(taken));return;}for(let i=start;i<runs.length;i++)pick(i+1,[...taken,runs[i]]);};
+    const pick=(start,taken)=>{if(choices.length>=256)return;if(taken.length===need){choices.push(rewrite(taken));return;}for(let i=start;i<runs.length;i++)pick(i+1,[...taken,runs[i]]);};
     pick(0,[]);
     const compact=v=>String(v||'').replace(/\s+/g,'');
     const matches=choices.filter(text=>(out.alternatives||[]).some(alt=>compact(alt)===compact(text)));
@@ -1655,10 +1868,13 @@ function switchEngine(name){
   C.markDirty();N.mathcore.run();
   boot().then(schedule).catch(e=>C.toast(e.message));
 }
-async function recognize(cl){
-  if(!enabled()||cl.pending)return;
+// explicit: asked for from the selection bar, so read even with handwriting
+// reading turned off in settings
+async function recognize(cl,explicit){
+  if(!explicit&&!enabled())return;
+  if(cl.pending){if(explicit)cl._explicitRetry=true;return;}
   const generation=epoch,note=S.id,hash=cl.hash;
-  const valid=()=>generation===epoch&&S.id===note&&enabled()&&S.clusters.some(c=>c.hash===hash&&!c.confirmed);
+  const valid=()=>generation===epoch&&S.id===note&&(explicit||enabled())&&S.clusters.some(c=>c.hash===hash&&!c.confirmed);
   if(!valid())return;
   attempted.add(hash);cl.pending=true;N.mathcore.run();
   try{
@@ -1689,7 +1905,7 @@ async function recognize(cl){
     if(valid()&&e.name!=='AbortError'){
       const live=S.clusters.find(c=>c.hash===hash);Object.assign(live,{review:true,error:e.message,pending:false});
     }
-  }finally{const live=S.clusters.find(c=>c.hash===hash);if(live)live.pending=false;N.mathcore.run();}
+  }finally{const live=generation===epoch&&S.id===note?S.clusters.find(c=>c.hash===hash):null;if(live){live.pending=false;const retry=live._explicitRetry;delete live._explicitRetry;if(retry&&(!live.ascii&&!live.latex||live.review))await recognize(live,true);}N.mathcore.run();}
 }
 function confirm(cl,text){
   if(!S.clusters.includes(cl))return;
@@ -1703,15 +1919,14 @@ function confirm(cl,text){
 function solveSelection(){
   const cl=S.clusters.find(c=>c.strokeIds.some(id=>S.selection.includes(id)));
   if(!cl)return C.toast('select one expression with the lasso first.');
-  if(!enabled())return C.toast('enable handwriting in settings to read this expression.');
   // Asking to solve a selection is an explicit request, so this reading is
   // shown and calculated even without an equals sign.
   cl.latex='';cl.ascii='';cl.confirmed=false;cl.review=false;cl.asked=true;cache.delete(cl.hash);attempted.delete(cl.hash);
-  C.markDirty();recognize(cl);N.ink.clearSelection();
+  C.markDirty();recognize(cl,true);N.ink.clearSelection();
 }
 function reset(){
   epoch++;indexEpoch++;clearTimeout(timer);clearTimeout(textTimer);clearTimeout(indexTimer);
-  attempted.clear();textAttempted.clear();cache.clear();hashMemo.clear();
+  attempted.clear();textAttempted.clear();cache.clear();hashMemo.clear();grouped=null;
 }
 // Re-reads the page with the readers restarted. The model files stay where
 // they are (IndexedDB, the service worker's cache): a refresh is about the
@@ -1744,9 +1959,19 @@ function toggle(){
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden){clearTimeout(timer);clearTimeout(textTimer);clearTimeout(indexTimer);}else{schedule();scheduleText();}
 });
+// Lets go of both readers while nothing is being read, for something that
+// needs the memory more (the background remover, which failed to start
+// beside them on a tablet). Each starts again the next time it is needed,
+// from the copy kept on this device. One still starting, or reading, is
+// left alone.
+function release(){
+  const ink=state('ink');
+  if(ink.ready&&!ink.requests.size&&!active){stop('handwriting paused to free memory','ink');ink.broken=false;}
+  if(textState.ready&&!textState.requests.size)stopText('Handwriting search paused to free memory');
+}
 function retry(){restart();boot().then(schedule).catch(()=>{});}
 function retryText(){healText();textAttempted.clear();return setupText().then(()=>scheduleText()).catch(()=>{});}
 N.ai={enabled,setup:boot,setupText,retry,retryText,toggle,watch,watchText,setupState,textSetupState,get ready(){return state(preferred()).ready;}};
-N.recog={resultVersion:RESULT_VERSION.ink,rebuild,selectionUnread,readStrokesText,mathStrokeGroups,equalsGeometryRepair,stackedBarPairs,schedule,scheduleText,scheduleIndex,indexOthers,textGroupsOfDoc,recognize,recognizeText,solveSelection,crop,linearizedCrop,textCrop,textGroups,cache,confirm,reset,refreshModels,engine:preferred,switchEngine,validText,wordReading,wordGeometry,needsConfirmation,inkTextAlternatives,textSupportedInk,
+N.recog={resultVersion:RESULT_VERSION.ink,rebuild,frames:()=>pageFrames,frameInfo,release,selectionUnread,readStrokesText,mathStrokeGroups,equalsGeometryRepair,stackedBarPairs,schedule,scheduleText,scheduleIndex,indexOthers,textGroupsOfDoc,recognize,recognizeText,solveSelection,crop,linearizedCrop,textCrop,textGroups,cache,confirm,reset,refreshModels,engine:preferred,switchEngine,validText,wordReading,wordGeometry,needsConfirmation,inkTextAlternatives,textSupportedInk,
   get inkError(){return inkError;},get textReady(){return textState.ready;},get textVersion(){return TEXT_VERSION;},get textConfidenceMin(){return TEXT_CONFIDENCE_MIN;}};
 })();

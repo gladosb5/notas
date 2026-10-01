@@ -9,6 +9,9 @@
 // public/ always mirrors the current app.
 import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
+import {cspFor,ASSET_CSP} from './csp.mjs';
 
 const here=path.resolve(import.meta.dirname);
 const root=path.resolve(here,'..');
@@ -18,8 +21,22 @@ const SHELL=['notas.html','sw.js','model-contract.js','local-recognition.js','in
   'ink-features.js','model-store.js','text-worker.js','bg-worker.js','local-math-help.js','nota.js','manifest.webmanifest','asset-manifest.json',
   'assets/icon-16.png','assets/icon-32.png','assets/icon-192.png','assets/icon-512.png',
   'assets/icon-maskable-512.png','assets/apple-touch-icon.png','assets/logo.png'];
-const MODEL_DIRS=['assets/smart','assets/ink','assets/text'];
+const MODEL_DIRS=['assets/smart','assets/ink','assets/text','assets/slide'];
 const ASSET_LIMIT=25*1024*1024;
+
+// The page is part of the recognition fingerprint. Stamp it as part of each
+// deployment so running npm run deploy cannot publish a stale contract.
+execFileSync(process.execPath,['scripts/model-contract.mjs'],{cwd:root,stdio:'inherit'});
+const slide=JSON.parse(await readFile(path.join(root,'assets/slide/model.json'),'utf8'));
+const whole=createHash('sha256');let modelBytes=0;
+for(const part of slide.parts){
+  if(path.basename(part.file)!==part.file||!part.file.endsWith('.bin'))throw Error('invalid slide model chunk path');
+  const bytes=await readFile(path.join(root,'assets/slide',part.file));
+  if(bytes.length!==part.bytes||createHash('sha256').update(bytes).digest('hex')!==part.sha256)throw Error('damaged slide model chunk: '+part.file);
+  whole.update(bytes);modelBytes+=bytes.length;
+}
+if(modelBytes!==slide.bytes||whole.digest('hex')!==slide.sha)throw Error('incomplete slide model');
+
 
 const manifest=JSON.parse(await readFile(path.join(root,'asset-manifest.json'),'utf8'));
 const wanted=new Set([...SHELL,...manifest]);
@@ -47,12 +64,21 @@ for(const rel of [...wanted].sort()){
 // picked up; the model files are content-addressed (?v=<hash>) so they
 // may be cached for good.
 const noCache=['/','/notas.html','/sw.js','/model-contract.js','/asset-manifest.json','/manifest.webmanifest',
-  '/local-recognition.js','/ink-worker.js','/ink-features.js','/model-store.js','/text-worker.js','/bg-worker.js','/local-math-help.js','/nota.js'];
+  '/local-recognition.js','/ink-worker.js','/ink-features.js','/model-store.js','/text-worker.js','/bg-worker.js','/slide-surface.js','/local-math-help.js','/nota.js'];
 const onnx=[...wanted].filter(f=>f.endsWith('.onnx')).map(f=>'/'+f);
+// The policy is per path, never under /*: two matching rules would send two
+// policies, and a browser enforces both.
+const pageCsp=cspFor(await readFile(path.join(root,'notas.html'),'utf8'));
 const headers=[
   '/*','  Cross-Origin-Opener-Policy: same-origin','  Cross-Origin-Embedder-Policy: require-corp','  X-Content-Type-Options: nosniff',
+  '  Referrer-Policy: no-referrer',
+  ...['/','/notas.html'].flatMap(p=>[p,'  Content-Security-Policy: '+pageCsp,'  X-Frame-Options: DENY']),
+  ...['/ink-worker.js','/text-worker.js','/bg-worker.js','/sw.js'].flatMap(p=>[p,'  Content-Security-Policy: '+ASSET_CSP]),
   ...noCache.flatMap(p=>[p,'  Cache-Control: no-cache']),
-  ...MODEL_DIRS.flatMap(d=>['/'+d+'/*','  Cache-Control: public, max-age=31536000, immutable']),
+  ...MODEL_DIRS.filter(d=>d!=='assets/slide').flatMap(d=>['/'+d+'/*','  Cache-Control: public, max-age=31536000, immutable']),
+  '/assets/slide/*.bin','  Cache-Control: public, max-age=31536000, immutable','  Content-Type: application/octet-stream',
+  '/assets/slide/model.js','  Cache-Control: no-cache',
+  '/assets/slide/model.json','  Cache-Control: no-cache',
   ...onnx.flatMap(p=>[p,'  Content-Type: application/octet-stream']),
   '/manifest.webmanifest','  Content-Type: application/manifest+json',
   ''].join('\n');
@@ -89,6 +115,9 @@ let removed=0;
 for(const file of await walk(out)){
   const rel=path.relative(out,file).split(path.sep).join('/');
   if(rel==='_headers'||rel==='_redirects'||rel==='404.html'||wanted.has(rel))continue;
+  // Older open pages may first request a model long after a deploy. Keep
+  // immutable model/font payloads; mutable manifests still follow this build.
+  if(/^assets\//.test(rel)&&/\.(?:onnx|bin|wasm|woff2?|ttf)$/.test(rel))continue;
   await rm(file);removed++;
 }
 

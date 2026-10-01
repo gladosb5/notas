@@ -18,7 +18,7 @@ const experimentalMedium=new URL(self.location.href).searchParams.get('experimen
 const MODEL=experimentalMedium
   ? {url:'./experiments/ocr-upgrade/medium.onnx?v=9c09abf0',sha:'9c09abf0957f7968c7586464b7397b84ad2387a0497a351af40e9acc71b673ba'}
   : {url:'./assets/text/ppocrv6-small.onnx?v=5435fd74',sha:'5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634'};
-let session,loading,chars,busy=false;
+let session,loading,chars;
 
 // The page counts this download in beside the stroke reader's, so the
 // model is read as a stream and its progress announced the same way.
@@ -97,7 +97,7 @@ async function setup(retry=true,id){
 
 function preprocess(width,height,buffer){
   if(!Number.isInteger(width)||!Number.isInteger(height)||width<1||height<1||
-     width>2048||height>1024||width*height>900000||buffer.byteLength!==width*height*4)
+     width>2048||height>1024||width*height>900000||!(buffer instanceof ArrayBuffer)||buffer.byteLength!==width*height*4)
     throw Error('Handwriting search crop is too large.');
   const rgba=new Uint8ClampedArray(buffer);
   const src=new OffscreenCanvas(width,height),sx=src.getContext('2d');
@@ -136,8 +136,8 @@ function decode(tensor){
 }
 
 async function recognize(width,height,buffer){
-  await setup();
   const p=preprocess(width,height,buffer);
+  await setup();
   const input=new ort.Tensor('float32',p.data,[1,3,HEIGHT,p.inputW]);
   let out;
   try{
@@ -148,14 +148,25 @@ async function recognize(width,height,buffer){
   }
 }
 
-self.onmessage=async({data})=>{
+async function handleMessage(data){
   const {id,type}=data;
-  if(busy){self.postMessage({id,error:'Handwriting search worker is busy.'});return;}
-  busy=true;
   try{
     if(type==='setup'){await setup(true,id);self.postMessage({id,ready:true});return;}
     if(type==='dispose'){if(session)await session.release();session=null;loading=null;chars=null;self.postMessage({id,disposed:true});return;}
     if(type!=='recognize')throw Error('Unknown handwriting search request.');
     self.postMessage({id,...await recognize(data.width,data.height,data.buffer)});
-  }catch(e){self.postMessage({id,error:e&&e.message?e.message:String(e)});}finally{busy=false;}
+  }catch(e){self.postMessage({id,error:e&&e.message?e.message:String(e)});}
+}
+
+// Serialize inference, setup and disposal: runtime sessions cannot overlap.
+let requestQueue=Promise.resolve(),queued=0;
+self.onmessage=({data})=>{
+  if(!data||typeof data!=='object'||Array.isArray(data)){
+    self.postMessage({error:'Invalid worker request.'});return;
+  }
+  if(queued>=32){self.postMessage({id:data.id,error:'Too many queued worker requests.'});return;}
+  queued++;
+  requestQueue=requestQueue.then(()=>handleMessage(data)).catch(e=>{
+    self.postMessage({id:data.id,error:e?.message||String(e)});
+  }).finally(()=>{queued--;});
 };

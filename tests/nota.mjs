@@ -73,7 +73,7 @@ try{
   assert.deepEqual(waitLine,[{text:'…',wait:true}],'the placeholder is a tutor line: '+JSON.stringify(waitLine));
   await page.waitForFunction(()=>N.core.S.lines.some(l=>l.tutor&&l.text.includes('144.')),null,{timeout:5000});
   assert.equal(calls.length,1,'one request for one question');
-  assert.equal(calls[0].auth,'Bearer csk-test-0123456789','the key travels as a bearer token');
+  assert.equal(calls[0].auth,undefined,'the private key is never sent to the proxy');
   assert.match(calls[0].body.messages[1].content,/12 x 12 = 144/,'the page is the context');
   assert.match(calls[0].body.messages[1].content,/Question: what is the square root of this\?/,'the question is sent without the call');
   assert.doesNotMatch(calls[0].body.messages[1].content,/hey nota/,'the call word is not part of the question');

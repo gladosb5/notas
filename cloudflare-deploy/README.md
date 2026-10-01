@@ -20,8 +20,8 @@ files are:
   (`not_found_handling` serves the `404.html` `sync.mjs` writes), so bot
   scans and mistyped links never count as Worker requests.
 - `worker.js` — what assets cannot serve: the `/nota/chat` forward (refused
-  when a browser on another origin calls it, so the key is spent on this
-  page only) and `/collab/<note id>` handed to the note's room. The `/` rule stays as a fallback for a deployment made
+  when a browser on another origin calls it; non-browser clients remain
+  subject to the public budget and rate limits) and `/collab/<note id>` handed to the note's room. The `/` rule stays as a fallback for a deployment made
   without `_redirects`.
 - `room.js` — `NoteRoom`, the Durable Object behind a shared note. It
   speaks the y-websocket protocol with a batched browser provider,
@@ -120,7 +120,11 @@ npm run build:collab           # regenerate assets/collab.js after adapter edits
 npm run test:collab            # real browsers against local Wrangler
 ```
 
-Before deployment, run `npm run sync` in this directory. The service-worker
+The project root also supports `npm run deploy`; it forwards to this directory.
+Both folders target the same Worker and domain, so deploy the intended source once.
+Deployment syncs automatically, stamps the recognition contract, and verifies all
+slide-model chunks before uploading. For a local preview, run `npm run sync`
+in this directory. The service-worker
 cache version is bumped with browser changes so existing users get the new
 bundle. The server can read existing snapshots and update logs without a
 storage migration. Use a Wrangler dry run to validate the deployment bundle;
@@ -177,3 +181,13 @@ Worker joined on the way out, at a few ms of cpu per download.)
 `wrangler dev` does not enforce the free plan's 10 ms cpu limit, so a
 change to `worker.js` is only proven by `wrangler tail --format json`
 against the deployed Worker, reading `cpuTime` and `outcome`.
+
+## Edge-case hardening deployment notes
+
+Ship the browser bundle (including `assets/collab.js`), Worker, and room implementation together. Initial sync now uses bounded binary fragments for large messages; invitation generations retire old links after sharing stops. Re-sharing produces a new generation. Host links put the secret in a URL fragment; the client authenticates its socket through a WebSocket subprotocol.
+
+`NOTA_DAILY_REQUESTS` and `NOTA_DAILY_TOKENS` in `wrangler.jsonc` default to 1,000 requests and 2,000,000 budget units per UTC day. The shared budget reserves message UTF-8 bytes plus overhead and maximum output tokens before calling upstream; it is a conservative allowance, not measured provider billing. Per-address throttles also apply. Origin checks do not authenticate non-browser clients; the endpoint remains public.
+
+`sync.mjs` writes a hashed script CSP and additional response headers. Regenerate assets after changing inline scripts. The service worker no longer forces takeover of active tabs; close existing app tabs to allow the new worker to activate. The previous cache and older immutable payloads are retained to support existing clients.
+
+Trash is retained until explicitly deleted. Local recovery and collaboration safety copies consume browser storage and remain subject to its quota. Rotate any provider credentials previously exposed in logs/transcripts before deploying with them.

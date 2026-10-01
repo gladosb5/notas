@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 
-test('an offline cache upgrade retains only the current ink model version',async()=>{
+test('an offline cache upgrade retains current assets and one previous build without taking over open tabs',async()=>{
   const stores=new Map(),events={};
   const key=request=>typeof request==='string'?request:request.url;
   const caches={
@@ -31,5 +31,5 @@ test('an offline cache upgrade retains only the current ink model version',async
   for(const url of keep)assert.ok(await current.match(url),'preserved '+url);
   assert.equal(await current.match(stale),undefined);
   assert.equal(await current.match(retired),undefined);
-  assert.equal(stores.has('notas-local-before'),false);assert.equal(claimed,true);
+  assert.equal(stores.has('notas-local-before'),true);assert.equal(claimed,false);
 });

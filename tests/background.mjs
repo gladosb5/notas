@@ -43,7 +43,12 @@ try{
   const buttons=await page.locator('#selbar button').allTextContents();
   const t0=Date.now();
   await page.locator('#selbar button',{hasText:'remove background'}).click();
+  const busy=page.locator('#selbar button[aria-busy="true"]');
+  assert.equal(await busy.textContent(),'removing background\u2026','loading is visible while the worker runs');
+  assert.ok(await busy.isDisabled(),'loading prevents duplicate removal');
+  assert.ok(!(await page.locator('#selbar button').allTextContents()).includes('undo background'),'undo is not offered during removal');
   await page.waitForFunction(()=>document.querySelector('#toast').textContent==='background removed.',null,{timeout:300000});
+  await page.waitForFunction(()=>!document.querySelector('#selbar [aria-busy="true"]'));
   const ms=Date.now()-t0;
   const out=await page.evaluate(async({id,src:before})=>{
     const S=N.core.S,C=N.core;
@@ -65,29 +70,58 @@ try{
   assert.ok(out.buttons.includes('remove background'),'the picture selection offers remove background');
   assert.equal(out.ok,true,'background removal finished');
   assert.ok(out.png,'the cut-out is a PNG');
-  assert.deepEqual(out.size,[600,400],'the cut-out keeps the picture size');
-  assert.ok(out.corner<32&&out.edge<32,'the backdrop became transparent');
+  assert.ok(out.size[0]<600&&out.size[1]<400,'transparent margins are automatically cropped');
+  assert.ok(out.size[0]<300&&out.size[1]<300,'automatic routing preserves the disc rather than the textured backdrop');
+  assert.ok(out.corner<32,'the backdrop became transparent');
   assert.ok(out.centre>224,'the subject stayed opaque');
   assert.ok(out.selected,'the lasso selected the picture');
   assert.ok(out.undone&&out.redone,'one undo restores the original, redo the cut-out');
+  // the button turns into undo background, which brings the original back,
+  // and remove background then puts the kept cut-out back without the model
+  const label=async()=>{await page.waitForTimeout(50);return page.locator('#selbar button').allTextContents();};
+  const cutLabels=await label();
+  assert.ok(cutLabels.includes('undo background')&&!cutLabels.includes('remove background'),'a cut-out offers undo background: '+cutLabels);
+  await page.locator('#selbar button',{hasText:'undo background'}).click();
+  await page.waitForFunction(id=>{const im=N.core.S.images.find(i=>i.id===id);return im.cut&&!im.bg;},before.id,{timeout:5000});
+  const backLabels=await label();
+  assert.ok(backLabels.includes('remove background')&&!backLabels.includes('undo background'),'the original offers remove background again: '+backLabels);
+  const t1=Date.now();
+  await page.locator('#selbar button',{hasText:'remove background'}).click();
+  await page.waitForFunction(id=>{const im=N.core.S.images.find(i=>i.id===id);return im.bg&&!im.cut&&im.src.startsWith('data:image/png');},before.id,{timeout:5000});
+  assert.ok(Date.now()-t1<3000,'the cut-out comes back at once');
+  const toggled=await page.evaluate(id=>{const C=N.core,S=N.core.S,im=()=>S.images.find(i=>i.id===id);
+    const cut=im().src;C.undo();const undone=!!im().cut&&!im().bg;C.undo();const orig=!im().cut&&!!im().bg&&im().src===cut;C.redo();C.redo();
+    return {undone,orig,again:im().src===cut&&!!im().bg};},before.id);
+  assert.ok(toggled.undone&&toggled.orig&&toggled.again,'each toggle is one undo: '+JSON.stringify(toggled));
   // a cropped picture: the background goes from its whole original, so a
   // later, wider crop does not bring it back, and the crop stays as it was
   const cropped=await page.evaluate(async id=>{
     const S=N.core.S,C=N.core,im=S.images.find(i=>i.id===id);
     C.undo();   // back to the photo with its backdrop
-    const full=im.src,el=new Image();await new Promise(r=>{el.onload=r;el.src=full;});
+    delete im.cut;   // and without the kept cut-out, so the model runs on the crop
+    const full=im.full||im.src,el=new Image();await new Promise(r=>{el.onload=r;el.src=full;});
     const cv=document.createElement('canvas');cv.width=el.naturalWidth/2;cv.height=el.naturalHeight;
     cv.getContext('2d').drawImage(el,el.naturalWidth/4,0,cv.width,cv.height,0,0,cv.width,cv.height);
     Object.assign(im,{src:cv.toDataURL('image/jpeg',.92),full,crop:{l:.25,t:0,r:.75,b:1},w:im.w/2,x:im.x+im.w/4});
     const ok=await N.ink.removeBackground(id);
     const size=src=>new Promise(r=>{const i=new Image();i.onload=()=>r([i.naturalWidth,i.naturalHeight,src.slice(5,14)]);i.src=src;});
     const alphaAt=async(src,u,v)=>{const i=new Image();await new Promise(r=>{i.onload=r;i.src=src;});const c=document.createElement('canvas');c.width=i.naturalWidth;c.height=i.naturalHeight;const x=c.getContext('2d');x.drawImage(i,0,0);return x.getImageData(Math.round(u*c.width),Math.round(v*c.height),1,1).data[3];};
-    return {ok,src:await size(im.src),full:await size(im.full),crop:im.crop,fullCorner:await alphaAt(im.full,.02,.02),fullChanged:im.full!==full};
+    const result={ok,src:await size(im.src),full:await size(im.full),crop:im.crop,fullCorner:await alphaAt(im.full,.02,.02),fullChanged:im.full!==full};
+    // the toggle keeps the crop: the original comes back cut to the same box
+    await N.ink.undoBackground(id);
+    result.back={src:await size(im.src),original:im.full===full,crop:im.crop};
+    await N.ink.removeBackground(id);
+    result.again={src:await size(im.src),crop:im.crop};
+    return result;
   },before.id);
   assert.ok(cropped.ok&&cropped.fullChanged,'the original loses its background too');
   assert.equal(cropped.fullCorner,0,"the original backdrop is transparent");
-  assert.deepEqual(cropped.src,[300,400,'image/png'],'the picture is the same crop of the cut-out: '+JSON.stringify(cropped.src));
-  assert.deepEqual(cropped.crop,{l:.25,t:0,r:.75,b:1},'the crop is unchanged');
+  assert.ok(cropped.src[0]<=300&&cropped.src[1]<400&&cropped.src[2]==='image/png','the existing crop is trimmed to the subject');
+  assert.ok(cropped.crop.l>=.25&&cropped.crop.r<=.75&&cropped.crop.t>0&&cropped.crop.b<1,'autocrop stays within the existing crop');
+  assert.deepEqual(cropped.back.src,[...cropped.src.slice(0,2),'image/jpe'],'undo background keeps the new crop');
+  assert.ok(cropped.back.original,'the original is the whole picture again');
+  assert.deepEqual(cropped.again.src,cropped.src,'remove background restores the trimmed cut-out');
+  assert.deepEqual(cropped.again.crop,cropped.crop,'the toggle preserves the trimmed crop');
   assert.deepEqual(errors,[]);
   console.log('background removal: ok');
 }finally{await context.close();server.close();}

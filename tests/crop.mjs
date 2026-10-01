@@ -189,15 +189,26 @@ try{
   const g2=await tp.evaluate(id=>{const im=N.core.S.images.find(i=>i.id===id);return {x:im.x,y:im.y,w:im.w,h:im.h,rot:im.rot||0};},tid);
   assert.deepEqual(g2,g0,'one undo puts the picture back');
 
-  // 9. two fingers in a crop pinch the box (spread: zoom in) and turn the picture
+  // 9. two fingers zoom the image beneath a stationary crop, ignoring twist
   await tp.evaluate(id=>N.ink.startCrop(id),tid);
   await multi(a0,b0t,[...Array(8)].map((_,i)=>{const f=(i+1)/8;return around(pc,20+20*f,Math.PI/2*f);}));
   const cz=await tp.evaluate(()=>N.ink.cropping());
-  assert.ok(Math.abs((cz.r-cz.l)-.5)<.03&&Math.abs((cz.b-cz.t)-.5)<.03&&Math.abs(cz.F.rot-Math.PI/2)<.02,'spreading zooms into the crop and twisting turns it: '+JSON.stringify({l:cz.l,r:cz.r,t:cz.t,b:cz.b,rot:cz.F.rot}));
+  assert.ok(Math.abs((cz.r-cz.l)-.5)<.03&&Math.abs((cz.b-cz.t)-.5)<.03&&Math.abs(cz.F.rot||0)<.02,'spreading zooms into the crop without twisting the guide: '+JSON.stringify({l:cz.l,r:cz.r,t:cz.t,b:cz.b,rot:cz.F.rot}));
+  const fixed=c=>({x:c.F.x+c.l*c.F.w,y:c.F.y+c.t*c.F.h,w:(c.r-c.l)*c.F.w,h:(c.b-c.t)*c.F.h});
+  const fixed0=fixed(cz);
+  assert.ok(Math.abs(fixed0.w-g0.w)<3,'zoom leaves the guide width unchanged');
+  await touch(pc,[[12,6],[30,15]]);
+  const movedCrop=await tp.evaluate(()=>N.ink.cropping());
+  await tp.screenshot({path:'test-results/crop-fixed-guide.png'});
+  for(const key of ['x','y','w','h'])assert.ok(Math.abs(fixed(movedCrop)[key]-fixed0[key])<.1,'drag keeps crop '+key+' fixed');
+  assert.ok(Math.abs(movedCrop.F.x-cz.F.x)>20,'drag moves the source image');
+  await touch(pc,[[2000,2000]]);
+  const bounded=await tp.evaluate(()=>N.ink.cropping());
+  assert.ok(bounded.l>=0&&bounded.t>=0&&bounded.r<=1&&bounded.b<=1,'panning cannot expose empty edges');
   await tp.keyboard.press('Enter');
   await tp.waitForFunction(id=>!!N.core.S.images.find(i=>i.id===id).crop,tid);
   const cr=await tp.evaluate(id=>{const im=N.core.S.images.find(i=>i.id===id);return {w:im.w,rot:im.rot||0};},tid);
-  assert.ok(Math.abs(cr.w-g0.w/2)<3&&Math.abs(cr.rot-Math.PI/2)<.02,'the pinched, turned crop is kept: '+JSON.stringify(cr));
+  assert.ok(Math.abs(cr.w-g0.w)<3&&Math.abs(cr.rot)<.02,'the crop keeps its on-page size and orientation: '+JSON.stringify(cr));
 
   // 10. two fingers on lassoed ink scale and turn it too
   await tp.evaluate(()=>{

@@ -1,0 +1,14 @@
+/browser-base/
+/features.pt
+/decoder-features.pt
+/model.safetensors
+/birefnet.py
+/BiRefNet_config.py
+/config.json
+/requirements.txt
+/.cache/
+/masks/
+/predictions/
+/*.log
+/slide-model-fp16.onnx
+/__pycache__/

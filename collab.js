@@ -35,20 +35,25 @@ function isShared(id){ return !!shared()[id]; }
    end the room and open it again later; nobody else has one */
 function hostToken(id,make){
   let t=''; try{ t=localStorage.getItem(HOST_KEY+id)||''; }catch(e){}
-  if(!t&&make){ t=C.uid()+C.uid(); try{ localStorage.setItem(HOST_KEY+id,t); }catch(e){} }
+  if(!t&&make){ t=secret(); try{ localStorage.setItem(HOST_KEY+id,t); }catch(e){} }
   return t;
 }
+/* a token nobody can work out from ids they have seen: the browser's
+   cryptographic randomness, 128 bits as lowercase hex */
+function secret(){ return Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join(''); }
 function isHost(){ return !!(room&&hostToken(room.id)); }
-function linkFor(id){ const u=new URL(location.href); u.search=''; u.hash=''; u.searchParams.set('share',id); return u.href; }
+function linkFor(id){ const u=new URL(location.href); u.search=''; u.hash=''; u.searchParams.set('share',id); const gen=room?.id===id?genOf(room):'';if(gen)u.searchParams.set('gen',gen);return u.href; }
 /* the same link with the host's token on it: for the host's own other
    devices, so they are the host there too rather than a guest of their own
    note; never the link that is sent to others */
-function hostLinkFor(id){ const t=hostToken(id); if(!t)return ''; const u=new URL(linkFor(id)); u.searchParams.set('host',t); return u.href; }
+function hostLinkFor(id){ const t=hostToken(id); if(!t)return ''; const u=new URL(linkFor(id)); u.hash='host='+t; return u.href; }
 function linkedRoom(){ const m=/[?&]share=([a-z0-9]{8,40})/.exec(location.search); return m?m[1]:null; }
-function linkedHost(){ const m=/[?&]host=([a-z0-9]{8,80})/.exec(location.search); return m?m[1]:''; }
+function linkedHost(){ const m=/[?&]host=([a-z0-9]{8,80})/.exec(location.hash.replace(/^#/, '?')||location.search); return m?m[1]:''; }
 /* the page is online as far as the browser knows; offline is certain, online only likely */
 function offline(){ return navigator.onLine===false; }
 function socketUrl(){ return (location.protocol==='https:'?'wss://':'ws://')+location.host+'/collab'; }
+/* a page opened from a file (or any non-web address) has no room to reach */
+function served(){ return /^https?:$/.test(location.protocol)&&!!location.host; }
 function colorFor(s){ let h=0; for(const c of s)h=(h*31+c.charCodeAt(0))>>>0; return 'hsl('+(h%360)+' 45% 45%)'; }
 function initials(s){ const w=String(s||'').trim().split(/\s+/).filter(Boolean); return ((w[0]||'?')[0]+(w[1]?w[1][0]:'')).toUpperCase(); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -58,7 +63,102 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;',
    the canvas it is drawn on) */
 function peerColor(c,n){ return /^hsl\(\d{1,3} 45% 45%\)$/.test(c||'')?c:colorFor(n||'someone'); }
 const PICTURE=/^data:image\/(?:png|jpe?g|gif|webp);base64,/i;   /* what an import accepts */
-function safeImage(im){ return !!im&&PICTURE.test(im.src||'')&&(!im.full||PICTURE.test(im.full)); }
+/* A picture's pixel size, read from its header without decoding it: a few
+   hundred bytes that claim 60000 x 60000 pixels would otherwise be decoded
+   by every device on the note, and take a tablet's tab down each time the
+   note opens. What this page adds is never over 2000 on a side. */
+const PICTURE_SIDE=8192,PICTURE_AREA=36e6;
+function pictureSize(src){
+  let bin='';
+  try{ const b64=src.slice(src.indexOf(',')+1,src.indexOf(',')+1+262144); bin=atob(b64.slice(0,b64.length-b64.length%4)); }catch(e){ return null; }
+  const at=i=>bin.charCodeAt(i)&255,be16=i=>at(i)<<8|at(i+1),le16=i=>at(i)|at(i+1)<<8,le24=i=>at(i)|at(i+1)<<8|at(i+2)<<16;
+  if(bin.startsWith('\x89PNG'))return bin.length>=24?{w:(at(16)<<24|at(17)<<16|at(18)<<8|at(19))>>>0,h:(at(20)<<24|at(21)<<16|at(22)<<8|at(23))>>>0}:null;
+  if(bin.startsWith('GIF8'))return bin.length>=10?{w:le16(6),h:le16(8)}:null;
+  if(bin.startsWith('RIFF')&&bin.slice(8,12)==='WEBP'){
+    const kind=bin.slice(12,16);
+    if(kind==='VP8 '&&bin.length>=30)return {w:le16(26)&0x3fff,h:le16(28)&0x3fff};
+    if(kind==='VP8L'&&bin.length>=25)return {w:1+(at(21)|(at(22)&0x3f)<<8),h:1+(at(22)>>6|at(23)<<2|(at(24)&0x0f)<<10)};
+    if(kind==='VP8X'&&bin.length>=30)return {w:1+le24(24),h:1+le24(27)};
+    return null;
+  }
+  if(at(0)===0xff&&at(1)===0xd8){
+    for(let i=2;i+9<bin.length;){
+      if(at(i)!==0xff){ i++; continue; }
+      const m=at(i+1);
+      if(m===0xff){ i++; continue; }
+      if(m>=0xc0&&m<=0xcf&&m!==0xc4&&m!==0xc8&&m!==0xcc)return {w:be16(i+7),h:be16(i+5)};
+      if(m===0xd8||m===0x01||(m>=0xd0&&m<=0xd7)){ i+=2; continue; }
+      i+=2+be16(i+2);
+    }
+  }
+  return null;
+}
+function safePicture(src){
+  if(typeof src!=='string'||!PICTURE.test(src))return false;
+  const s=pictureSize(src);
+  return !!s&&s.w>0&&s.h>0&&s.w<=PICTURE_SIDE&&s.h<=PICTURE_SIDE&&s.w*s.h<=PICTURE_AREA;
+}
+const num=(v,limit=1e6)=>typeof v==='number'&&Number.isFinite(v)&&Math.abs(v)<=limit;
+function safeImage(im){
+  return !!im&&typeof im==='object'&&safePicture(im.src)&&['full','bg','cut'].every(k=>!im[k]||safePicture(im[k]))&&
+    num(im.x)&&num(im.y)&&num(im.w)&&num(im.h)&&im.w>0&&im.h>0&&(im.rot===undefined||num(im.rot,100))&&
+    (!im.crop||(typeof im.crop==='object'&&['l','t','r','b'].every(k=>num(im.crop[k],1)&&im.crop[k]>=0)));
+}
+/* Everything else someone else writes is held to what an import accepts
+   (validateImportedNote): a stroke whose points or box are missing or not
+   numbers threw on every frame of every device's ink, for good. Fields of
+   the page's own (a leading _) never come from another device; a stroke's
+   box is worked out here from its points. */
+function plainFields(v,skip){
+  const o={};
+  for(const k in v){
+    if(k[0]==='_'||skip.includes(k)||k==='__proto__'||k==='constructor'||k==='prototype')continue;
+    const x=v[k];
+    if(typeof x==='boolean'||(typeof x==='number'&&Number.isFinite(x))||(typeof x==='string'&&x.length<=200))o[k]=x;
+  }
+  return o;
+}
+function cleanStroke(v,id){
+  if(!v||typeof v!=='object')return null;
+  const p=v.pts;
+  if(!Array.isArray(p)||p.length<3||p.length%3||p.length>600000)return null;
+  for(let i=0;i<p.length;i+=3)if(!num(p[i])||!num(p[i+1])||!num(p[i+2],1.5)||p[i+2]<0)return null;
+  if(!num(v.w,100)||v.w<=0)return null;
+  const st={...plainFields(v,['pts','bbox','times','id','author','color']),id,author:v.author==='ai'?'ai':'user',pts:p.slice(),bbox:N.ink.bboxOf(p)};
+  if(typeof v.color==='string'&&/^#[0-9a-f]{6}$/i.test(v.color))st.color=v.color;
+  if(Array.isArray(v.times)&&v.times.length===p.length/3&&v.times.every(t=>num(t,3600000)&&t>=0))st.times=v.times.slice();
+  return st;
+}
+function cleanLineAttrs(a){
+  const o=plainFields(a&&typeof a==='object'?a:{},['id','text','wait','h']);
+  if(!num(o.y)||o.y<0)o.y=120;
+  if(o.x!==undefined&&(!num(o.x)||o.x<0))delete o.x;
+  return o;
+}
+
+/* ---- the day's allowance ----
+   The rooms run on a free plan with a daily allowance of requests. When it
+   is spent the websocket simply fails, which says nothing about why, so
+   the page asks /collab/status: a 429 (the worker's own, or Cloudflare's
+   error 1027 page when the worker itself is out) means the allowance is
+   gone until it resets. Asked at most once a minute, only while the link
+   is down, and cleared the moment the room connects again. */
+const PROBE_MS=60000,BUSY_TEXT='we are currently having high load, please check tomorrow.';
+let busy=false,probing=null,probedAt=0;
+function probe(){
+  if(probing||offline()||!/^https?:$/.test(location.protocol))return;
+  if(probedAt&&performance.now()-probedAt<PROBE_MS)return;
+  probedAt=performance.now();
+  probing=fetch('./collab/status',{cache:'no-store',signal:AbortSignal.timeout(8000)})
+    .then(async res=>{
+      if(res.status===429)return true;
+      if(res.ok)return false;
+      return /\b1027\b|"quota"/.test(await res.text().catch(()=>''))||null;
+    })
+    .catch(()=>null)
+    .then(over=>{ probing=null; if(over!==null)setBusy(over); });
+}
+function setBusy(on){ if(busy===on)return; busy=on; paintButton(); }
 
 function loadLib(){
   if(window.Yjs)return Promise.resolve(window.Yjs);
@@ -81,21 +181,52 @@ function strokeSig(st){
   if(!c||c.rev!==rev){ c={rev,json:JSON.stringify(plainStroke(st))}; strokeSigs.set(st,c); }
   return c.json;
 }
-function lineAttrs(ln){ const o={}; for(const k in ln){ if(k==='id'||k==='text'||k==='wait'||k[0]==='_')continue; o[k]=ln[k]; } return o; }
-/* the pictures themselves by length: a cropped picture carries its original (full) too */
-function imageSig(im){ return JSON.stringify({...im,src:undefined,full:undefined})+'|'+(im.src||'').length+'|'+(im.full||'').length; }
-function editText(ytext,from,to){
+/* A line's height is measured by each device for its own screen and never
+   shared: two screens that wrap it differently would each write theirs back
+   over the other's, forever, on an idle page. */
+function lineAttrs(ln){ const o={}; for(const k in ln){ if(k==='id'||k==='text'||k==='wait'||k==='h'||k[0]==='_')continue; o[k]=ln[k]; } return o; }
+/* the pictures themselves by length: a cropped picture carries its original (full) too,
+   and one whose background was removed or put back the other version (bg or cut) */
+function imageSig(im){ return JSON.stringify({...im,src:undefined,full:undefined,bg:undefined,cut:undefined})+'|'+(im.src||'').length+'|'+(im.full||'').length+'|'+(im.bg||'').length+'|'+(im.cut||'').length; }
+/* The one span that differs between two texts, never splitting a character
+   made of two UTF-16 units (an emoji, a rare letter) between the kept and
+   the changed part. */
+const low=c=>c>=0xdc00&&c<=0xdfff;
+function textDiff(from,to){
   let a=0; while(a<from.length&&a<to.length&&from[a]===to[a])a++;
+  if(a>0&&(low(from.charCodeAt(a))||low(to.charCodeAt(a))))a--;
   let b=0; while(b<from.length-a&&b<to.length-a&&from[from.length-1-b]===to[to.length-1-b])b++;
-  if(from.length-a-b>0)ytext.delete(a,from.length-a-b);
-  if(to.length-a-b>0)ytext.insert(a,to.slice(a,to.length-b));
+  if(b>0&&(low(from.charCodeAt(from.length-b))||low(to.charCodeAt(to.length-b))))b--;
+  return {at:a,del:from.length-a-b,ins:to.slice(a,to.length-b)};
+}
+/* this device's edit to a line (base to mine) put into the shared text,
+   which may meanwhile hold someone else's edit of the same base: where the
+   two touch, mine goes after theirs, and nothing of theirs is deleted that
+   this device never saw */
+function editText(ytext,base,mine){
+  const d=textDiff(base,mine),now=ytext.toString();
+  let at=d.at,del=d.del;
+  if(now!==base){
+    const r=textDiff(base,now);
+    if(at>=r.at+r.del)at+=r.ins.length-r.del;
+    else if(at+del>r.at){
+      /* overlapping: keep what they wrote, remove only what this device
+         removed outside their span */
+      const end=at+del;
+      if(at<r.at){ del=r.at-at; }
+      else{ at=r.at+r.ins.length; del=Math.max(0,end-(r.at+r.del)); }
+    }
+  }
+  at=Math.max(0,Math.min(at,now.length)); del=Math.max(0,Math.min(del,now.length-at));
+  if(del)ytext.delete(at,del);
+  if(d.ins)ytext.insert(at,d.ins);
 }
 
 /* the page changed: mirror the difference into the document */
 function flush(){
   flushQueued=false;
-  const r=room; if(!r||applying||r.id!==S.id)return;   /* never another note into this room */
-  const {Y}=window.Yjs,known=r.known;
+  const r=room; if(!r||applying||r.id!==S.id||!r.ready)return;   /* never another note into this room */
+  const {Y}=window.Yjs,known=r.known,merged=[];
   r.doc.transact(()=>{
     const seen=new Set();
     for(const st of S.strokes){
@@ -105,13 +236,23 @@ function flush(){
     for(const id of [...known.strokes.keys()])if(!seen.has(id)){ r.strokes.delete(id); known.strokes.delete(id); }
     seen.clear();
     for(const ln of S.lines){
+      /* the empty line a blank page opens with is this device's own until
+         something is typed in it: every device that joined, or saw the last
+         line go, added one, and each was sent to everyone */
+      if(ln._auto){ if(!ln.text&&!known.lines.has(ln.id))continue; delete ln._auto; }
       seen.add(ln.id);
       const attrs=JSON.stringify(lineAttrs(ln)),text=ln.text||'';
       let k=known.lines.get(ln.id),ym=r.lines.get(ln.id);
       if(!ym){ ym=new Y.Map(); r.lines.set(ln.id,ym); ym.set('attrs',JSON.parse(attrs)); ym.set('text',new Y.Text(text)); known.lines.set(ln.id,{attrs,text}); continue; }
       if(!k){ k={attrs:'',text:ym.get('text')?ym.get('text').toString():''}; known.lines.set(ln.id,k); }
       if(k.attrs!==attrs){ ym.set('attrs',JSON.parse(attrs)); k.attrs=attrs; }
-      if(k.text!==text){ let yt=ym.get('text'); if(!yt){ yt=new Y.Text(); ym.set('text',yt); } editText(yt,k.text,text); k.text=text; }
+      if(k.text!==text&&composing!==ln.id){
+        let yt=ym.get('text'); if(!yt){ yt=new Y.Text(); ym.set('text',yt); }
+        editText(yt,k.text,text);
+        k.text=yt.toString();
+        /* someone else's letters were already in it: the line becomes both */
+        if(k.text!==text)merged.push(ln);
+      }
     }
     for(const id of [...known.lines.keys()])if(!seen.has(id)){ r.lines.delete(id); known.lines.delete(id); }
     seen.clear();
@@ -120,12 +261,50 @@ function flush(){
       if(known.images.get(im.id)!==sig){ r.images.set(im.id,{...im}); known.images.set(im.id,sig); }
     }
     for(const id of [...known.images.keys()])if(!seen.has(id)){ r.images.delete(id); known.images.delete(id); }
-    if(r.meta.get('title')!==S.title)r.meta.set('title',S.title);
-    if((r.meta.get('docH')||0)<S.docH)r.meta.set('docH',S.docH);
+    /* only a title this device changed: a device that has not yet had the
+       room's copy would otherwise send its blank page's "untitled" */
+    if(S.title!==known.title&&r.meta.get('title')!==S.title){ r.meta.set('title',S.title); }
+    known.title=S.title;
+    if((r.meta.get('docH')||0)<S.docH)r.meta.set('docH',Math.min(S.docH,DOC_H_MAX));
   },LOCAL);
+  for(const ln of merged){ const k=known.lines.get(ln.id); if(k){ ln.text=k.text; showText(ln); } }
 }
+const DOC_H_MAX=2e6;
+/* a line's text changed underneath the person typing in it: the box shows
+   it at once (not a frame later, when a keystroke in between would be
+   typed into the old text), the caret kept on the same letter */
+function showText(ln,before){
+  const el=document.querySelector('.line .txt[data-id="'+CSS.escape(String(ln.id))+'"]');
+  if(!el||el.value===ln.text)return;
+  const selection=document.getSelection();
+  if(!selection||!el.contains(selection.anchorNode)&&!el.contains(selection.focusNode)){ el.value=ln.text; return; }
+  const old=before===undefined?el.value:before,d=textDiff(old,ln.text);
+  const move=p=>p<=d.at?p:p>=d.at+d.del?p+d.ins.length-d.del:d.at+d.ins.length;
+  const endpoint=(node,offset)=>{
+    if(!el.contains(node))return {node,offset};
+    const range=document.createRange();range.selectNodeContents(el);range.setEnd(node,offset);
+    return {offset:move(range.toString().length)};
+  };
+  const anchor=endpoint(selection.anchorNode,selection.anchorOffset),focus=endpoint(selection.focusNode,selection.focusOffset);
+  el.value=ln.text;
+  const point=p=>p.node?[p.node,p.offset]:[el.firstChild||el,Math.min(p.offset,el.firstChild?.textContent.length||0)];
+  try{ selection.setBaseAndExtent(...point(anchor),...point(focus)); }catch(err){}
+}
+/* the line an input method is composing in: its box is left alone until
+   the word is done, and its own text is sent then (merged as above) */
+let composing=null;
+document.addEventListener('compositionstart',e=>{ composing=N.text.focusedLine()?.id||e.target?.dataset?.id||null; },true);
+document.addEventListener('compositionend',()=>{
+  const id=composing; composing=null;
+  if(!id||!room)return;
+  /* the finished word goes out now, merged with whatever came in meanwhile */
+  changed();
+},true);
 function changed(hint){
   if(!room||applying||room.id!==S.id)return;
+  /* the device's copy is still being read: a stroke drawn now is sent once
+     it is in (see startNow); anything else is picked up by that pass */
+  if(!room.ready){ if(hint?.stroke)room.early.push(hint.stroke.id); return; }
   /* A pen lift is one new immutable stroke. Publish it now, without walking
      every stroke and line in a growing note or waiting for the batch timer. */
   if(hint?.stroke&&room.provider){
@@ -145,33 +324,72 @@ function changed(hint){
 
 /* ---- and back out: someone else wrote ---- */
 function lineFrom(id,ym){
-  const attrs=ym.get('attrs')||{},yt=ym.get('text');
-  return {id,...attrs,text:yt?yt.toString():''};
+  const attrs=ym.get('attrs'),yt=ym.get('text');
+  const ln={id,...cleanLineAttrs(attrs),text:yt&&typeof yt.toString==='function'?String(yt.toString()).slice(0,5000000):''};
+  if(typeof ln.answerPrefix==='string'&&!ln.text.startsWith(ln.answerPrefix))delete ln.answerPrefix;
+  return ln;
 }
 function takeLine(id){
   const r=room,ym=r.lines.get(id);
-  if(!ym){ S.lines=S.lines.filter(l=>l.id!==id); r.known.lines.delete(id); return; }
-  const fresh=lineFrom(id,ym),k={attrs:JSON.stringify(lineAttrs(fresh)),text:fresh.text};
-  r.known.lines.set(id,k);
+  if(!ym||typeof ym.get!=='function'){ S.lines=S.lines.filter(l=>l.id!==id); r.known.lines.delete(id); return; }
+  const fresh=lineFrom(id,ym),was=r.known.lines.get(id);
   const ln=S.lines.find(l=>l.id===id);
+  /* a word still being composed here: its text waits (see compositionend) */
+  const hold=!!ln&&composing===id;
+  r.known.lines.set(id,{attrs:JSON.stringify(lineAttrs(fresh)),text:hold&&was?was.text:fresh.text});
   if(!ln){ S.lines.push(fresh); return; }
-  for(const key of Object.keys(ln))if(key!=='id'&&key!=='wait'&&key[0]!=='_'&&!(key in fresh))delete ln[key];
-  Object.assign(ln,fresh);
+  const before=ln.text;
+  for(const key of Object.keys(ln))if(key!=='id'&&key!=='wait'&&key!=='h'&&key!=='text'&&key[0]!=='_'&&!(key in fresh))delete ln[key];
+  const {text,...attrs}=fresh;
+  Object.assign(ln,attrs);
+  if(!hold&&ln.text!==text){ ln.text=text; showText(ln,before); }
+}
+function takeStroke(id,v){ const st=cleanStroke(v,id); if(st)return st; console.warn('collab: a stroke from another device was not valid and was skipped:',id); return null; }
+function takeImage(id,v){ if(!safeImage(v))return null; const im={...v,id}; for(const k of Object.keys(im))if(k[0]==='_')delete im[k]; return im; }
+function takeMeta(r){
+  const title=r.meta.get('title'),h=r.meta.get('docH');
+  return {title:typeof title==='string'&&title.trim()?title.slice(0,500):'',docH:num(h,DOC_H_MAX)&&h>0?h:0};
 }
 function pullAll(){
   const r=room;
   applying=true;
   try{
-    S.strokes=[...r.strokes.entries()].map(([id,v])=>{ const st={...v,id}; r.known.strokes.set(id,strokeSig(st)); return st; });
+    S.strokes=[];
+    for(const [id,v] of r.strokes.entries()){ const st=takeStroke(id,v); r.known.strokes.set(id,st?strokeSig(st):''); if(st)S.strokes.push(st); }
+    orderStrokes();
     S.lines=[]; for(const id of r.lines.keys())takeLine(id);
-    S.images=[...r.images.entries()].filter(([,v])=>safeImage(v)).map(([id,v])=>{ const im={...v,id}; r.known.images.set(id,imageSig(im)); return im; });
-    if(r.meta.get('title'))S.title=r.meta.get('title');
+    S.images=[];
+    for(const [id,v] of r.images.entries()){ const im=takeImage(id,v); if(im){ r.known.images.set(id,imageSig(im)); S.images.push(im); } }
+    orderImages();
+    const meta=takeMeta(r);
+    if(meta.title)S.title=meta.title;
+    r.known.title=S.title;
     S.selection=[]; S.imageSelection=null;
-    S.docH=Math.max(S.docH||1600,r.meta.get('docH')||0);
+    S.docH=Math.max(S.docH||1600,meta.docH);
     N.ui.paintAll();
-    if(!S.lines.length)N.text.add(120,false);
+    if(!S.lines.length)N.text.add(120,false)._auto=true;
   }finally{ applying=false; }
   C.markDirty();
+}
+/* Strokes and pictures are kept in maps, which have no order of their own:
+   each device drew the later ones on top in the order it happened to hear
+   of them, and a note opened again came back in yet another. They are put
+   in the order they were made (a stroke's start time; a picture's z, the
+   time it was added), the id breaking ties, the same on every device; a
+   picture arriving later goes into that order, not simply on top. */
+const byId=(a,b)=>a.id<b.id?-1:a.id>b.id?1:0;
+function imageOrder(a,b){ return (a.z||0)-(b.z||0)||byId(a,b); }
+function orderStrokes(){ S.strokes.sort((a,b)=>(a.t0||0)-(b.t0||0)||byId(a,b)); }
+function orderImages(){ S.images.sort(imageOrder); }
+/* the other way round: the document is made to match the page. Everything
+   it holds is taken as known but stale, so flush() rewrites what differs and
+   deletes what the page no longer has */
+function adopt(r){
+  for(const id of r.strokes.keys())r.known.strokes.set(id,'');
+  for(const [id,ym] of r.lines.entries())r.known.lines.set(id,{attrs:'',text:ym&&ym.get&&ym.get('text')?ym.get('text').toString():''});
+  for(const id of r.images.keys())r.known.images.set(id,'');
+  r.known.title=null;
+  flush();
 }
 /* a stroke or image that only moved: the offset, so it can glide there */
 function translationOf(a,b){
@@ -193,7 +411,7 @@ function landed(id,moved){
   shift.set(id,{dx:v.dx-moved.dx,dy:v.dy-moved.dy});
   for(const p of room.peers){
     const d=p.drag||(p.dragGhost&&p.dragGhost.drag);
-    if(d&&(d.image===id||(d.ids||[]).includes(id)))p.dragDone=d.id;
+    if(d&&(d.image===id||d.ids.includes(id)))p.dragDone=d.id;
   }
   paint();
 }
@@ -206,8 +424,10 @@ function observe(){
     try{
       for(const [id,ch] of e.changes.keys){
         if(ch.action==='delete'){ S.strokes=S.strokes.filter(s=>s.id!==id); r.known.strokes.delete(id); N.ink.peerShift.delete(id); continue; }
-        const st={...r.strokes.get(id),id}; r.known.strokes.set(id,strokeSig(st));
-        if(st.bbox)dirty.bottom=Math.max(dirty.bottom,st.bbox[3]);
+        const st=takeStroke(id,r.strokes.get(id));
+        if(!st){ r.known.strokes.set(id,''); continue; }
+        r.known.strokes.set(id,strokeSig(st));
+        dirty.bottom=Math.max(dirty.bottom,st.bbox[3]);
         const at=S.strokes.findIndex(s=>s.id===id);
         if(at<0)S.strokes.push(st);
         else{ const moved=translationOf(S.strokes[at],st); S.strokes[at]=st; if(moved)landed(id,moved); }
@@ -230,10 +450,10 @@ function observe(){
     try{
       for(const [id,ch] of e.changes.keys){
         if(ch.action==='delete'){ S.images=S.images.filter(i=>i.id!==id); r.known.images.delete(id); N.ink.peerShift.delete(id); if(S.imageSelection===id)S.imageSelection=null; continue; }
-        const im={...r.images.get(id),id}; if(!safeImage(im))continue; r.known.images.set(id,imageSig(im));
+        const im=takeImage(id,r.images.get(id)); if(!im)continue; r.known.images.set(id,imageSig(im));
         dirty.bottom=Math.max(dirty.bottom,im.y+im.h);
         const at=S.images.findIndex(i=>i.id===id);
-        if(at<0)S.images.push(im);
+        if(at<0){ const after=S.images.findIndex(i=>imageOrder(i,im)>0); if(after<0)S.images.push(im); else S.images.splice(after,0,im); }
         else{ const moved=translationOf(S.images[at],im); S.images[at]=im; if(moved)landed(id,moved); }
       }
     }finally{ applying=false; }
@@ -241,7 +461,9 @@ function observe(){
   });
   r.meta.observe((e,txn)=>{
     if(txn.origin===LOCAL)return;
-    if(e.keysChanged.has('title')&&r.meta.get('title')){ S.title=r.meta.get('title'); N.ui.refreshTitle(); }
+    const meta=takeMeta(r);
+    if(e.keysChanged.has('title')&&meta.title){ S.title=meta.title; r.known.title=meta.title; N.ui.refreshTitle(); }
+    if(e.keysChanged.has('gen')&&r.provider)r.provider.params.gen=genOf(r);
     refresh();
   });
 }
@@ -254,9 +476,10 @@ function refresh(){
   requestAnimationFrame(()=>{
     refreshQueued=false;
     if(!room)return;
-    C.growDoc(Math.max(dirty.bottom,(room.meta.get('docH')||0)-700));
+    C.growDoc(Math.min(DOC_H_MAX,Math.max(dirty.bottom,takeMeta(room).docH-700)));
     dirty.bottom=0;
-    if(dirty.text){ N.text.render(); if(!S.lines.length)N.text.add(120,false); }
+    /* the blank line a page falls back on is this device's own (see flush) */
+    if(dirty.text){ N.text.render(); if(!S.lines.length){ applying=true; try{ N.text.add(120,false)._auto=true; }finally{ applying=false; } } }
     if(dirty.ink)needRecog=true;
     if(dirty.ink||dirty.images)N.ink.render(()=>{
       if(!room)return;
@@ -276,26 +499,61 @@ function refresh(){
 }
 
 /* ---- the room ---- */
-async function start(id,seed){
+let starting=null,startSeq=0;
+async function start(id,seed,gen){
   stop();
+  /* shared from here for the first time (or again, after it was ended):
+     the note on the page is the truth. A note still marked shared whose
+     room simply failed to start is not: the others' edits since are in the
+     device's copy of the room and must not be written over */
+  const fresh=seed&&!isShared(id);
+  const ticket=++startSeq;
+  starting=id;
+  try{ await startNow(id,seed,fresh,ticket,gen); }
+  finally{ if(starting===id&&ticket===startSeq)starting=null; }
+}
+/* the share this device's copy belongs to ('' for a copy yet to arrive) */
+function genOf(r){ const g=r.meta.get('gen'); return typeof g==='string'&&/^[a-z0-9]{8,40}$/.test(g)?g:''; }
+async function startNow(id,seed,fresh,ticket,gen){
   const {Y,WebsocketProvider,IndexeddbPersistence}=await loadLib();
-  if(S.id!==id)return;
+  /* a later start (the note opened twice, a link opened on a known note)
+     has taken over: this one leaves no second document behind */
+  if(S.id!==id||ticket!==startSeq)return;
+  if(room)stop();
   const doc=new Y.Doc();
   const r=room={id,doc,strokes:doc.getMap('strokes'),lines:doc.getMap('lines'),images:doc.getMap('images'),meta:doc.getMap('meta'),
-    known:{strokes:new Map(),lines:new Map(),images:new Map()},status:'connecting',peers:[],synced:false};
+    known:{strokes:new Map(),lines:new Map(),images:new Map(),title:seed?null:S.title},status:'connecting',peers:[],synced:false,ready:false,early:[]};
   r.idb=new IndexeddbPersistence('notas-collab-'+id,doc);
   await r.idb.whenSynced;
   if(room!==r)return;
   const stored=r.strokes.size||r.lines.size||r.images.size;
-  if(stored){ pullAll(); observe(); }
+  /* until the device's copy is read, nothing is written into it: a change
+     made in that moment would otherwise land as a rival of what is stored.
+     A stroke drawn meanwhile is kept and sent once the copy is in. */
+  r.ready=true;
+  /* Sharing from here, the note on the page is the truth. A copy of the room
+     this device still held from an earlier share used to be pulled over it,
+     and everything written, erased or renamed since came undone. */
+  if(stored&&fresh){ adopt(r); observe(); }
+  else if(stored){
+    const early=r.early.map(sid=>S.strokes.find(s=>s.id===sid)).filter(Boolean);
+    pullAll(); observe();
+    if(early.length){ for(const st of early)if(!S.strokes.some(s=>s.id===st.id))S.strokes.push(st); orderStrokes(); N.ink.render(); flush(); }
+  }
   else if(seed){ flush(); observe(); }
-  const params={name:name()};
-  const token=hostToken(id,seed);      /* sharing makes this device the host */
-  if(token)params.host=token;
-  r.provider=new WebsocketProvider(socketUrl(),id,doc,{params});
+  if(gen&&!stored&&genOf(r)!==gen)r.doc.transact(()=>r.meta.set('gen',gen),LOCAL);
+  else if(gen&&seed&&fresh)r.doc.transact(()=>r.meta.set('gen',gen),LOCAL);
+  if(!served()){ r.status='disconnected'; setShared(id,true); paintButton(); return; }
+  const params={name:name(),gen:genOf(r)};
+  const token=hostToken(id,false);
+  /* the host's token goes as a websocket subprotocol, out of the address
+     and so out of the request logs */
+  r.provider=new WebsocketProvider(socketUrl(),id,doc,{params,protocols:token?['notas','h'+token]:['notas']});
   announce();
   r.provider.on('status',({status})=>{
-    if(room!==r)return; r.status=status; paintButton();
+    if(room!==r)return; r.status=status;
+    if(status==='connected'){ probedAt=0; setBusy(false); }
+    paintButton();
     if(status==='connected'&&r.wasOff){ r.wasOff=false; C.status('sharing again.'); }
     /* said once when the link drops, not on every retry: edits keep going
        into the copy on this device and catch up on their own */
@@ -307,9 +565,19 @@ async function start(id,seed){
        the room holds, replacing the blank page opened for it */
     if(!r.synced&&!stored&&!seed){ pullAll(); observe(); }
     r.synced=true; paintButton();
+    /* the share this copy now belongs to, for every reconnection from here */
+    r.provider.params.gen=genOf(r);
   });
-  /* the room closed the door for good: the host has stopped sharing */
-  r.provider.on('closed',({code})=>{ if(room===r&&code===4410)ended(); });
+  /* every failed or dropped attempt, the first included (which never
+     reports "disconnected"): is it the day's allowance? */
+  r.provider.on('connection-close',()=>{ if(room===r)probe(); });
+  /* the room closed the door for good: the host has stopped sharing, or
+     the note is too big to send over this connection */
+  r.provider.on('closed',({code})=>{
+    if(room!==r)return;
+    if(code===4410)ended();
+    else if(code===4413){ r.status='disconnected'; paintButton(); C.toast('this shared note is too big to open here. ask whoever shared it to make it smaller, or to send it as a file.',8000); }
+  });
   r.provider.awareness.on('change',()=>{ if(room===r)peers(); });
   /* a quarter second pulse: sends what this device is doing when that
      changed, and repaints after a zoom, which has no event of its own */
@@ -339,12 +607,19 @@ async function endForEveryone(){
   const r=room; if(!r)return false;
   const token=hostToken(r.id); if(!token)return false;
   try{
-    const res=await fetch('./collab/'+r.id+'/close?host='+encodeURIComponent(token),{method:'POST'});
+    const res=await fetch('./collab/'+r.id+'/close',{method:'POST',headers:{'X-Notas-Host':token}});
     if(!res.ok)throw new Error('could not end sharing ('+res.status+').');
   }catch(e){ C.toast(String(e.message||'could not end sharing.').toLowerCase()); return false; }
   if(room===r)stop(); setShared(r.id,false);
   if(S.id===r.id){C.markDirty(); await C.save();}
+  forget(r.id);
   return true;
+}
+/* What this device kept of a room it no longer shares. Kept, it came back
+   the next time the note was shared and replaced everything written since.
+   Deleting waits for every tab's connection to it to close. */
+function forget(id){
+  setTimeout(()=>{ if(room&&room.id===id)return; try{ indexedDB.deleteDatabase('notas-collab-'+id); }catch(e){} },400);
 }
 /* this device leaves a note that is not its own: the note goes with it,
    unless a copy is kept first as a note of this device's own, which is
@@ -371,7 +646,7 @@ async function leaveNow(id,keep){
      note stays here as an ordinary one */
   if(S.id===id){ C.toast('the note stays here as it is for now.',5000); return false; }
   await C.deleteStoredNote(id);
-  setTimeout(()=>{ try{ indexedDB.deleteDatabase('notas-collab-'+id); }catch(e){} },400);
+  forget(id);
   return copyId;
 }
 /* what this device holds of a shared note, saved again under a new id as
@@ -413,6 +688,7 @@ async function ended(){
   if(r&&hostToken(r.id)){
     stop(); setShared(r.id,false);
     C.markDirty(); await C.save();
+    forget(r.id);
     C.status("sharing ended. your note is saved.");
     return;
   }
@@ -444,8 +720,8 @@ function peers(){
       const until=prev.live.until||now+2000;
       if(until>now){ prev.live.until=until; live=prev.live; }
     }
-    const p={id,name:String(st.user.name||'someone').slice(0,40),color:peerColor(st.user.color,st.user.name),cursor:st.cursor||null,selection:st.selection||null,focus:st.focus||null,drag:st.drag||null,
-      tool:st.tool||'',live,
+    const p={id,name:String(st.user.name||'someone').slice(0,40),color:peerColor(st.user.color,st.user.name),cursor:cleanCursor(st.cursor),selection:cleanSelection(st.selection),focus:cleanFocus(st.focus),drag:cleanDrag(st.drag),
+      tool:typeof st.tool==='string'?st.tool.slice(0,20):'',live,
       view:prev.view||null,caret:prev.caret,dragDone:prev.dragDone,dragGhost:prev.dragGhost};
     /* a drag that stopped being reported keeps its last offset for a
        moment, until the move itself lands, so nothing snaps back and forth */
@@ -476,17 +752,43 @@ function peers(){
    here; a piece already held (a repeat of the same message) is dropped,
    and one that starts past what is held is joined anyway, so a message
    lost mid-stroke costs a short straight bit, not the stroke. */
+/* What someone's presence says is only drawn from, never trusted: every
+   field is checked for the shape this page sends, and anything else is as
+   if it had not been said (a list that was not a list stopped every
+   device's presence layer, and a stroke in progress could grow without end). */
+const LIVE_MAX=60000;
+function cleanIds(v){ return Array.isArray(v)?v.filter(x=>typeof x==='string'&&x.length<=160).slice(0,200):[]; }
+function cleanCursor(c){ return c&&num(c.x)&&num(c.y)?{x:c.x,y:c.y}:null; }
+function cleanSelection(s){ if(!s||typeof s!=='object')return null; return {ids:cleanIds(s.ids),image:typeof s.image==='string'?s.image:null}; }
+function cleanFocus(f){ if(!f||typeof f!=='object'||typeof f.line!=='string')return null; return {line:f.line,start:num(f.start,1e7)?Math.max(0,f.start|0):0,end:num(f.end,1e7)?Math.max(0,f.end|0):0}; }
+function cleanDrag(d){ if(!d||typeof d!=='object'||typeof d.id!=='string')return null; return {id:d.id,ids:cleanIds(d.ids),image:typeof d.image==='string'?d.image:null,dx:num(d.dx)?d.dx:0,dy:num(d.dy)?d.dy:0}; }
 function liveOf(prev,msg){
-  if(!msg||!msg.id||!Array.isArray(msg.pts))return null;
-  const stride=msg.kind==='lasso'?2:3;
+  if(!msg||typeof msg.id!=='string'||!Array.isArray(msg.pts)||!msg.pts.every(v=>num(v)))return null;
+  const kind=['pen','eraser','lasso'].includes(msg.kind)?msg.kind:'pen',stride=kind==='lasso'?2:3;
   if(prev&&prev.id===msg.id){
     const have=prev.pts.length/stride;
-    if(msg.from>=have&&msg.pts.length)prev.pts=prev.pts.concat(msg.pts);
+    if(num(msg.from,1e7)&&msg.from>=have&&msg.pts.length&&prev.pts.length+msg.pts.length<=LIVE_MAX)prev.pts=prev.pts.concat(msg.pts);
     return prev;
   }
-  return {id:msg.id,kind:msg.kind||'pen',pts:msg.pts.slice(),w:+msg.w||2.4,color:msg.color||'',r:+msg.r||0};
+  return {id:msg.id,kind,pts:msg.pts.slice(0,LIVE_MAX),w:num(msg.w,100)&&msg.w>0?msg.w:2.4,color:typeof msg.color==='string'&&/^#[0-9a-f]{6}$/i.test(msg.color)?msg.color:'',r:num(msg.r,200)?msg.r:0};
+}
+/* the share sheet while the allowance is spent: everything in it greyed and
+   out of reach, and the reason above it, until the room connects again */
+function paintBusy(){
+  const note=document.getElementById('share-busy'),main=document.getElementById('share-main');
+  if(note)note.hidden=!busy;
+  if(main){ main.classList.toggle('share-down',busy); main.inert=busy; }
+}
+let busyStyled=false;
+function busyStyle(){
+  if(busyStyled)return; busyStyled=true;
+  const s=document.createElement('style');
+  s.textContent='#share-main.share-down{opacity:.4;filter:grayscale(1);pointer-events:none;user-select:none;transition:opacity .2s ease}'+
+    '#share-busy{color:var(--ink-1);font-weight:500;margin:6px 0 10px}';
+  document.head.appendChild(s);
 }
 function paintButton(){
+  paintBusy();
   const people=document.getElementById('share-people'); if(people)people.innerHTML=peopleHtml();
   const row=document.getElementById('peers');
   if(row){
@@ -501,7 +803,8 @@ function paintButton(){
   const on=!!room;
   b.classList.toggle('on',on);
   b.classList.toggle('off',on&&room.status!=='connected');
-  b.title=on?(room.status==='connected'?'shared. '+(room.peers.length?room.peers.length+' here with you':'only you here')
+  b.title=on?(busy&&room.status!=='connected'?'shared. sharing is under high load today'
+    :room.status==='connected'?'shared. '+(room.peers.length?room.peers.length+' here with you':'only you here')
     :room.status==='connecting'&&!room.synced?'shared, connecting':offline()?'shared, offline':'shared, reconnecting'):'share';
   b.setAttribute('aria-label',b.title);
   if(count){ const n=on?room.peers.length+1:0; count.textContent=String(n); count.hidden=!on; }
@@ -549,7 +852,7 @@ function dragTargets(now){
     let d=p.drag; if(d&&p.dragDone===d.id)d=null;
     if(!d&&p.dragGhost&&p.dragGhost.until>now&&p.dragDone!==p.dragGhost.drag.id)d=p.dragGhost.drag;
     if(!d)continue;
-    for(const id of d.ids||[])targets.set(id,d);
+    for(const id of d.ids)targets.set(id,d);
     if(d.image)targets.set(d.image,d);
   }
   return targets;
@@ -596,7 +899,7 @@ function frame(now){
     if(p.selection){
       let b=null;
       const grow=(r,id)=>{ const s=shift.get(id),dx=s?s.dx:0,dy=s?s.dy:0; const q=[r[0]+dx,r[1]+dy,r[2]+dx,r[3]+dy]; b=b?[Math.min(b[0],q[0]),Math.min(b[1],q[1]),Math.max(b[2],q[2]),Math.max(b[3],q[3])]:q; };
-      const ids=new Set(p.selection.ids||[]);
+      const ids=new Set(p.selection.ids);
       for(const st of S.strokes)if(ids.has(st.id)&&st.bbox)grow(st.bbox,st.id);
       if(p.selection.image){ const im=S.images.find(i=>i.id===p.selection.image); if(im)grow([im.x,im.y,im.x+im.w,im.y+im.h],im.id); }
       if(b){
@@ -797,7 +1100,7 @@ function askName(){
     const finish=v=>{ if(done)return; done=true; clearInterval(watcher); if(v){ setName(v); N.ui.closeSheet(); } resolve(!!v); };
     const submit=()=>{ const v=input.value.trim().replace(/\s+/g,' '); if(!v){ input.focus(); return; } finish(v); };
     ok.onclick=submit;
-    input.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); submit(); } });
+    input.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.isComposing&&e.keyCode!==229){ e.preventDefault(); submit(); } });
     const watcher=setInterval(()=>{ if(!box.isConnected)finish(''); },150);
     input.focus(); input.select();
   });
@@ -814,6 +1117,8 @@ function shareSheet(){
   const link=linkFor(r.id),host=isHost();
   const box=N.ui.openSheet(
     '<h2>share</h2>'+
+    '<p id="share-busy" role="status"'+(busy?'':' hidden')+'>'+BUSY_TEXT+'</p>'+
+    '<div id="share-main"'+(busy?' class="share-down" inert':'')+'>'+
     (host?'<p>anyone with this link writes on this note with you, live. keep it to people you trust.</p>'
          :'<p>you are writing on someone else\'s note. it is theirs: if they stop sharing, or you leave, it goes from this device.</p>')+
     '<label class="mi" for="share-link"><span>link</span><input class="keyin" id="share-link" readonly value="'+esc(link)+'" style="margin:0 0 0 auto"></label>'+
@@ -822,7 +1127,9 @@ function shareSheet(){
     '<div id="share-people">'+peopleHtml()+'</div>'+
     (host?'<button class="mi" id="share-mine"><i class="ph ph-devices"></i>copy link for your other devices<span class="k">keeps you the host there. not for sending</span></button>'+
           '<button class="mi" id="share-stop"><i class="ph ph-link-break"></i>stop sharing<span class="k">everyone else loses the note</span></button>'
-         :'<button class="mi" id="share-leave"><i class="ph ph-sign-out"></i>leave this note<span class="k">it goes from this device</span></button>'));
+         :'<button class="mi" id="share-leave"><i class="ph ph-sign-out"></i>leave this note<span class="k">it goes from this device</span></button>')+
+    '</div>');
+  busyStyle();
   box.querySelector('#share-link').onclick=e=>e.target.select();
   box.querySelector('#share-copy').onclick=async()=>{ C.toast((await copy(link))?'link copied.':'could not copy. select the link and copy it.'); };
   const send=box.querySelector('#share-send'); if(send)send.onclick=()=>{ navigator.share({title:S.title||'notas',url:link}).catch(()=>{}); };
@@ -842,10 +1149,53 @@ function shareSheet(){
 }
 async function share(){
   if(room){ shareSheet(); return; }
+  if(!served()){ C.toast('sharing needs this notebook opened from its website.',6000); return; }
+  /* A note already shared here that this device is not the host of is
+     someone else's (its room simply did not start): try joining again. It
+     used to make this device a host of its own, with a key the room refuses. */
+  if(isShared(S.id)&&!hostToken(S.id)){
+    C.status('joining the shared note again.');
+    try{ await start(S.id,false); }catch(e){ C.toast(String(e.message||'sharing could not start.').toLowerCase()); }
+    return;
+  }
   if(!name()&&!(await askName()))return;
   C.status('sharing.');
-  try{ await start(S.id,true); }catch(e){ C.toast(String(e.message||'sharing could not start.').toLowerCase()); return; }
-  if(room){ const ok=await copy(linkFor(room.id)); shareSheet(); if(ok)C.toast('link copied. send it to whoever writes with you.'); }
+  const id=S.id,fresh=!isShared(id);
+  let gen='';
+  if(fresh){
+    /* the room is claimed before the link exists (see room.js /open), and
+       each share is a new generation of it */
+    const opened=await openRoom(id);
+    if(opened===false)return;
+    if(opened==='taken'){
+      /* this note's room belongs to a key this device does not have (it was
+         shared from another browser, or this one was cleared): a copy of it
+         is shared instead, under a new id */
+      const copyId=await keepCopy(id);
+      if(!copyId){ C.toast('this note was shared from another device. share it from there, or share a copy of it.',7000); return; }
+      await N.ui.openNote(copyId);
+      if(S.id!==copyId)return;
+      C.toast('this note was shared from another device, so a copy of it is shared instead.',6000);
+      return share();
+    }
+    gen=opened;
+  }
+  try{ await start(id,true,gen); }catch(e){ C.toast(String(e.message||'sharing could not start.').toLowerCase()); return; }
+  if(room){ const id=room.id; shareSheet(); const ok=await copy(linkFor(id)); if(ok&&room?.id===id)C.toast('link copied. send it to whoever writes with you.'); }
+}
+/* the generation of a new share, 'taken' when another key holds the room,
+   or false when it could not be reached (said) */
+async function openRoom(id){
+  if(offline()){ C.toast('sharing starts online. connect, then share again.',6000); return false; }
+  const token=hostToken(id,true),gen=secret().slice(0,20);
+  try{
+    const res=await fetch('./collab/'+id+'/open?gen='+gen,{method:'POST',headers:{'X-Notas-Host':token},signal:AbortSignal.timeout(10000)});
+    if(res.status===403)return 'taken';
+    if(res.status===429){ setBusy(true); C.toast(BUSY_TEXT,6000); return false; }
+    if(!res.ok)throw new Error(String(res.status));
+    const j=await res.json().catch(()=>null);
+    return j&&typeof j.gen==='string'?j.gen:gen;
+  }catch(e){ C.toast('sharing could not start. check the connection and try again.',6000); return false; }
 }
 
 /* The room arbitrates requests; a Yjs map alone cannot prevent two writers
@@ -855,14 +1205,17 @@ async function claimNota(line,question){
   /* a shared note whose room is not up cannot arbitrate: that is
      "offline", not "busy", and the page says which */
   if(!r)return isShared(S.id)?{state:'offline'}:{state:'claimed',finish:async()=>{}};
-  if(r.status!=='connected'||!r.synced)return {state:'offline'};
+  /* the room is out of its day's allowance: not a wait that ends soon */
+  if(r.status!=='connected'||!r.synced)return {state:busy?'overloaded':'offline'};
   const token=crypto.randomUUID(),url='./collab/'+r.id+'/nota';
   const send=async action=>{
     const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({line,question,token,action}),signal:AbortSignal.timeout(5000)});
+    if(res.status===429)return {state:'overloaded'};
     if(!res.ok)throw new Error('nota could not coordinate this shared question.');
     return res.json();
   };
   const result=await send('claim');
+  if(result.state==='overloaded'){ setBusy(true); return {state:'overloaded',finish:async()=>{}}; }
   return {...result,finish:async complete=>{await send(complete?'complete':'release');}};
 }
 
@@ -877,14 +1230,26 @@ function noteChanged(){
    room fills it in */
 async function openLink(){
   const id=linkedRoom(); if(!id)return false;
-  const known=(await C.Store.index()).some(row=>row.id===id);
+  let known;
+  try{ known=(await C.Store.index()).some(row=>row.id===id); }
+  catch(e){ C.toast('your notes could not be read just now. open the link again in a moment.',7000); return false; }
   /* the host's own link for another of their devices carries their token */
-  const t=linkedHost(); if(t&&!hostToken(id)){ try{ localStorage.setItem(HOST_KEY+id,t); }catch(e){} }
+  const t=linkedHost(),linkGen=new URL(location.href).searchParams.get('gen')||'';
+  /* A link naming a note this device already has, but has never shared or
+     joined, is not an invitation into it: joining would replace the note
+     with whatever that room holds. The note simply opens, as it is. */
+  if(known&&!isShared(id)&&!hostToken(id)&&!t){
+    history.replaceState(null,'',location.pathname);
+    await N.ui.openNote(id);
+    C.toast('that link names a note you already have here, which is not shared. it opened as it is.',7000);
+    return true;
+  }
+  if(t&&!hostToken(id)){ try{ localStorage.setItem(HOST_KEY+id,t); }catch(e){} }
   if(known)await N.ui.openNote(id); else await N.ui.newNote(id);
   if(S.id!==id)return false;
   history.replaceState(null,'',location.pathname);
   setShared(id,true);
-  try{ await start(id,false); }catch(e){ C.toast(String(e.message||'sharing could not start.').toLowerCase()); return true; }
+  try{ await start(id,false,linkGen); }catch(e){ C.toast(String(e.message||'sharing could not start.').toLowerCase()); return true; }
   /* nothing here yet and nothing arriving: say so, rather than leave a
      blank page and a button that only says "connecting" */
   if(!known){ const r=room; setTimeout(()=>{ if(room!==r||r.synced)return;
@@ -895,5 +1260,9 @@ async function openLink(){
   return true;
 }
 
-N.collab={claimNota,share,changed,noteChanged,openLink,linkedRoom,isShared,isHost,name,get room(){ return room; }};
+/* this tab is in the note's room, or joining it: its edits are merged with
+   everyone's (a tab still joining takes the room's copy when it arrives) */
+function isLive(id){ return (!!room&&room.id===id)||starting===id; }
+N.collab={claimNota,share,changed,noteChanged,openLink,linkedRoom,isShared,isLive,isHost,name,get room(){ return room; }};
+N.collab._test={cleanStroke,cleanLineAttrs,safeImage,pictureSize,textDiff,editText,liveOf};
 })();

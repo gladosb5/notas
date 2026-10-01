@@ -31,6 +31,13 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["NoteRoom"] }],
   // nota's questions on the site's own key, per address a minute; generous
   // because a classroom of tablets shares one address
-  "ratelimits": [{ "name": "NOTA_LIMIT", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } }],
+  // and the rooms' connections and POSTs, per address a minute: a page
+  // reconnecting or a classroom joining stays far below it
+  "ratelimits": [
+    { "name": "NOTA_LIMIT", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } },
+    { "name": "COLLAB_LIMIT", "namespace_id": "1002", "simple": { "limit": 240, "period": 60 } }
+  ],
+  // Public site-key budget, shared across every caller; zero disables it.
+  "vars": { "NOTA_DAILY_REQUESTS": "1000", "NOTA_DAILY_TOKENS": "2000000" },
   "observability": { "enabled": true }
 }

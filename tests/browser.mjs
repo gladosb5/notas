@@ -138,18 +138,13 @@ try{
     return cl.bbox[3]-cl.bbox[1];
   });
   assert.equal(generatedSize,sourceHeight,'Generated answer font size follows the handwriting height');
+  // the answer is only read, on the page: it opens nothing and a tap on it
+  // lands on the paper
   const autoChip=page.locator(`.chip[data-node="${answerNode}"]`);
-  const autoReading=await autoChip.evaluate(el=>{
-    const n=N.core.S.nodes.find(o=>o.id===el.dataset.node);
-    return (n?.ref?.ascii||N.mathcore.latexToMath(n?.ref?.latex||'')||n?.src||'').trim();
-  });
-  await autoChip.click();
-  assert.equal(await page.locator('.chip.open').count(),1,'Automatic reading opens the correction popup');
-  const autoField=autoChip.getByRole('textbox',{name:'Recognized expression'});
-  assert.ok(await autoField.isVisible(),'Automatic reading exposes a correction field');
-  assert.equal((await autoField.inputValue()).trim(),autoReading,'Correction field contains the recognizer reading');
-  await autoChip.getByRole('button',{name:'Close'}).click();
-  assert.equal(await page.locator('.chip.open').count(),0,'Close button dismisses the correction popup');
+  const [ax,ay]=await autoChip.evaluate(el=>{const r=el.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];});
+  assert.notEqual(await page.evaluate(([x,y])=>document.elementFromPoint(x,y)?.closest('.chip')?'chip':'paper',[ax,ay]),'chip','A tap on an answer goes to the paper');
+  await autoChip.dispatchEvent('click');
+  assert.equal(await autoChip.evaluate(el=>el.children.length===0&&el.textContent.trim()),'6','The answer stays a plain answer on the page');
   await page.evaluate(()=>N.recog.confirm(N.core.S.clusters.find(c=>c.ascii==='2+2'),'2+2'));
   assert.ok(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result==='4')));
   const migration=await page.evaluate(()=>{
@@ -672,24 +667,20 @@ try{
   assert.deepEqual(cropped.photo,{w:300,h:200,mime:'image/jpeg'},'A photo with no uniform border keeps its bytes');
   assert.deepEqual(cropped.cutout,{w:72,h:72,mime:'image/png'},'A transparent-bordered cut-out is trimmed and stays PNG');
 
-  // Copy answer on an open chip: one tap puts the result on the clipboard.
-  const copyAnswer=await page.evaluate(async()=>{
+  // A typed line's answer is on the page too, and a click opens nothing.
+  const typedAnswer=await page.evaluate(async()=>{
     const S=N.core.S;
     const ln=N.text.add(1200,false);ln.text='2+2';N.text.render();N.mathcore.run();
     await new Promise(r=>setTimeout(r,50));
     const chip=[...document.querySelectorAll('#margin .chip')].find(c=>c.dataset.node===ln.id);
     if(!chip)return {chip:false};
     chip.click();
-    const btn=chip.querySelector('.copy-answer');
-    if(!btn)return {chip:true,button:false,html:chip.innerHTML.slice(0,200)};
-    btn.click();
-    await new Promise(r=>setTimeout(r,150));
-    const out={chip:true,button:true,open:chip.classList.contains('open'),text:await navigator.clipboard.readText(),toast:document.querySelector('#toast').textContent};
+    const out={chip:true,text:chip.textContent.trim(),plain:chip.children.length===0};
     S.lines=S.lines.filter(l=>l.id!==ln.id);N.text.render();N.mathcore.run();
     return out;
   });
-  console.log('Copy answer:',JSON.stringify(copyAnswer));
-  assert.deepEqual(copyAnswer,{chip:true,button:true,open:true,text:'4',toast:'copied 4.'},'Copy answer puts the result on the clipboard and keeps the panel open');
+  console.log('Typed answer:',JSON.stringify(typedAnswer));
+  assert.deepEqual(typedAnswer,{chip:true,text:'4',plain:true},'A typed answer stays a plain answer on the page');
 
 
 

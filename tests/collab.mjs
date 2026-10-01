@@ -39,7 +39,7 @@ try{
   await a.page.fill('#collab-name','ana');
   await a.page.click('#collab-name-ok');
   const link=await a.page.inputValue('#share-link');
-  assert.match(link,/\?share=[a-z0-9]{8,}$/,'share sheet shows a link: '+link);
+  assert.match(link,/\?share=[a-z0-9]{8,}&gen=[a-z0-9]+$/,'share sheet shows a link: '+link);
   const noteId=await a.page.evaluate(()=>N.core.S.id);
   assert.equal(new URL(link).searchParams.get('share'),noteId,'the link names the note');
   await a.page.locator('#share-people').filter({hasText:'only you so far'}).waitFor({timeout:20000});
@@ -193,7 +193,7 @@ try{
   await a.page.evaluate(()=>N.core.save()); await a2.evaluate(()=>N.core.save());
   const notes=await a.page.evaluate(async()=>(await N.core.Store.index()).map(r=>r.title));
   assert.deepEqual(notes.filter(t=>/conflict|recovered/.test(t)),[],'no conflict copy was made: '+JSON.stringify(notes));
-  assert.equal(notes.length,1,"still one note on ana's device");
+  assert.equal(notes.filter(t=>!t.endsWith(" (before a big change)")).length,1,"one active note plus intentional safety snapshots");
   assert.equal(await a.page.evaluate(()=>N.core.S.id),noteId,'the first tab kept its note');
   /* Both editors ask the same question before either sees a reply. */
   let notaCalls=0;
@@ -249,14 +249,26 @@ try{
   await a2.evaluate(()=>{ const ln=N.core.S.lines[0]; ln.text+='x'; N.text.render(); N.core.markDirty(); });
   await a2.waitForTimeout(2500);
   await a2.close();
-  /* Following the old link cannot retrieve the closed document. */
+  /* Re-sharing gets a new invitation; an old invitation stays revoked. */
+  await a.page.evaluate(()=>{void N.collab.share();});
+  await a.page.waitForSelector('#share-link');
+  const renewed=await a.page.inputValue('#share-link');
+  assert.notEqual(new URL(renewed).searchParams.get('gen'),new URL(link).searchParams.get('gen'));
+  await a.page.keyboard.press('Escape');
+  /* Following the old link cannot retrieve the reopened document. */
   await b.page.goto(link.replace(/^https?:\/\/[^/]+/,base)); await ready(b.page);
   await b.page.waitForFunction(()=>document.getElementById('leave-go'),null,{timeout:20000});
   assert.equal(await b.page.evaluate(()=>N.core.S.lines.some(l=>l.text.includes('Ahello'))),false);
   await b.page.click('#leave-go');
 
+  await b.page.goto(renewed.replace(/^https?:\/\/[^/]+/,base));await ready(b.page);
+  await b.page.waitForFunction(()=>N.core.S.lines.some(l=>l.text==='Ahello benB21'),null,{timeout:20000});
   assert.deepEqual(errors,[],'no page errors');
   console.log('collab: share link, join by link, ink and text both ways, strokes as they are drawn, eraser and lasso live, tool shown, same-line merge, erase, reopen, late arrival, stop sharing all pass');
+}catch(error){
+  console.error('collab browser errors:',errors);
+  for(const c of browser.contexts())for(const p of c.pages())console.error('room:',await p.evaluate(()=>window.N?.collab?.room&&{status:N.collab.room.status,ready:N.collab.room.ready}).catch(()=>null));
+  throw error;
 }finally{
   await browser.close();
   if(dev){ try{ spawn('taskkill',['/pid',String(dev.pid),'/t','/f'],{shell:true,stdio:'ignore'}); }catch(e){} }

@@ -19,7 +19,8 @@ function host(t){
   const db=new DatabaseSync(':memory:'),sockets=[],kv=new Map();
   t.after(()=>db.close());
   const stats={writes:0,selects:0};
-  const ctx={getWebSockets:()=>sockets,blockConcurrencyWhile:fn=>fn(),autoResponse:null,
+  const pending=[];
+  const ctx={waitUntil:p=>pending.push(p),getWebSockets:()=>sockets,blockConcurrencyWhile:fn=>fn(),autoResponse:null,
     setWebSocketAutoResponse(pair){this.autoResponse=pair;},storage:{
     get:async key=>kv.get(key),put:async(key,value)=>kv.set(key,value),
     sql:{exec(query,...args){
@@ -53,6 +54,37 @@ function presenceMessage(id,clock,state){
   const outer=encoding.createEncoder();encoding.writeVarUint(outer,1);
   encoding.writeVarUint8Array(outer,encoding.toUint8Array(inner));return encoding.toUint8Array(outer);
 }
+
+test('a single author with a large image syncs in bounded frames',t=>{
+  const h=host(t),room=h.room(),peer=socket();room.load();
+  room.doc.getMap('images').set('large',{src:'data:image/png;base64,'+'a'.repeat(2*1024*1024)});
+  const empty=new Y.Doc();room.sendMissing(peer,Y.encodeStateVector(empty));
+  assert.ok(peer.messages.length>1);
+  let assembled,at=0;
+  for(const frame of peer.messages){
+    assert.ok(frame.byteLength<=900*1024);
+    assert.deepEqual([...frame.subarray(0,4)],[255,78,84,1]);
+    const header=new DataView(frame.buffer,frame.byteOffset,frame.byteLength);
+    assembled??=new Uint8Array(header.getUint32(4));
+    assert.equal(header.getUint32(8),at);assembled.set(frame.subarray(12),at);at+=frame.length-12;
+  }
+  assert.equal(at,assembled.length);
+  const decoder=decoding.createDecoder(assembled);assert.equal(decoding.readVarUint(decoder),0);
+  assert.equal(decoding.readVarUint(decoder),sync.messageYjsSyncStep2);
+  Y.applyUpdate(empty,decoding.readVarUint8Array(decoder));
+  assert.equal(empty.getMap('images').get('large').src.length,2*1024*1024+22);
+  empty.destroy();clearTimeout(room.flushTimer);room.flushTimer=null;room.flush();
+});
+
+test('site allowance is shared across callers and refuses reservations beyond its limit',async t=>{
+  const room=host(t).room();room.env={NOTA_DAILY_REQUESTS:'2',NOTA_DAILY_TOKENS:'100'};
+  const reserve=tokens=>room.fetch(new Request('https://notas.test/site-budget',{method:'POST',body:JSON.stringify({tokens})}));
+  assert.equal((await reserve(60)).status,204);
+  assert.equal((await reserve(41)).status,429);
+  assert.equal((await reserve(40)).status,204);
+  assert.equal((await reserve(1)).status,429);
+  assert.equal((await reserve(-1)).status,400);
+});
 
 test('presence leaves no timers, performs no note reads/writes, and survives hibernation',t=>{
   const h=host(t),a=socket(),b=socket();h.sockets.push(a,b);

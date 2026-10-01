@@ -1,0 +1,1424 @@
+{
+  "base": "ZhengPeng7/BiRefNet_lite",
+  "revision": "aa62cd87eafb9cc43056d08ef3615a14628b831d",
+  "method": "frozen backbone and decoder; fine-tuned existing final Conv2d(120,1,1)",
+  "best_epoch": 28,
+  "counts": {
+    "train": 55,
+    "validation": 26,
+    "test": 13
+  },
+  "baseline": {
+    "train": {
+      "loss": 1.1039282083511353,
+      "positive_miou": 0.03888576406873465,
+      "negative_foreground": 1.9475605744772998e-05,
+      "images": [
+        {
+          "file": "IMG_0011.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_0016.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_0017.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_0018.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_0030.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_0790.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_0791.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_0796.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_0919.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_1613.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2024.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2025.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2027.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2028.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2029.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2030.png",
+          "positive": true,
+          "iou": 0.1596071209330878,
+          "foreground_fraction": 0.1128472238779068
+        },
+        {
+          "file": "IMG_2038.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2173.png",
+          "positive": false,
+          "iou": 0.0,
+          "foreground_fraction": 0.0007595486240461469
+        },
+        {
+          "file": "IMG_2331.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2332.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2333.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2346.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2347.png",
+          "positive": true,
+          "iou": 0.4625651041666667,
+          "foreground_fraction": 0.4625650942325592
+        },
+        {
+          "file": "IMG_2348.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2352.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2360.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2363.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2364.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2366.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2367.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2373.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2629.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2633.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2708.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2794.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2795.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2803.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2814.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2815.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2816.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2824.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2825.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2835.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2842.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2844.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2862.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2863.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2968.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3005.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3013.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3017.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3018.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3031.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3035.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3067.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        }
+      ]
+    },
+    "validation": {
+      "loss": 0.799219012260437,
+      "positive_miou": 0.030722548833681015,
+      "negative_foreground": 0.039288948411526886,
+      "images": [
+        {
+          "file": "IMG_1740.png",
+          "positive": true,
+          "iou": 0.09216764650104305,
+          "foreground_fraction": 0.052734375
+        },
+        {
+          "file": "IMG_1741.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_1742.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_1743.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_1744.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2676.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2678.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2867.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2868.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2869.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2870.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2871.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2872.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2873.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2874.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2875.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2876.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2877.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2878.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2880.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2881.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2882.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2883.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2894.png",
+          "positive": false,
+          "iou": 0.0,
+          "foreground_fraction": 0.4440104067325592
+        },
+        {
+          "file": "IMG_2899.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2900.png",
+          "positive": false,
+          "iou": 0.0,
+          "foreground_fraction": 0.4596354067325592
+        }
+      ]
+    },
+    "test": {
+      "loss": 2.7090184688568115,
+      "positive_miou": 0.16169183325710892,
+      "negative_foreground": 0.0,
+      "images": [
+        {
+          "file": "IMG_2713.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2715.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2716.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2717.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2718.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2719.png",
+          "positive": true,
+          "iou": 0.9430242634315424,
+          "foreground_fraction": 0.5008680820465088
+        },
+        {
+          "file": "IMG_2720.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2721.png",
+          "positive": true,
+          "iou": 0.027126736111111112,
+          "foreground_fraction": 0.0271267369389534
+        },
+        {
+          "file": "IMG_3071.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3072.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3073.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3078.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3080.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        }
+      ]
+    }
+  },
+  "tuned": {
+    "train": {
+      "loss": 0.343116819858551,
+      "positive_miou": 0.04309681517130909,
+      "negative_foreground": 0.0,
+      "images": [
+        {
+          "file": "IMG_0011.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_0016.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_0017.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_0018.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_0030.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_0790.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_0791.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_0796.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_0919.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_1613.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2024.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2025.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2027.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2028.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2029.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2030.png",
+          "positive": true,
+          "iou": 0.24662369551872315,
+          "foreground_fraction": 0.1743706613779068
+        },
+        {
+          "file": "IMG_2038.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2173.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2331.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2332.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2333.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2346.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2347.png",
+          "positive": true,
+          "iou": 0.4429253472222222,
+          "foreground_fraction": 0.442925363779068
+        },
+        {
+          "file": "IMG_2348.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2352.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2360.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2363.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2364.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2366.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2367.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2373.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2629.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2633.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2708.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2794.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2795.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2803.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2814.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2815.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2816.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2824.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2825.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2835.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2842.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2844.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2862.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2863.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2968.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3005.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3013.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3017.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3018.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3031.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3035.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3067.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        }
+      ]
+    },
+    "validation": {
+      "loss": 0.36171579360961914,
+      "positive_miou": 0.028320374233516656,
+      "negative_foreground": 0.03783118206521739,
+      "images": [
+        {
+          "file": "IMG_1740.png",
+          "positive": true,
+          "iou": 0.08496112270054997,
+          "foreground_fraction": 0.0486111119389534
+        },
+        {
+          "file": "IMG_1741.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_1742.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_1743.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_1744.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2676.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2678.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2867.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2868.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2869.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2870.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2871.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2872.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2873.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2874.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2875.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2876.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2877.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2878.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2880.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2881.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2882.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2883.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2894.png",
+          "positive": false,
+          "iou": 0.0,
+          "foreground_fraction": 0.41796875
+        },
+        {
+          "file": "IMG_2899.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2900.png",
+          "positive": false,
+          "iou": 0.0,
+          "foreground_fraction": 0.4521484375
+        }
+      ]
+    },
+    "test": {
+      "loss": 0.5836964845657349,
+      "positive_miou": 0.16357256056146705,
+      "negative_foreground": 0.0,
+      "images": [
+        {
+          "file": "IMG_2713.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2715.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2716.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2717.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2718.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2719.png",
+          "positive": true,
+          "iou": 0.9814353633688023,
+          "foreground_fraction": 0.4773220419883728
+        },
+        {
+          "file": "IMG_2720.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_2721.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3071.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3072.png",
+          "positive": true,
+          "iou": 0.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3073.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3078.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        },
+        {
+          "file": "IMG_3080.png",
+          "positive": false,
+          "iou": 1.0,
+          "foreground_fraction": 0.0
+        }
+      ]
+    }
+  },
+  "history": [
+    {
+      "epoch": 1,
+      "validation_loss": 0.7128540277481079
+    },
+    {
+      "epoch": 2,
+      "validation_loss": 0.6437750458717346
+    },
+    {
+      "epoch": 3,
+      "validation_loss": 0.5636422038078308
+    },
+    {
+      "epoch": 4,
+      "validation_loss": 0.49554571509361267
+    },
+    {
+      "epoch": 5,
+      "validation_loss": 0.4511123597621918
+    },
+    {
+      "epoch": 6,
+      "validation_loss": 0.4590862989425659
+    },
+    {
+      "epoch": 7,
+      "validation_loss": 0.5442498326301575
+    },
+    {
+      "epoch": 8,
+      "validation_loss": 0.6112396121025085
+    },
+    {
+      "epoch": 9,
+      "validation_loss": 0.572624683380127
+    },
+    {
+      "epoch": 10,
+      "validation_loss": 0.5153455138206482
+    },
+    {
+      "epoch": 11,
+      "validation_loss": 0.4916149377822876
+    },
+    {
+      "epoch": 12,
+      "validation_loss": 0.45398303866386414
+    },
+    {
+      "epoch": 13,
+      "validation_loss": 0.45131033658981323
+    },
+    {
+      "epoch": 14,
+      "validation_loss": 0.4410545229911804
+    },
+    {
+      "epoch": 15,
+      "validation_loss": 0.4592127501964569
+    },
+    {
+      "epoch": 16,
+      "validation_loss": 0.478028267621994
+    },
+    {
+      "epoch": 17,
+      "validation_loss": 0.4383278489112854
+    },
+    {
+      "epoch": 18,
+      "validation_loss": 0.43295034766197205
+    },
+    {
+      "epoch": 19,
+      "validation_loss": 0.42607352137565613
+    },
+    {
+      "epoch": 20,
+      "validation_loss": 0.4232325851917267
+    },
+    {
+      "epoch": 21,
+      "validation_loss": 0.43363702297210693
+    },
+    {
+      "epoch": 22,
+      "validation_loss": 0.41508784890174866
+    },
+    {
+      "epoch": 23,
+      "validation_loss": 0.4068162143230438
+    },
+    {
+      "epoch": 24,
+      "validation_loss": 0.39761340618133545
+    },
+    {
+      "epoch": 25,
+      "validation_loss": 0.40190961956977844
+    },
+    {
+      "epoch": 26,
+      "validation_loss": 0.44081953167915344
+    },
+    {
+      "epoch": 27,
+      "validation_loss": 0.4018349051475525
+    },
+    {
+      "epoch": 28,
+      "validation_loss": 0.36171579360961914
+    },
+    {
+      "epoch": 29,
+      "validation_loss": 0.4177967607975006
+    },
+    {
+      "epoch": 30,
+      "validation_loss": 0.4019172489643097
+    },
+    {
+      "epoch": 31,
+      "validation_loss": 0.40707239508628845
+    },
+    {
+      "epoch": 32,
+      "validation_loss": 0.41667914390563965
+    },
+    {
+      "epoch": 33,
+      "validation_loss": 0.37707602977752686
+    },
+    {
+      "epoch": 34,
+      "validation_loss": 0.4020327031612396
+    },
+    {
+      "epoch": 35,
+      "validation_loss": 0.4219149947166443
+    },
+    {
+      "epoch": 36,
+      "validation_loss": 0.42866551876068115
+    },
+    {
+      "epoch": 37,
+      "validation_loss": 0.4089466631412506
+    },
+    {
+      "epoch": 38,
+      "validation_loss": 0.3919350504875183
+    },
+    {
+      "epoch": 39,
+      "validation_loss": 0.4108388423919678
+    },
+    {
+      "epoch": 40,
+      "validation_loss": 0.432264506816864
+    },
+    {
+      "epoch": 41,
+      "validation_loss": 0.44519713521003723
+    },
+    {
+      "epoch": 42,
+      "validation_loss": 0.4392937421798706
+    },
+    {
+      "epoch": 43,
+      "validation_loss": 0.42565444111824036
+    },
+    {
+      "epoch": 44,
+      "validation_loss": 0.44519683718681335
+    },
+    {
+      "epoch": 45,
+      "validation_loss": 0.4298037886619568
+    },
+    {
+      "epoch": 46,
+      "validation_loss": 0.4447339177131653
+    },
+    {
+      "epoch": 47,
+      "validation_loss": 0.4734606146812439
+    },
+    {
+      "epoch": 48,
+      "validation_loss": 0.4713163673877716
+    },
+    {
+      "epoch": 49,
+      "validation_loss": 0.4381139576435089
+    },
+    {
+      "epoch": 50,
+      "validation_loss": 0.3824620246887207
+    },
+    {
+      "epoch": 51,
+      "validation_loss": 0.40070149302482605
+    },
+    {
+      "epoch": 52,
+      "validation_loss": 0.5069402456283569
+    },
+    {
+      "epoch": 53,
+      "validation_loss": 0.490235835313797
+    },
+    {
+      "epoch": 54,
+      "validation_loss": 0.4473956823348999
+    },
+    {
+      "epoch": 55,
+      "validation_loss": 0.4626910090446472
+    },
+    {
+      "epoch": 56,
+      "validation_loss": 0.4780370891094208
+    },
+    {
+      "epoch": 57,
+      "validation_loss": 0.48353973031044006
+    },
+    {
+      "epoch": 58,
+      "validation_loss": 0.4764855206012726
+    }
+  ],
+  "limitations": [
+    "Approximate agent-drawn masks, not independently reviewed.",
+    "Nearby filename groups held out together; capture-session metadata unavailable.",
+    "All images are 512x512 crops from a narrow classroom domain. No real full-slide evaluation."
+  ]
+}

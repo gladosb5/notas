@@ -19,7 +19,7 @@ const URLS={
 };
 importScripts('./ink-features.js','./model-contract.js','./model-store.js');
 const {features,resample}=self.NOTAS_INK_FEATURES,MAX_TOKENS=150;
-let encoder,decoder,vocab,pad,sos,eos,loading,busy=false;
+let encoder,decoder,vocab,pad,sos,eos,loading;
 
 function announce(id,status,extra){self.postMessage({id,progress:true,status,...extra});}
 // The two model files are read as streams so the page can count the
@@ -227,14 +227,27 @@ async function recognizeInk(strokes){
   return {...reconcileInkViews(primary,views),decoderCalls:calls,samplingViews:3};
 }
 
-self.onmessage=async({data})=>{
+async function handleMessage(data){
   const {id,type}=data;
-  if(busy){self.postMessage({id,error:'Stroke handwriting worker is busy.'});return;}
-  busy=true;
   try{
+    if(!['setup','recognize'].includes(type))throw Error('Unknown stroke handwriting request.');
+    if(type==='recognize'&&(!Array.isArray(data.strokes)||!data.strokes.length||data.strokes.length>10000||data.strokes.some(s=>!s||!Array.isArray(s.pts)||!s.pts.length||s.pts.length%3||s.pts.some(v=>!Number.isFinite(v)))||data.strokes.reduce((n,s)=>n+s.pts.length,0)>300000))throw Error('Invalid pen strokes.');
     await setup(id);
     if(type==='setup')self.postMessage({id,ready:true});
     else if(type==='recognize')self.postMessage({id,...await recognizeInk(data.strokes)});
     else throw new Error('Unknown stroke handwriting request.');
-  }catch(e){self.postMessage({id,error:e?.message||String(e)});}finally{busy=false;}
+  }catch(e){self.postMessage({id,error:e?.message||String(e)});}
+}
+
+// Serialize inference, setup and disposal: runtime sessions cannot overlap.
+let requestQueue=Promise.resolve(),queued=0;
+self.onmessage=({data})=>{
+  if(!data||typeof data!=='object'||Array.isArray(data)){
+    self.postMessage({error:'Invalid worker request.'});return;
+  }
+  if(queued>=32){self.postMessage({id:data.id,error:'Too many queued worker requests.'});return;}
+  queued++;
+  requestQueue=requestQueue.then(()=>handleMessage(data)).catch(e=>{
+    self.postMessage({id:data.id,error:e?.message||String(e)});
+  }).finally(()=>{queued--;});
 };

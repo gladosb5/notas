@@ -56,10 +56,14 @@ async function load({url,sha,label,download,announce}){
   const key=keyOf(url);
   let stored=null;
   try{stored=asBytes(await get(key));}catch(e){}
-  if(stored&&stored.byteLength){
+  /* A stored copy is checked like a download: a file damaged on the disk
+     since would otherwise start as a broken model every time, and only the
+     "refresh handwriting models" setting would ever replace it. */
+  if(stored&&stored.byteLength&&(!sha||await sha256(stored)===sha)){
     if(announce)announce();
     return {bytes:stored,saved:true};
   }
+  if(stored&&stored.byteLength)try{await remove(key);}catch(e){}
   const bytes=await download(url);
   if(sha){
     const digest=await sha256(bytes);

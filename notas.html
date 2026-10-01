@@ -146,8 +146,7 @@ body > :not(#scroller),#canvaswrap,#margin,#caret,#caret-mirror,.ghost-layer{
   -webkit-user-select:none;-moz-user-select:none;user-select:none;
   -webkit-touch-callout:none;
 }
-input,textarea,[contenteditable="true"],.sheet p,.sheet h2,.sheet .box li,#reply,#selftest,
-.chip.open .tx,.chip.open .steps{
+input,textarea,[contenteditable="true"],.sheet p,.sheet h2,.sheet .box li,#reply,#selftest{
   -webkit-user-select:text;-moz-user-select:text;user-select:text;
   -webkit-touch-callout:default;
 }
@@ -345,19 +344,20 @@ input:focus-visible,textarea:focus-visible{outline:none}
 #dlpop{
   position:fixed;z-index:41;width:min(400px,calc(100vw - 2 * var(--edge)));
   padding:14px 16px 12px;border-radius:var(--r-card);transform-origin:top right;
-  animation:chipIn .32s var(--pop);outline:none;
+  animation:chipIn .32s var(--pop);outline:none;overflow-y:auto;overscroll-behavior:contain;
+  scroll-padding:12px;
 }
 #dlpop[hidden]{display:none}
 #dlpop h2{margin:0 0 6px;font-size:17px;font-weight:600;letter-spacing:-.02em}
 .dl-empty{margin:4px 0 2px;font:400 14px/1.5 var(--ui);color:var(--ink-2)}
-.dl-row{display:grid;grid-template-columns:22px 1fr;column-gap:8px;row-gap:7px;align-items:center;padding:10px 0 6px;border-top:1px solid var(--rule-2)}
+.dl-row{display:grid;grid-template-columns:22px minmax(0,1fr);column-gap:8px;row-gap:7px;align-items:center;padding:10px 0 6px;border-top:1px solid var(--rule-2)}
 .dl-row:first-child{border-top:0}
 .dl-row > i{font-size:18px;color:var(--ink-2);text-align:center}
-.dl-name{min-width:0;font-size:15px;font-weight:500;letter-spacing:-.005em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dl-name{min-width:0;font-size:15px;line-height:1.4;font-weight:500;letter-spacing:-.005em;overflow-wrap:anywhere}
 .dl-bar{grid-column:2;display:flex;gap:4px;height:6px}
 .dl-bar span{flex:1;border-radius:6px;background:var(--tint);overflow:hidden}
 .dl-bar span i{display:block;height:100%;width:0;border-radius:6px;background:var(--blue);transition:width .3s ease}
-.dl-state{grid-column:2;display:flex;align-items:center;gap:8px;font:400 13px/1.4 var(--ui);color:var(--ink-2);font-variant-numeric:tabular-nums}
+.dl-state{grid-column:2;min-width:0;overflow-wrap:anywhere;display:flex;align-items:center;gap:8px;font:400 13px/1.4 var(--ui);color:var(--ink-2);font-variant-numeric:tabular-nums}
 .dl-spin{flex:none;width:12px;height:12px;border-radius:50%;border:1.5px solid var(--ink-3);border-top-color:var(--graphite);animation:dlSpin .9s linear infinite}
 @media (prefers-reduced-motion:reduce){#dl-ring.spin,.dl-spin{animation:none}}
 /* a shared note: the button turns graphite and carries how many are here */
@@ -374,7 +374,7 @@ input:focus-visible,textarea:focus-visible{outline:none}
 
 /* ---- scroll area ---- */
 #scroller{
-  position:fixed;inset:var(--bar) 0 0 0;overflow:auto;
+  position:fixed;inset:var(--bar) 0 0 0;overflow:auto;touch-action:pan-y pinch-zoom;
   overscroll-behavior:contain;
   -webkit-overflow-scrolling:touch;
   scrollbar-width:thin;scrollbar-color:var(--ink-3) transparent;
@@ -495,22 +495,24 @@ body.typing #topbar,body.typing #pill,body.typing #penpop,body.typing #local-sta
 
 /* ---- result chips: the machine's blue ---- */
 /* with a drawing tool up, a resting chip lets the pen through to the paper;
-   the ink canvas presses it on a tap. An open card still takes its own input.
+   the ink canvas presses it on a tap.
    A chip the pen is writing across steps aside until the next paint. */
-body[data-tool="pen"] #col .chip:not(.open):not(.explaining),
-body[data-tool="eraser"] #col .chip:not(.open):not(.explaining){pointer-events:none}
+body[data-tool="pen"] #col .chip,
+body[data-tool="eraser"] #col .chip{pointer-events:none}
+/* An answer is only there to be read, on the page: it opens nothing and
+   takes no input, so a tap or a stroke on it lands on the paper. The Solve
+   offer is the one chip that is pressed. */
+#col .chip:not(.offer){pointer-events:none}
 .chip.yield{opacity:0;transition:opacity .08s ease}
 .chip{
   position:absolute;z-index:3;
   font:600 21px/1.15 var(--hand);color:var(--blue);
   padding:2px 10px;border-radius:var(--r-pill);
-  border:1px solid transparent;cursor:pointer;text-align:left;
+  border:1px solid transparent;text-align:left;
   overflow-wrap:anywhere;width:max-content;
   animation:chipIn .32s var(--pop);
-  transition:padding .2s var(--spring),border-radius .2s var(--spring),box-shadow .2s var(--spring),background-color .2s ease,border-color .15s ease;
 }
 @keyframes chipIn{from{opacity:0;transform:translateY(5px) scale(.96)}to{opacity:1;transform:none}}
-.chip:hover{background:var(--blue-soft)}
 /* a typed line is answered in its own face; the handwritten blue is for handwriting */
 .chip.typed{font:400 16px/1.4 var(--type);padding:3px 10px 2px}
 .chip.error{font:500 12.5px/1.35 var(--ui);color:var(--ink-2);border-color:var(--rule);background:var(--paper);padding:5px 11px}
@@ -532,56 +534,8 @@ body[data-tool="eraser"] #col .chip:not(.open):not(.explaining){pointer-events:n
 .chip .solve:hover{opacity:.86}
 .chip .solve:active{transform:scale(.96)}
 .chip .solve i{font-size:15px}
-.chip.open .solve{margin:8px 6px 2px 0}
-.chip .tx{display:block;color:var(--ink-2);font:400 12px/1.4 var(--ui);letter-spacing:0;margin-bottom:3px}
 /* the line under the dots while the reader is still being fetched */
 .chip .wait{display:block;color:var(--ink-2);font:400 12px/1.4 var(--ui);letter-spacing:0;margin-top:2px;white-space:nowrap;animation:chipIn .32s var(--pop)}
-.chip.open{
-  background:var(--panel);border-color:var(--rule-2);box-shadow:var(--shadow-2);z-index:5;
-  border-radius:var(--r-card);padding:12px 44px 12px 14px;box-sizing:border-box;
-  font:600 19px/1.3 var(--hand);
-}
-.chip.open .tx{overflow-wrap:anywhere}
-.chip .chip-close{
-  position:absolute;top:6px;right:6px;width:30px;height:30px;padding:0;
-  border:0;background:var(--tint);color:var(--ink-2);cursor:pointer;
-  font:400 18px/1 var(--ui);display:grid;place-items:center;border-radius:50%;
-  transition:background-color .15s ease,color .15s ease,transform .18s var(--pop);
-}
-.chip .chip-close:hover{background:var(--tint-2);color:var(--graphite)}
-.chip .chip-close:active{transform:scale(.9)}
-.chip .reading-option{
-  font:400 13px var(--ui);color:var(--graphite);background:var(--tint);
-  border:0;border-radius:var(--r-pill);
-  padding:5px 11px;margin:6px 6px 0 0;max-width:100%;
-  overflow-wrap:anywhere;text-align:left;cursor:pointer;
-  transition:background-color .15s ease;
-}
-.chip .reading-option:hover{background:var(--tint-2)}
-.chip .copy-answer{
-  display:block;width:max-content;font:500 13px var(--ui);color:var(--graphite);background:var(--tint);
-  border:0;border-radius:var(--r-pill);padding:6px 12px;margin:8px 0 2px;cursor:pointer;
-  transition:background-color .15s ease,transform .18s var(--pop);
-}
-.chip .copy-answer:hover{background:var(--tint-2)}
-.chip .copy-answer:active{transform:scale(.97)}
-.chip .confirm-reading{
-  display:block;width:100%;margin-top:10px;font:500 14px var(--ui);
-  background:var(--graphite);color:var(--paper);border:0;
-  border-radius:var(--r-pill);padding:9px 14px;cursor:pointer;
-  transition:opacity .15s ease,transform .18s var(--pop);
-}
-.chip .confirm-reading:hover{opacity:.86}
-.chip .confirm-reading:active{transform:scale(.98)}
-.chip .steps{display:block;margin-top:8px;font:400 14px/1.5 var(--ui);color:var(--graphite);letter-spacing:-.005em}
-.chip .steps div{padding:4px 0;border-top:1px solid var(--rule-2)}
-.chip .fix{display:block;margin-top:10px;font:400 12px var(--ui);color:var(--ink-2);letter-spacing:0}
-.chip .fix input{
-  display:block;font:400 15px var(--mono);border:0;border-radius:var(--r-input);
-  padding:8px 10px;background:var(--tint);width:100%;margin-top:5px;color:var(--graphite);
-  transition:box-shadow .15s ease;
-}
-.chip .fix input:focus{box-shadow:0 0 0 2px var(--graphite)}
 .dots span{
   display:inline-block;width:5px;height:5px;margin-right:3px;border-radius:50%;
   background:var(--blue);animation:breathe 1.2s infinite ease-in-out;
@@ -893,6 +847,10 @@ body:has(.sheet:not(.leave)) #toast{top:calc(var(--safe-t) + 12px)}
   animation:chipIn .32s var(--pop);
 }
 #selbar button{padding:7px 13px;font:500 13px var(--ui);border-radius:var(--r-pill);color:var(--graphite);transition:background-color .15s ease,transform .18s var(--pop)}
+#selbar button[aria-busy="true"]{display:flex;align-items:center;gap:8px}
+#selbar button[aria-busy="true"]::before{content:'';width:12px;height:12px;border:2px solid var(--ink-2);border-top-color:transparent;border-radius:50%;animation:cutout-spin .8s linear infinite}
+@keyframes cutout-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){#selbar button[aria-busy="true"]::before{animation:none}}
 #selbar button:hover{background:var(--tint)}
 #selbar button:active{transform:scale(.95)}
 
@@ -965,8 +923,6 @@ body.noicons .tut-ok .fb{display:block}
 #local-status:not(:disabled):hover,#offline-status:not(:disabled):hover{background-color:var(--glass-2)}
 #local-status:not(:disabled):active,#offline-status:not(:disabled):active{transform:scale(.97)}
 #local-status[data-retry="true"]{color:var(--red);min-height:36px}
-.confirm-reading{min-height:44px}
-.fix input{min-height:44px;max-width:100%}
 /* on a wide desktop the pill sits on the left, so the notices step up beside it */
 @media (min-width:840px) and (pointer:fine){
   #offline-status{bottom:calc(var(--edge) + var(--safe-b) + 66px)}
@@ -1007,7 +963,6 @@ body.noicons .tut-ok .fb{display:block}
     background-image:none;background-color:var(--panel);
     -webkit-backdrop-filter:none;backdrop-filter:none;
   }
-  .chip .copy-answer{min-height:44px;padding:10px 16px;font-size:15px}
 
   #topbar{ height:48px;padding-left:12px }
   #title{ font-size:17px;padding:8px 12px;max-width:48vw;min-height:40px }
@@ -1024,11 +979,6 @@ body.noicons .tut-ok .fb{display:block}
   #local-status{ bottom:calc(var(--edge) + var(--safe-b) + 106px);font-size:12px }
 
   .chip{ font-size:23px;padding:4px 12px;min-height:36px }
-  .chip.open{ padding:14px 54px 14px 16px;font-size:20px }
-  .chip .chip-close{ top:6px;right:6px;width:40px;height:40px;font-size:22px }
-  .chip .reading-option{ font-size:14px;padding:10px 14px;min-height:44px;margin:6px 6px 0 0 }
-  .chip .steps{ font-size:15px }
-  .chip .fix input{ font-size:16px }
 
   #selbar{ padding:5px;gap:3px }
   #selbar button{ padding:11px 18px;font-size:15px;min-height:44px }
@@ -1324,6 +1274,45 @@ body.lib-docked #local-status,body.lib-docked #offline-status{ left:calc(var(--l
 body:has(#library:not([hidden]):not([data-mode="dock"])) #toast{ top:auto;bottom:calc(var(--safe-b) + 92px) }
 body:has(#library[data-mode="drawer"]:not([hidden])) #toast{ left:calc(50% + min(390px, 100vw - 62px) / 2);max-width:calc(100vw - min(390px, 100vw - 62px) - 32px) }
 @media print{ #library,#lib-undo{ display:none !important } }
+
+/* Quick maths owns the middle of the bar: the name and who is here sit to its
+   left, the note's own buttons to its right. The answer drops down beneath
+   the field; enter (or a tap on the answer) offers to put it in the note. */
+#quick-maths{display:flex;align-items:center;flex:1 1 auto;min-width:110px;position:relative;margin:0 12px}
+#quick-expression{width:100%;min-width:0;flex:1;border:0;background:var(--tint);border-radius:var(--r-pill);padding:9px 14px;font:400 15px var(--mono);outline:none}
+#quick-expression:focus{box-shadow:0 0 0 2px var(--blue-soft)}
+#quick-result{position:fixed;z-index:45;display:flex;flex-direction:column;gap:4px;padding:6px;border-radius:18px;background:var(--panel);box-shadow:var(--shadow);border:1px solid var(--rule);animation:chipIn .2s var(--spring)}
+#quick-result[hidden],#quick-insert[hidden]{display:none}
+#quick-answer{display:flex;align-items:baseline;gap:12px;width:100%;text-align:left;border-radius:12px;background:var(--blue-soft);color:var(--blue);padding:10px 12px;font:500 17px var(--mono)}
+#quick-answer .qa-value{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#quick-answer .qa-hint{flex:none;font:500 12px var(--ui);color:var(--ink-2);letter-spacing:0}
+#quick-answer[aria-expanded="true"] .qa-hint{visibility:hidden}
+#quick-answer:active{transform:scale(.98)}
+#quick-insert{display:flex;gap:4px}
+#quick-insert button{flex:1;padding:12px;border-radius:12px;font:500 14px var(--ui);white-space:nowrap}
+#quick-insert button:hover,#quick-insert button:focus-visible{background:var(--tint)}
+#quick-status{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+@media(min-width:700px){#bar-spacer{display:none}}
+html[data-motion="off"] *,html[data-motion="off"] *::before,html[data-motion="off"] *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+html[data-motion="off"] .prep-logo{clip-path:none}
+html[data-motion="off"] .prep-trace::before{transform:scaleX(1);opacity:.55}
+@media(max-width:699px){
+  :root{--topbar:100px}
+  #brand .wordmark{width:64px}
+  #status:empty{display:none}
+  #title{min-width:0;padding-left:6px;padding-right:6px}
+  #topbar{height:88px;padding-bottom:38px;border-radius:26px}
+  #quick-maths{position:absolute;bottom:5px;left:12px;right:12px;height:32px;margin:0}
+  #quick-expression{padding:6px 10px;font-size:16px}
+}
+
+@media(max-width:380px){
+ #topbar{gap:0;padding-left:8px;padding-right:8px}
+ #brand{padding:4px;margin-right:0}
+ #brand .wordmark{width:50px}
+ #title{min-width:0;padding:6px 4px;flex:1}
+ #topbar .bar-btn{width:36px;flex:none}
+}
 </style>
 </head>
 <body data-tool="text">
@@ -1341,10 +1330,11 @@ body:has(#library[data-mode="drawer"]:not([hidden])) #toast{ left:calc(50% + min
   <button id="brand" type="button" title="all notes" aria-label="all notes" aria-expanded="false" aria-controls="library" aria-keyshortcuts="Control+Shift+O Meta+Shift+O"><span class="wordmark" aria-hidden="true"></span></button>
   <button id="title" type="button" title="rename this note">untitled</button>
   <input id="title-edit" aria-label="note name" placeholder="untitled" autocomplete="off" spellcheck="false" enterkeyhint="done" hidden>
-  <span id="bar-spacer"></span>
   <span id="status" role="status" aria-live="polite"></span>
   <!-- who else is on a shared note, one circle each in their colour -->
   <span id="peers" role="group" aria-label="people on this note"></span>
+  <span id="bar-spacer"></span>
+  <div id="quick-maths"><input id="quick-expression" aria-label="quick maths" placeholder="quick maths" autocomplete="off" spellcheck="false" maxlength="160" enterkeyhint="go" aria-controls="quick-result"><span id="quick-status" role="status" aria-live="polite"></span></div>
   <!-- share: a link that lets others write on this note live. the count is
        everyone here, you included, once the note is shared -->
   <!-- downloads: the readers and the offline copy arrive behind the page.
@@ -1352,11 +1342,11 @@ body:has(#library[data-mode="drawer"]:not([hidden])) #toast{ left:calc(50% + min
   <button class="bar-btn" id="btn-downloads" title="models" aria-label="models" aria-haspopup="dialog" aria-expanded="false" aria-controls="dlpop"><i class="ph ph-download-simple"></i><span class="fb" hidden>dl</span><span id="dl-ring" hidden></span></button>
   <button class="bar-btn" id="btn-share" title="share" aria-label="share"><i class="ph ph-share"></i><span class="fb" hidden>S</span><span id="share-count" hidden></span></button>
   <button class="bar-btn" id="btn-undo" title="undo" aria-label="undo" aria-keyshortcuts="Control+Z Meta+Z"><i class="ph ph-arrow-counter-clockwise"></i><span class="fb" hidden>Z</span></button>
-  <!-- redo had no button at all: without a keyboard it was reachable only by a
-       three finger tap, which nothing on screen ever mentions -->
+  <!-- History is controlled by these buttons or keyboard shortcuts. -->
   <button class="bar-btn" id="btn-redo" title="redo" aria-label="redo" aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y"><i class="ph ph-arrow-clockwise"></i><span class="fb" hidden>Y</span></button>
   <button class="bar-btn" id="btn-menu" title="menu" aria-label="menu" aria-keyshortcuts="Control+, Meta+,"><i class="ph ph-dots-three"></i></button>
 </header>
+<div id="quick-result" hidden><button id="quick-answer" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="quick-insert"><span class="qa-value"></span><span class="qa-hint" aria-hidden="true">enter to insert</span></button><div id="quick-insert" role="menu" aria-label="insert quick maths" hidden><button type="button" role="menuitem" data-mode="text">insert as text</button><button type="button" role="menuitem" data-mode="writing">insert as writing</button></div></div>
 
 <!-- the notes library: a page on a phone, a drawer on a tablet, a docked
      sidebar on a desktop (see LIBRARY below) -->
@@ -1511,7 +1501,7 @@ const S = {
   strokes:[], lines:[], images:[], annos:[],
   clusters:[], nodes:[], textTranscripts:[],
   tool:'text', lastTool:'pen',
-  settings:{ angle:'deg', fractions:false, aiOn:true, theme:'auto', voice:false, recognizer:'ink', touchDraw:true },
+  settings:{ angle:'deg', fractions:false, aiOn:true, theme:'auto', voice:false, recognizer:'ink', touchDraw:true, animations:true },
   docH:1600, dirty:false, selection:[], imageSelection:null, savedRev:0, remoteRev:0
 };
 
@@ -1535,9 +1525,9 @@ function strokeById(id){
   }
   return strokeMap.get(id);
 }
-const reducedMotion = () => { try{ return matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; } };
+const reducedMotion = () => { if(S.settings.animations===false) return true; try{ return matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; } };
 
-const APP_PREF_KEYS = ['theme','touchDraw','voice','recognizer'];
+const APP_PREF_KEYS = ['theme','touchDraw','voice','recognizer','animations'];
 function appPrefs(){
   try{ return JSON.parse(localStorage.getItem('notas.prefs')||'{}')||{}; }catch(e){ return {}; }
 }
@@ -1551,6 +1541,7 @@ function applyPrefs(){
   const stored=appPrefs(),kept={};
   for(const k of APP_PREF_KEYS)if(k in stored)kept[k]=stored[k];
   Object.assign(S.settings,kept);
+  document.documentElement.dataset.motion=S.settings.animations===false?'off':'on';
   if(Object.keys(stored).some(k=>!APP_PREF_KEYS.includes(k)))try{ localStorage.setItem('notas.prefs',JSON.stringify(kept)); }catch(e){}
 }
 function noteSettings(){
@@ -1585,32 +1576,110 @@ function flushView(){
 }
 function getView(id){ flushView(); try{ return JSON.parse(localStorage.getItem('notas.view.'+id)||'null'); }catch(e){ return null; } }
 
-/* ---- storage: idb-keyval when present, localStorage as the safety net ---- */
+/* ---- storage: idb-keyval when present, localStorage as the safety net ----
+   A read that fails is not a read that found nothing. The list of notes used
+   to come back empty when IndexedDB failed for a moment (Safari drops its
+   connection after the app has been in the background), and the next save
+   wrote that empty list back with one row in it: every other note was still
+   stored, and nothing could reach it. read() throws instead, and everything
+   that rewrites the list reads it that way. */
+const IDB_USED = 'notas.idb';
 const Store = {
-  async get(k){
+  /* no IndexedDB on this device, ever: localStorage is all there is */
+  lsOnly: false,
+  async read(k){
     // A fallback copy is authoritative, including a null deletion tombstone.
-    try{ const v = localStorage.getItem(k); if(v !== null) return JSON.parse(v) ?? undefined; }catch(e){}
-    try{ if(window.idbKeyval) return await idbKeyval.get(k); }catch(e){}
+    let v = null;
+    try{ v = localStorage.getItem(k); }catch(e){}
+    if(v !== null){ try{ return JSON.parse(v) ?? undefined; }catch(e){} }
+    if(Store.lsOnly) return undefined;
+    if(!window.idbKeyval) throw new Error('storage is not available');
+    return await idbKeyval.get(k);
   },
+  async get(k){ try{ return await Store.read(k); }catch(e){ return undefined; } },
   async set(k,v){
     let fallback = false;
     try{ fallback = localStorage.getItem(k) !== null; }catch(e){}
-    if(fallback){
-      try{ localStorage.setItem(k, JSON.stringify(v)); return true; }catch(e){ return false; }
+    if(!Store.lsOnly && window.idbKeyval){
+      try{
+        await idbKeyval.set(k,v);
+        /* a copy kept here while IndexedDB was failing is superseded now.
+           It used to take every later write of its key for good, so a note
+           that fell back once could never grow past localStorage's few MB */
+        if(fallback){
+          try{ localStorage.removeItem(k); }
+          catch(e){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e2){ return false; } }
+        }
+        try{ localStorage.setItem(IDB_USED, '1'); }catch(e){}
+        return true;
+      }catch(e){}
     }
-    try{ if(window.idbKeyval){ await idbKeyval.set(k,v); return true; } }catch(e){}
     try{ localStorage.setItem(k, JSON.stringify(v)); return true; }catch(e){ return false; }
   },
   async del(k){
-    try{ if(window.idbKeyval) await idbKeyval.del(k); }
-    catch(e){
-      try{ localStorage.setItem(k, 'null'); return true; }catch(e){ return false; }
+    if(!Store.lsOnly && window.idbKeyval){
+      try{ await idbKeyval.del(k); }
+      catch(e){
+        try{ localStorage.setItem(k, 'null'); return true; }catch(e){ return false; }
+      }
     }
     try{ localStorage.removeItem(k); return true; }catch(e){ return false; }
   },
-  async index(){ return (await Store.get('notas.index')) || []; },
-  async putIndex(ix){ return await Store.set('notas.index', ix); }
+  /* every stored key under a prefix, wherever it is kept; a tombstone here
+     means the key is gone */
+  async keys(prefix){
+    const out = new Set();
+    if(!Store.lsOnly){
+      if(!window.idbKeyval) throw new Error('storage is not available');
+      for(const k of await idbKeyval.keys()) if(typeof k === 'string' && k.startsWith(prefix)) out.add(k);
+    }
+    try{
+      for(let i = 0; i < localStorage.length; i++){
+        const k = localStorage.key(i);
+        if(!k || !k.startsWith(prefix)) continue;
+        if(localStorage.getItem(k) === 'null') out.delete(k); else out.add(k);
+      }
+    }catch(e){}
+    return [...out];
+  },
+  /* Checked once at launch. IndexedDB that fails on a device that has used
+     it before holds notes that must not be written over; one that has never
+     worked here (an old private window) leaves localStorage to carry them.
+     A device from before this check has no mark yet, so any sign of notas
+     having run here, or of its database existing, counts as used. */
+  async probe(){
+    if(!window.idbKeyval) throw new Error('storage is not available');
+    try{
+      await idbKeyval.get('notas.index'); Store.lsOnly = false;
+      try{ localStorage.setItem(IDB_USED, '1'); }catch(e){}
+    }catch(e){
+      let used = false;
+      try{
+        used = localStorage.getItem(IDB_USED) === '1' || localStorage.getItem('notas.active') !== null || localStorage.getItem('notas.prefs') !== null;
+      }catch(e2){}
+      if(!used) try{ used = !!(indexedDB.databases && (await indexedDB.databases()).some(d=>d && d.name === 'keyval-store')); }catch(e2){}
+      if(used) throw e;
+      Store.lsOnly = true;
+    }
+  },
+  /* the list of notes; throws when it cannot be read */
+  async index(){ const ix = await Store.read('notas.index'); return Array.isArray(ix) ? oneRowEach(ix) : []; },
+  async putIndex(ix){ return await Store.set('notas.index', oneRowEach(ix)); }
 };
+/* One row per note. A note is stored before its row is written, so a list
+   put back together in between (another tab opening while a backup was
+   imported) and the row that followed both named it. The first row wins,
+   filled in with anything only the other one had (its folder, say). */
+function oneRowEach(ix){
+  const at = new Map(), out = [];
+  for(const r of ix){
+    if(!r || !r.id) continue;
+    const i = at.get(r.id);
+    if(i === undefined){ at.set(r.id, out.length); out.push(r); }
+    else out[i] = {...r, ...out[i]};
+  }
+  return out;
+}
 
 /* the first typed line, for a note that was never named */
 function firstLine(lines){
@@ -1628,11 +1697,12 @@ function isBlank(){
 /* "today", "yesterday", then the date, so a list of notes reads as a diary */
 function whenLabel(t){
   const d = new Date(t || 0), now = new Date();
+  if(!Number.isFinite(d.getTime()))return 'unknown date';
   const day = x=>new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
   const diff = Math.round((day(now) - day(d)) / 864e5);
   if(diff === 0) return 'today';
   if(diff === 1) return 'yesterday';
-  if(diff < 7) return d.toLocaleDateString(undefined, {weekday:'long'});
+  if(diff >= 0 && diff < 7) return d.toLocaleDateString(undefined, {weekday:'long'});
   return d.toLocaleDateString(undefined, d.getFullYear() === now.getFullYear() ? {day:'numeric', month:'short'} : {day:'numeric', month:'short', year:'numeric'});
 }
 function serialize(){
@@ -1644,10 +1714,10 @@ function serialize(){
     /* a stroke nota is still writing is saved whole: the reveal is not ink */
     strokes:S.strokes.map(st=>st._show===undefined?st:(({_show,...rest})=>rest)(st)),
     /* a reply line still waiting for its first word is saved as plain text */
-    lines:S.lines.map(l=>l.wait?(({wait,...rest})=>rest)(l):l), images:S.images,
+    lines:S.lines.filter(l=>!l.wait), images:S.images,
     /* transcriptions are persisted so search can reach handwriting offline */
     localVersion:2,
-    answers:N.mathcore ? N.mathcore.savedAnswers() : [],
+    answers:N.mathcore ? N.mathcore.savedAnswers() : (S.savedAnswers||[]),
     transcripts:S.clusters.filter(c=>c.latex||c.ascii||c.asked).map(c=>({hash:c.hash, latex:c.latex, ascii:c.ascii, kind:c.kind, modelVersion:c.modelVersion, alternatives:c.alternatives||[], confirmed:!!c.confirmed, needsConfirmation:!!c.needsConfirmation, confidence:c.confidence||0, asked:!!c.asked, ...(c.dismissed?{dismissed:true}:{}), plotVals:c._plotVals||null})),
     /* PP-OCRv6 prose readings are hidden search metadata. They never replace
        ink or feed the maths evaluator, and the raw reading is kept so search
@@ -1656,8 +1726,32 @@ function serialize(){
   };
 }
 
-let saveTimer = null, saveQueue = Promise.resolve(), revision = 0;
+/* an export file: laid out for reading when small, compact when large. The
+   layout puts every number on a line of its own, which could carry a big
+   note past what import takes back */
+function exportText(v){ const flat=JSON.stringify(v); const pretty=flat.length<8*1024*1024?JSON.stringify(v,null,1):flat;return new Blob([pretty]).size<200*1024*1024?pretty:flat; }
+let saveTimer = null, saveIdle = false, saveQueue = Promise.resolve(), revision = 0;
 const locallyWrittenRevs=new Map();
+const rescueOwner=uid(), rescueKey='notas.rescue.'+rescueOwner;
+function rescueSave(){
+  if(!S.id||!S.dirty)return;
+  try{localStorage.setItem(rescueKey,JSON.stringify(serialize()));}catch(e){setSaveError();}
+}
+function clearRescue(){try{localStorage.removeItem(rescueKey);}catch(e){}}
+async function recoverRescues(){
+  let keys=[];try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k.startsWith('notas.rescue.'))keys.push(k);}}catch(e){return;}
+  for(const key of keys){
+    try{
+      const raw=localStorage.getItem(key),doc=JSON.parse(raw);if(!doc?.id)continue;
+      await withNoteLock(doc.id,async()=>{
+        const current=await Store.read('notas.note.'+doc.id);
+        const content=d=>JSON.stringify([d.title,d.strokes,d.lines,d.images,d.transcripts,d.textTranscripts,d.answers,d.settings]);
+        if(!current||content(current)!==content(doc))await writeCopy(doc,(doc.title||'untitled')+' (recovered copy)');
+        if(localStorage.getItem(key)===raw)localStorage.removeItem(key);
+      });
+    }catch(e){}
+  }
+}
 /* Web Locks is the simplest cross-tab mutex. Browsers without it still have
    IndexedDB, so idb-keyval's atomic update() gives us a small lease record that
    serializes the same critical section across tabs. This is materially different
@@ -1699,19 +1793,56 @@ function withNoteLock(id, fn){
    taken inside a note's lock and never the other way round. */
 function withIndexLock(fn){ return withNoteLock(':index', fn); }
 async function deleteStoredNote(id){
-  return withNoteLock(id,async()=>{
-    const key='notas.note.'+id,current=await Store.get(key);
-    if(!current)return true;
-    const gone=await withIndexLock(async()=>{
-      const ix=await Store.index(),next=ix.filter(r=>r.id!==id);
-      if(!await Store.del(key))return false;
-      if(!await Store.putIndex(next)){ await Store.set(key,current); return false; }
+  try{
+    return await withNoteLock(id,async()=>{
+      const key='notas.note.'+id,current=await Store.read(key);
+      if(!current)return true;
+      const gone=await withIndexLock(async()=>{
+        const ix=await Store.index(),next=ix.filter(r=>r.id!==id);
+        if(!await Store.del(key))return false;
+        if(!await Store.putIndex(next)){ await Store.set(key,current); return false; }
+        return true;
+      });
+      if(!gone)return false;
+      await Store.del('notas.thumb.'+id);
+      sync?.postMessage({id,deleted:true,rev:(current.rev||0)+1});
       return true;
     });
-    if(!gone)return false;
-    await Store.del('notas.thumb.'+id);
-    sync?.postMessage({id,deleted:true,rev:(current.rev||0)+1});
-    return true;
+  }catch(e){ return false; }
+}
+/* The list of notes is put back together from what is stored. A note whose
+   row went missing (a list written while storage was failing, a page closed
+   between a note's write and its row's) is listed again instead of sitting
+   on the device where nothing can reach it. Rows IndexedDB's own copy of the
+   list still holds, while a copy in localStorage stands in front of it, come
+   back with their folder, pin and trash as they were. */
+async function repairIndex(){
+  return withIndexLock(async()=>{
+    const ix=await Store.index(),listed=new Set(ix.map(r=>r.id));
+    const keys=await Store.keys('notas.note.');
+    let shadow=[];
+    try{
+      let here=null; try{ here=localStorage.getItem('notas.index'); }catch(e){}
+      if(here!==null&&!Store.lsOnly&&window.idbKeyval)shadow=(await idbKeyval.get('notas.index'))||[];
+    }catch(e){}
+    const shadowRows=new Map((Array.isArray(shadow)?shadow:[]).filter(r=>r&&r.id).map(r=>[r.id,r]));
+    const found=[];
+    for(const key of keys){
+      const id=key.slice('notas.note.'.length);
+      if(!id||listed.has(id))continue;
+      let row=shadowRows.get(id);
+      if(!row){
+        const doc=await Store.read(key);
+        if(!doc||typeof doc!=='object')continue;
+        const now=Date.now();
+        row={id,title:doc.title||'untitled',updated:doc.updated||now,created:doc.created||doc.updated||now,preview:firstLine(doc.lines),...(doc.library||{})};
+      }
+      found.push(row); listed.add(id);
+    }
+    if(!found.length)return 0;
+    if(!await Store.putIndex([...found,...ix]))return 0;
+    sync?.postMessage({index:true});
+    return found.length;
   });
 }
 /* Library edits (move, pin, trash, restore) change index rows only. Each row
@@ -1725,9 +1856,11 @@ async function patchIndexRows(ids, patch){
       if(at<0) return true;
       const next = {...ix[at], ...patch(ix[at])};
       for(const k of Object.keys(next)) if(next[k]===undefined) delete next[k];
+      const doc=await Store.read('notas.note.'+id);
+      if(doc){doc.library={};for(const k of ['folder','pinned','trashed'])if(next[k]!==undefined)doc.library[k]=next[k];if(!await Store.set('notas.note.'+id,doc))return false;}
       ix[at] = next;
       return await Store.putIndex(ix);
-    })) && ok;
+    })).catch(()=>false) && ok;
   }
   sync?.postMessage({index:true});
   return ok;
@@ -1742,37 +1875,103 @@ function askPersistence(){
 const sync = typeof BroadcastChannel!=='undefined' ? new BroadcastChannel('notas-sync-v1') : null;
 if(sync) sync.onmessage = e=>{
   const m=e.data||{};
-  if(m.id===S.id&&(m.rev||0)>(S.savedRev||0)) S.remoteRev=Math.max(S.remoteRev||0,m.rev||0);
+  if(m.id!==S.id)return;
+  if(typeof m.title==='string'&&S.title===S.savedTitle){S.title=m.title;S.savedTitle=m.title;N.ui?.refreshTitle();}
+  if((m.rev||0)>(S.savedRev||0)){
+    S.remoteRev=Math.max(S.remoteRev||0,m.rev||0);
+    if(!S.dirty&&!N.ink?.drawing?.()&&!m.deleted&&!(N.collab?.isLive?.(S.id)))N.ui?.openNote(S.id,{remote:true}).catch(()=>{});
+  }
 };
 function markDirty(collabHint){
   revision++;
   S.dirty = true;
   N.collab && N.collab.changed(collabHint); /* a shared note mirrors the change out */
   if(saveTimer) return;
-  const run = () => { saveTimer = null; save(); };
+  /* a save copies the whole note at once; on a long one that is long
+     enough to be felt as a hitch in a line being drawn, so it waits for the
+     stroke to end (within reason: a pen resting on the glass still saves) */
+  let waited = 0;
+  const run = () => {
+    if(N.ink && N.ink.drawing && N.ink.drawing() && waited < 20){ waited++; saveIdle = false; saveTimer = setTimeout(run, 250); return; }
+    saveTimer = null; save();
+  };
+  saveIdle = !!window.requestIdleCallback;
   saveTimer = (window.requestIdleCallback)
     ? requestIdleCallback(run, {timeout:1500})
     : setTimeout(run, 900);
+}
+/* how much of a note is the student's: ink, written lines and pictures */
+function contentWeight(d){
+  return (d.strokes||[]).filter(s=>s&&s.author!=='ai').length +
+    (d.lines||[]).filter(l=>l&&!l.tutor&&l.text&&l.text.trim()).length + (d.images||[]).length;
+}
+/* a stored version of a note kept as a note of its own, filed beside it;
+   called inside that note's lock */
+async function writeCopy(base, title){
+  const id=uid(),now=Date.now();
+  const copy={...base,id,title,created:now,updated:now,rev:1};
+  delete copy.live;
+  if(!await Store.set('notas.note.'+id, copy)) throw new Error('Copy write failed');
+  try{
+    await withIndexLock(async()=>{
+      const ix=await Store.index(),was=ix.find(r=>r.id===base.id);
+      ix.unshift({id,title,updated:now,created:now,preview:firstLine(copy.lines),...(was&&was.folder?{folder:was.folder}:{})});
+      if(!await Store.putIndex(ix)) throw new Error('Copy index write failed');
+    });
+  }catch(e){ await Store.del('notas.note.'+id); throw e; }
+  sync?.postMessage({id,rev:1});
+  return id;
+}
+/* A safety copy is a precaution: one that cannot be written never stops the
+   save it guards (a full disk would otherwise stop a shared note saving at
+   all), and a stored version is copied once, however often a failing save
+   is retried. */
+const copiedRevs = new Map(), lastSafetyCopy=new Map();
+async function safetyCopy(current, title){
+  const key = current.id+':'+(current.rev||0);
+  if(copiedRevs.has(key)) return false;
+  try{ await writeCopy(current, title); copiedRevs.set(key, true);while(copiedRevs.size>100)copiedRevs.delete(copiedRevs.keys().next().value);return true; }
+  catch(e){ return false; }
 }
 let saveFailed = false;
 async function save(opts){
   const announce = !!(opts && opts.announce);
   if(saveTimer !== null){
-    if(window.requestIdleCallback) window.cancelIdleCallback(saveTimer); else clearTimeout(saveTimer);
+    /* the handle is an idle callback, or a timer while a stroke held it back */
+    if(saveIdle) window.cancelIdleCallback(saveTimer); else clearTimeout(saveTimer);
     saveTimer = null;
   }
   if(!S.id) return true;
+  if(!S.dirty&&!saveFailed){if(announce)status('saved.');return true;}
   /* A new note is nothing until something is written on it. Storing the
      blank page listed an "untitled" note for every glance at an empty one,
      so a note that has never been stored waits for its first mark. A
      shared note is the exception: the room is the reason it exists. */
   if(!S.savedRev && isBlank() && !(N.collab && N.collab.isShared(S.id))){ S.dirty = false; return true; }
   let doc;
-  try{ doc = JSON.parse(JSON.stringify(serialize())); }catch(e){ console.error('serialize failed', e); return false; }
-  const savedRevision = revision;
-  const task = saveQueue.then(()=>withNoteLock(doc.id,async()=>{
+  try{ doc = JSON.parse(JSON.stringify(serialize())); }
+  catch(e){
+    /* said, like any other failed save: returning quietly left the note
+       unsaved with nothing on screen, and a note change silently refused */
+    console.error('serialize failed', e);
+    setSaveError(); toast('could not save. retry, or export a copy of this note.',7000);
+    return false;
+  }
+  const savedRevision = revision, savedTitle=S.savedTitle;
+  const task = saveQueue.catch(()=>false).then(()=>withNoteLock(doc.id,async()=>{
     try{
-      const current = await Store.get('notas.note.'+doc.id);
+      /* a note that cannot be read is not a note deleted elsewhere: the save
+         fails and is retried, rather than forking a "recovered copy" */
+      if(S.forkedFrom?.from===doc.id){doc.id=S.forkedFrom.to;doc.rev=S.savedRev;doc.title=S.title;}
+      const current = await Store.read('notas.note.'+doc.id);
+      if(current&&doc.title===savedTitle)doc.title=current.title;
+      if(current?.library)doc.library=current.library;
+      else if(S.newFolder?.id===doc.id&&S.newFolder.folder)doc.library={folder:S.newFolder.folder};
+      const shared = !!(N.collab && N.collab.isShared(doc.id));
+      /* whether this tab is in the shared note's room right now; a tab that
+         is not has edits nothing merges, so it must not simply overwrite */
+      const live = shared && !!(N.collab.isLive && N.collab.isLive(doc.id));
+      if(shared) doc.live = live; else delete doc.live;
       const currentRev = current?.rev || 0;
       let expectedRev = doc.rev || 0;
       /* Two save triggers can snapshot before the first queued write finishes
@@ -1783,8 +1982,8 @@ async function save(opts){
          while the first write was under way), it follows that write. */
       const mine=locallyWrittenRevs.get(doc.id);
       if(current&&currentRev>expectedRev&&mine&&mine.rev>=currentRev){
-        if(mine.revision>=savedRevision){
-          if(S.id===doc.id&&revision===savedRevision){S.dirty=false;S.savedRev=currentRev;S.remoteRev=0;if(announce||saveFailed)status('saved.');clearSaveError();setActive(doc.id);}
+        if(mine.complete&&mine.revision>=savedRevision){
+          if(S.id===doc.id&&revision===savedRevision){S.dirty=false;S.savedRev=currentRev;S.savedTitle=current.title;S.remoteRev=0;clearRescue();if(announce||saveFailed)status('saved.');clearSaveError();setActive(doc.id);}
           return true;
         }
         expectedRev=doc.rev=currentRev;
@@ -1796,7 +1995,28 @@ async function save(opts){
          to keep apart: this write simply follows it. Forking made a
          "conflict copy" whenever a share link was opened beside the
          original. */
-      if(newerElsewhere&&N.collab&&N.collab.isShared(doc.id)){ doc.rev=Math.max(currentRev,S.id===doc.id?(S.remoteRev||0):0); newerElsewhere=false; }
+      /* Only a tab that is in the room follows, though. A tab that is not
+         (another tab started sharing while this one had the note open, or
+         sharing could not load here) forks a conflict copy as any note
+         would; and a version written by such a tab is kept as a copy before
+         a tab in the room writes over it. */
+      if(newerElsewhere&&live){
+        if(current.live===false) await safetyCopy(current, (current.title||'untitled')+' (edits from another tab)');
+        doc.rev=Math.max(currentRev,S.id===doc.id?(S.remoteRev||0):0); newerElsewhere=false;
+      }
+      /* Anyone in a shared note can remove anything, and the removal reaches
+         every device. When most of a shared note goes at once, what was
+         there is kept on this device as a note of its own first. */
+      if(shared&&current&&!deletedElsewhere&&!newerElsewhere){
+        const strokes=new Map(doc.strokes.map(s=>[s.id,s])),lines=new Map(doc.lines.map(l=>[l.id,l])),images=new Map(doc.images.map(im=>[im.id,im]));
+        const changed=(current.strokes||[]).some(st=>st.author!=='ai'&&(!strokes.has(st.id)||JSON.stringify(st.pts)!==JSON.stringify(strokes.get(st.id).pts)))||
+          (current.lines||[]).some(ln=>!ln.tutor&&ln.text&&(!lines.has(ln.id)||!lines.get(ln.id).text.includes(ln.text)))||
+          (current.images||[]).some(im=>!images.has(im.id)||images.get(im.id).src!==im.src);
+        if(changed&&Date.now()-(lastSafetyCopy.get(doc.id)||0)>300000&&await safetyCopy(current,(current.title||'untitled')+' (before a big change)')){
+          lastSafetyCopy.set(doc.id,Date.now());
+          if(contentWeight(doc)<contentWeight(current)/2)toast('removed content was kept as a copy in your notes.',8000);
+        }
+      }
       if(deletedElsewhere||newerElsewhere){
         const conflictId=uid();
         const conflict={...doc,id:conflictId,title:(doc.title||'untitled')+(deletedElsewhere?' (recovered copy)':' (conflict copy)'),created:Date.now(),updated:Date.now(),rev:1};
@@ -1807,9 +2027,10 @@ async function save(opts){
           cix.unshift({id:conflictId,title:conflict.title,updated:conflict.updated,created:conflict.created,preview:firstLine(conflict.lines),...(was&&was.folder?{folder:was.folder}:{})});
           if(!await Store.putIndex(cix)) throw new Error('Conflict index write failed');
         });
-        locallyWrittenRevs.set(conflictId,{rev:1,revision:savedRevision});
-        if(S.id===doc.id && revision===savedRevision){
-          S.id=conflictId; S.title=conflict.title; S.savedRev=1; S.remoteRev=0; S.dirty=false;
+        locallyWrittenRevs.set(conflictId,{rev:1,revision:savedRevision,complete:true});
+        if(S.id===doc.id){
+          S.forkedFrom={from:doc.id,to:conflictId};
+          S.id=conflictId; if(S.title===doc.title)S.title=conflict.title; S.savedTitle=conflict.title; S.savedRev=1; S.remoteRev=0; S.dirty=revision!==savedRevision;if(!S.dirty)clearRescue();
           $('#title').textContent=S.title; setActive(S.id); clearSaveError(); status('saved a conflict copy.');
           toast(deletedElsewhere?'this note was deleted in another tab. your work was saved as a recovered copy.':'this note changed in another tab. your version was saved as a conflict copy.',7000);
         }
@@ -1818,7 +2039,7 @@ async function save(opts){
       }
       doc.rev=Math.max(expectedRev,doc.rev||0)+1;
       if(!await Store.set('notas.note.'+doc.id, doc)) throw new Error('Note write failed');
-      locallyWrittenRevs.set(doc.id,{rev:doc.rev,revision:savedRevision});
+      locallyWrittenRevs.set(doc.id,{rev:doc.rev,revision:savedRevision,complete:false});
       await withIndexLock(async()=>{
         const ix = await Store.index();
         const row = { id:doc.id, title:doc.title, updated:doc.updated, created:doc.created, preview:firstLine(doc.lines) };
@@ -1829,20 +2050,25 @@ async function save(opts){
           /* a note started from inside a folder is filed there on its first save */
           if(S.newFolder && S.newFolder.id===doc.id && S.newFolder.folder) row.folder = S.newFolder.folder;
           ix.unshift(row);
-        } else ix[at] = {...ix[at], ...row};
+        } else {
+          if(doc.rev===1 && !ix[at].folder && S.newFolder && S.newFolder.id===doc.id && S.newFolder.folder) row.folder = S.newFolder.folder;
+          ix[at] = {...ix[at], ...row};
+        }
         if(!await Store.putIndex(ix)) throw new Error('Index write failed');
       });
+      locallyWrittenRevs.set(doc.id,{rev:doc.rev,revision:savedRevision,complete:true});
+      while(locallyWrittenRevs.size>100)locallyWrittenRevs.delete(locallyWrittenRevs.keys().next().value);
       askPersistence();
       /* Autosave is silent. "Saved" flashing in the corner after every stroke
          was constant blinking while writing; it is only said when the student
          asked for a save, or when a save that had failed finally went through. */
       if(S.id===doc.id && revision===savedRevision){
-        S.dirty=false; S.savedRev=doc.rev; S.remoteRev=0; if(announce||saveFailed) status('saved.'); clearSaveError(); setActive(doc.id);
+        S.dirty=false; S.savedRev=doc.rev; S.savedTitle=doc.title; S.remoteRev=0; clearRescue(); if(announce||saveFailed) status('saved.'); clearSaveError(); setActive(doc.id);
       }
       sync?.postMessage({id:doc.id,rev:doc.rev});
       return true;
     }catch(e){ setSaveError(); toast('could not save. retry, or export a copy of this note.',7000); return false; }
-  }));
+  })).catch(e=>{setSaveError();toast('could not save. retry, or export a copy of this note.',7000);return false;});
   saveQueue = task;
   return task;
 }
@@ -1869,17 +2095,19 @@ function typed(ln, next){
   /* what this device typed the line into, kept per keystroke: text that
      arrives from someone else afterwards is not part of the run */
   const run = Undo.typing.get(ln.id);
-  if(run) run.now = next; else Undo.typing.set(ln.id, {was:ln.text||'', now:next});
+  /* typing in one of nota's red lines makes it the student's; undoing the
+     typing makes it nota's again, so undoing the reply takes it out too */
+  if(run) run.now = next; else Undo.typing.set(ln.id, {was:ln.text||'', now:next, tutor:!!ln.tutor});
 }
 function sealTyping(){
   const was = Undo.typing; if(!was) return;
   Undo.typing = null;
   const changes = [];
-  for(const [id, run] of was){ if(S.lines.some(l=>l.id===id) && run.now !== run.was) changes.push({id, was:run.was, now:run.now}); }
+  for(const [id, run] of was){ if(S.lines.some(l=>l.id===id) && run.now !== run.was) changes.push({id, was:run.was, now:run.now, tutor:run.tutor}); }
   if(!changes.length) return;
   /* a line someone else has written in since (a shared note) is left as it
      is: putting back this run's text would take their words with it */
-  const put = key=>{ const from = key === 'was' ? 'now' : 'was'; for(const c of changes){ const ln = S.lines.find(l=>l.id===c.id); if(ln && (ln.text||'') === c[from]) ln.text = c[key]; } };
+  const put = key=>{ const from = key === 'was' ? 'now' : 'was'; for(const c of changes){ const ln = S.lines.find(l=>l.id===c.id); if(ln && (ln.text||'') === c[from]){ ln.text = c[key]; if(c.tutor){ if(key === 'was') ln.tutor = true; else { delete ln.tutor; delete ln.wait; } } } } };
   const into = was.into;
   if(into && Undo.back[Undo.back.length-1] === into){
     const u = into.undo, r = into.redo;
@@ -2141,7 +2369,7 @@ function anonId(){
 applyPrefs();
 N.core = { S, M, Store, uid, clamp, $, layout, growDoc, setZoom, firstLine, displayTitle, whenLabel, ZOOM_MIN, ZOOM_MAX, markDirty, save, serialize,
            act, undo, redo, Undo, paintUndo, typed, toast, status, anonId, LINE_H, CONTENT_MAX, strokeById, reducedMotion, smoothWheel, glideTarget,
-           FEEDBACK_URL, savePrefs, applyPrefs, setActive, getActive, saveView, getView, flushView, setSaveError, clearSaveError, withNoteLock, withIndexLock, deleteStoredNote, patchIndexRows, isBlank, swipeAway };
+           FEEDBACK_URL, savePrefs, applyPrefs, setActive, getActive, saveView, getView, flushView, setSaveError, clearSaveError, withNoteLock, withIndexLock, deleteStoredNote, repairIndex, recoverRescues, rescueSave, patchIndexRows, exportText, isBlank, swipeAway };
 })();
 </script>
 
@@ -2282,6 +2510,7 @@ function drawImages(ctx){
     for(const id of imgCache.keys()) if(!here.has(id)) imgCache.delete(id);
   }
   for(const im of S.images){
+    if(cropping&&cropping.id===im.id) continue;
     if(!visible([im.x, im.y, im.x+im.w, im.y+im.h])) continue;
     let el = imgCache.get(im.id);
     if(!el){
@@ -2313,6 +2542,10 @@ function render(onPaint){
     /* a selection being dragged is drawn at the offset the finger is at, and
        only committed to the stroke points when the finger lifts */
     const picked = (moving && S.selection.length) ? new Set(S.selection) : null;
+    for(const el of document.querySelectorAll('#lines .line')){
+      const selected=picked?.has(el.firstChild?.dataset.id);
+      el.style.transform=selected?'translate('+moving.dx+'px,'+moving.dy+'px)':'';
+    }
     /* the student's graphite and nota's red both live here; nothing else does */
     for(const st of S.strokes){
       if(st.author !== 'user' && st.author !== 'ai') continue;
@@ -2347,6 +2580,7 @@ function render(onPaint){
     paintedView = [cCommit.width,cCommit.height,M.zoom,M.colLeft,sc.scrollLeft,sc.scrollTop];
     /* The committed stroke is on the page before its live copy is removed. */
     if(pendingLive && !cur){ pendingLive=false; clearLive(); }
+    if(cur){clearLive();liveFrame();cur.drawn=0;drawLive();}
     renderAI();
     for(const done of paintCallbacks.splice(0))done();
   });
@@ -2456,22 +2690,17 @@ function effectiveTool(ev){
    tool up the chips no longer take pointer input at all (see the CSS), so the
    pen lands on the paper. A tap that would have pressed a chip is still a
    press: the canvas sees where the pen went down and, if it lifts without
-   moving, presses the chip itself. An open card keeps its own input. */
+   moving, presses it itself. Solve is the only thing on a chip to press. */
 function chipTargetAt(cx, cy){
-  for(const el of document.querySelectorAll('#margin .chip:not(.open):not(.explaining)')){
-    const r = el.getBoundingClientRect();
-    if(cx < r.left || cx > r.right || cy < r.top || cy > r.bottom) continue;
-    for(const b of el.querySelectorAll('button')){
-      const q = b.getBoundingClientRect();
-      if(cx >= q.left && cx <= q.right && cy >= q.top && cy <= q.bottom) return b;
-    }
-    return el;
+  for(const b of document.querySelectorAll('#margin .chip .solve')){
+    const q = b.getBoundingClientRect();
+    if(cx >= q.left && cx <= q.right && cy >= q.top && cy <= q.bottom) return b;
   }
   return null;
 }
 function noteChipTap(ev){
   const chip = chipTargetAt(ev.clientX, ev.clientY);
-  tapChip = chip ? { node:chip.closest('.chip').dataset.node, solve:chip.matches('.solve'), x:ev.clientX, y:ev.clientY,
+  tapChip = chip ? { node:chip.closest('.chip').dataset.node, x:ev.clientX, y:ev.clientY,
     radius:kindOf(ev)==='pen'?12:8 } : null;
   chipRects = null;
 }
@@ -2483,18 +2712,13 @@ function chipTap(ev){
   /* A held pen tap is still a button press. Resolve the action by node ID:
      background painting can replace the original button before pen-up. */
   cur=null;clearLive();
-  if(ev.type!=='pointerup')return true;
-  if(t.solve)N.mathcore.requestSolve(t.node);
-  else{
-    const chip=[...document.querySelectorAll('#margin .chip')].find(el=>el.dataset.node===t.node);
-    if(chip)chip.click();
-  }
+  if(ev.type==='pointerup')N.mathcore.requestSolve(t.node);
   return true;
 }
 /* a chip the pen writes across steps aside until the next paint, so the ink
    is seen as it is laid down rather than hidden behind the chip */
 function yieldChipsUnder(cx, cy){
-  if(!chipRects) chipRects = [...document.querySelectorAll('#margin .chip:not(.open):not(.explaining)')].map(el=>({el, r:el.getBoundingClientRect()}));
+  if(!chipRects) chipRects = [...document.querySelectorAll('#margin .chip')].map(el=>({el, r:el.getBoundingClientRect()}));
   for(const c of chipRects){
     if(c.done) continue;
     const r = c.r, pad = 6;
@@ -2563,7 +2787,7 @@ function commitStroke(){
      lose. The eraser is one tap away and never guesses. */
   pendingLive = true;
   C.growDoc(st.bbox[3]);
-  C.act('draw', ()=>{ S.strokes.push(st); }, ()=>{ S.strokes = S.strokes.filter(s=>s.id!==st.id); }, {stroke:st});
+  C.act('draw', ()=>{ if(!S.strokes.some(s=>s.id===st.id))S.strokes.push(st); }, ()=>{ S.strokes = S.strokes.filter(s=>s.id!==st.id); }, {stroke:st});
   const stamped=stampStroke(st);
   N.mathcore && N.mathcore.inkLanded(st.id);
   after(true,stamped);
@@ -2572,24 +2796,57 @@ function commitStroke(){
    next idle moment. Doing all of it inside pointerup was a stall at every pen
    lift on a full page, felt as the next stroke starting late. Explicit calls
    to N.recog.rebuild() and N.mathcore.run() stay synchronous. */
-let afterHandle = 0;
+/* On a long note that work is not free, and the idle callback's deadline
+   used to force it in between two strokes of the same word: the page
+   stopped taking the pen's samples for as long as it ran, and the next line
+   jumped to catch up with the pencil. Once it costs more than a frame, it
+   waits for the hand to rest instead: no pointer down, and a moment since
+   the last lift. */
+let afterHandle = 0, afterIdle = false, afterCost = 0, lastLift = 0;
+const AFTER_REST = 320;
 function runAfter(){
   afterHandle = 0;
+  const t0 = performance.now();
   N.recog && N.recog.rebuild();
   N.mathcore && N.mathcore.run();
   N.tutorial && N.tutorial.check('stroke');
+  afterCost = performance.now() - t0;
+}
+function writing(){ return !!(cur || lasso || pointers.size); }
+function afterWhenResting(){
+  afterHandle = 0;
+  const rest = AFTER_REST - (performance.now() - lastLift);
+  if(writing() || rest > 0){ afterIdle = false; afterHandle = setTimeout(afterWhenResting, writing() ? 120 : Math.max(16, rest)); return; }
+  afterIdle = !!window.requestIdleCallback;
+  afterHandle = afterIdle ? requestIdleCallback(runAfter, {timeout:400}) : setTimeout(runAfter, 0);
 }
 function after(deferred,alreadyPainted){
   if(!alreadyPainted)render();
   N.text && N.text.refreshPlaceholder && N.text.refreshPlaceholder();
   if(!deferred){ flush(); runAfter(); return; }
+  lastLift = performance.now();
   if(afterHandle) return;
-  afterHandle = window.requestIdleCallback ? requestIdleCallback(runAfter, {timeout:200}) : setTimeout(runAfter, 0);
+  if(afterCost > 12){ afterIdle = false; afterHandle = setTimeout(afterWhenResting, 16); return; }
+  afterIdle = !!window.requestIdleCallback;
+  afterHandle = afterIdle ? requestIdleCallback(runAfter, {timeout:200}) : setTimeout(runAfter, 0);
 }
 function flush(){
   if(!afterHandle) return;
-  if(window.requestIdleCallback) cancelIdleCallback(afterHandle); else clearTimeout(afterHandle);
+  if(afterIdle) cancelIdleCallback(afterHandle); else clearTimeout(afterHandle);
   runAfter();
+}
+/* strokes taken away, returned to the page where they stood in its order:
+   each goes back in front of the first stroke that followed it and is still
+   there, so what was drawn over what stays as it was */
+function putBack(list, gone, order){
+  const out=list.slice(),here=new Set(out.map(s=>s.id));
+  for(const g of gone){
+    if(here.has(g.id))continue;
+    let pos=out.length;
+    for(let j=order.indexOf(g)+1;j<order.length;j++){ if(!here.has(order[j].id))continue; const k=out.findIndex(s=>s.id===order[j].id); if(k>=0){pos=k;break;} }
+    out.splice(pos,0,g);here.add(g.id);
+  }
+  return out;
 }
 function eraseAlong(st){
   const before = S.strokes, afterStrokes = [];
@@ -2617,9 +2874,13 @@ function eraseAlong(st){
      restores copies of them, and the objects held here would be edited in
      vain, so the erased letters never came back */
   const lineOf=e=>S.lines.find(l=>l.id===e.line.id);
+  /* the strokes that went, by id: undo puts those back into the page as it
+     is then, instead of the whole page as it was, which took away anything
+     drawn since (someone else's ink, in a shared note) */
+  const kept=new Set(afterStrokes),gone=before.filter(s=>!kept.has(s)),goneIds=new Set(gone.map(s=>s.id));
   C.act('erase',
-    ()=>{ S.strokes=afterStrokes;for(const e of edits){const ln=lineOf(e);if(ln){ln.text=e.after;ln.suppressAnswer=e.after;}}N.text.render(); },
-    ()=>{ S.strokes=before;for(const e of edits){const ln=lineOf(e);if(ln)ln.text=e.before;}N.text.render(); });
+    ()=>{ S.strokes=S.strokes.filter(s=>!goneIds.has(s.id));for(const e of edits){const ln=lineOf(e);if(ln&&((ln.text||'')===e.before||(ln.text||'')===e.after)){ln.text=e.after;ln.suppressAnswer=e.after;}}N.text.render(); },
+    ()=>{ S.strokes=putBack(S.strokes,gone,before);for(const e of edits){const ln=lineOf(e);if(ln&&(ln.text||'')===e.after)ln.text=e.before;}N.text.render(); });
   after(true);
 }
 
@@ -2675,6 +2936,10 @@ document.addEventListener('pointerdown', e=>{ if(penPopOpen() && !penPop.contain
 addEventListener('resize', ()=>{ if(penPopOpen()) placePenPop(); });
 
 /* ---- selection ---- */
+function selectedLineBox(ln){
+  const node=(S.nodes||[]).find(n=>n.id===ln.id),extra=node?.result?node.result.length*11+48:24;
+  return [ln.x||0,ln.y,Math.min(M.contentW,(ln.x||0)+Math.max(80,ln.text.length*10+extra)),ln.y+Math.max(C.LINE_H,ln.h||0)];
+}
 function selectionBox(){
   if(cropping && cropping.id === S.imageSelection){
     const F = cropping.F, f = frameOf(F), hw = F.w/2, hh = F.h/2;
@@ -2686,6 +2951,7 @@ function selectionBox(){
     if(im)return [im.x,im.y,im.x+im.w,im.y+im.h];
   }
   let a=1e9,b=1e9,c=-1e9,d=-1e9;
+  for(const ln of S.lines)if(S.selection.includes(ln.id)){const q=selectedLineBox(ln);a=Math.min(a,q[0]);b=Math.min(b,q[1]);c=Math.max(c,q[2]);d=Math.max(d,q[3]);}
   for(const id of S.selection){
     const st = C.strokeById(id); if(!st) continue;
     a=Math.min(a,st.bbox[0]); b=Math.min(b,st.bbox[1]);
@@ -2719,6 +2985,7 @@ function frameOf(im,dx=0,dy=0){
 }
 function framePoint(f,lx,ly){ const c=Math.cos(f.rot), s=Math.sin(f.rot); return {x:f.cx+lx*c-ly*s, y:f.cy+lx*s+ly*c}; }
 function frameHandles(f){
+  if(!S.imageSelection&&S.lines.some(l=>S.selection.includes(l.id)))return [];
   const hw=f.w/2, hh=f.h/2;
   return [{k:'nw',...framePoint(f,-hw,-hh)},{k:'ne',...framePoint(f,hw,-hh)},{k:'sw',...framePoint(f,-hw,hh)},{k:'se',...framePoint(f,hw,hh)},
           {k:'rot',...framePoint(f,0,-hh-KNOB_REACH/M.zoom)}];
@@ -2773,6 +3040,8 @@ function pickImage(id){
   S.selection=[];S.imageSelection=id;render();showSelBar();return true;
 }
 function moveStrokes(ids, dx, dy){
+  for(const ln of S.lines)if(ids.includes(ln.id)){ln.x=(ln.x||0)+dx;ln.y+=dy;}
+  N.text.render();
   carryReadings(()=>{
     for(const id of ids){
       const st = C.strokeById(id); if(!st) continue;
@@ -2916,7 +3185,7 @@ function straightenImage(id){
 }
 function deleteImage(id){
   const at=S.images.findIndex(i=>i.id===id),gone=S.images[at];if(!gone)return false;
-  C.act('delete image',()=>{S.images=S.images.filter(i=>i.id!==id);},()=>{S.images.splice(Math.max(0,at),0,gone);});
+  C.act('delete image',()=>{S.images=S.images.filter(i=>i.id!==id);},()=>{if(!S.images.some(i=>i.id===id))S.images.splice(Math.max(0,at),0,gone);});
   if(S.imageSelection===id)clearSelection();after();return true;
 }
 /* ---- background removal ---- */
@@ -2926,6 +3195,24 @@ function deleteImage(id){
    One worker answers every job: a picture asked for while the background
    download is still running waits for that download instead of repeating it. */
 const CUTOUT_SIZE=512, CUTOUT_IDLE=60000, CUTOUT_MAX_CHARS=8*1024*1024;  /* IMAGE_MAX_CHARS */
+const CUTOUT_LEAN=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)||(/Macintosh/.test(navigator.userAgent)&&navigator.maxTouchPoints>1);
+/* iOS caps the pixels a canvas may have, and the memory all canvases share;
+   a canvas past either is drawn as nothing, and read back as transparent.
+   The cut-out is made no bigger than this, and every canvas used for it is
+   emptied once read, rather than left for the collector. */
+const CUTOUT_MAX_PIXELS=CUTOUT_LEAN?8*1024*1024:16*1024*1024;
+function dropCanvas(cv){ if(cv){ cv.width=0; cv.height=0; } }
+/* whether a canvas has anything on it: a few thousand samples of its alpha */
+function canvasBlank(cv){
+  try{
+    const k=Math.min(1,64/Math.max(cv.width,cv.height)), w=Math.max(1,Math.round(cv.width*k)), h=Math.max(1,Math.round(cv.height*k));
+    const t=document.createElement('canvas'); t.width=w; t.height=h;
+    const x=t.getContext('2d',{willReadFrequently:true}); x.drawImage(cv,0,0,w,h);
+    const a=x.getImageData(0,0,w,h).data; dropCanvas(t);
+    for(let i=3;i<a.length;i+=4) if(a[i]>8) return false;
+    return true;
+  }catch(e){ return false; }
+}
 let cutoutWorker=null, cutoutIdle=0, cutoutSeq=0, cutoutBusy=false;
 const cutoutJobs=new Map();
 function cutoutStop(err){
@@ -2934,10 +3221,11 @@ function cutoutStop(err){
   for(const job of cutoutJobs.values()) job.reject(err||new Error('the background remover stopped.'));
   cutoutJobs.clear();
 }
-function cutoutPort(){
+function cutoutPort(slide=false){
   clearTimeout(cutoutIdle);
-  if(cutoutWorker) return cutoutWorker;
-  const w=cutoutWorker=new Worker('./bg-worker.js');
+  if(cutoutWorker&&cutoutWorker.slide===slide) return cutoutWorker;
+  if(cutoutWorker)cutoutStop();
+  const w=cutoutWorker=new Worker('./bg-worker.js'+(slide?'?slide=1':''));w.slide=slide;
   w.onmessage=e=>{
     const d=e.data||{}, job=cutoutJobs.get(d.id);
     if(d.progress){
@@ -2947,8 +3235,13 @@ function cutoutPort(){
     }
     if(!job) return;
     cutoutJobs.delete(d.id);
-    if(d.error) job.reject(new Error(d.error)); else job.resolve(d);
-    if(!cutoutJobs.size) cutoutIdle=setTimeout(()=>{ if(!cutoutJobs.size&&cutoutWorker===w) cutoutStop(); },CUTOUT_IDLE);
+    if(d.error) job.reject(Object.assign(new Error(d.error),{fatal:!!d.fatal,memory:!!d.memory})); else job.resolve(d);
+    /* A runtime that failed to start stays failed in its worker, so asking
+       the same worker again, for the minute it was kept, gave the same error
+       every time. It goes at once. A phone or tablet also lets go of it as
+       soon as it is done: its memory is what the handwriting needs. */
+    if(d.fatal&&cutoutWorker===w){ cutoutStop(); return; }
+    if(!cutoutJobs.size) cutoutIdle=setTimeout(()=>{ if(!cutoutJobs.size&&cutoutWorker===w) cutoutStop(); },CUTOUT_LEAN?0:CUTOUT_IDLE);
   };
   w.onerror=e=>{
     if(e&&e.preventDefault) e.preventDefault();
@@ -2957,7 +3250,7 @@ function cutoutPort(){
   return w;
 }
 function cutoutAsk(msg,transfer,progress){
-  const w=cutoutPort(), id=++cutoutSeq;
+  const w=cutoutPort(!!msg.slide), id=++cutoutSeq;
   return new Promise((resolve,reject)=>{
     cutoutJobs.set(id,{resolve,reject,progress});
     w.postMessage({...msg,id},transfer||[]);
@@ -2971,12 +3264,13 @@ function cutoutAsk(msg,transfer,progress){
    profiles); both still download on first use. */
 let cutoutWarming=null;
 function prefetchCutout(){
+  if(cutoutBusy)return Promise.resolve(false);
   if(cutoutWarming) return cutoutWarming;
   if(!navigator.onLine){
     addEventListener('online',()=>prefetchCutout(),{once:true});
     return Promise.resolve(false);
   }
-  cutoutWarming=cutoutAsk({prefetch:true}).then(d=>{
+  cutoutWarming=cutoutAsk({prefetch:true,slide:true}).then(d=>{
     N.downloads&&N.downloads.set('cutout','ready');
     return d.done;
   },()=>{
@@ -2997,7 +3291,8 @@ if(document.readyState==='complete') warmCutoutLater(); else addEventListener('l
    pasted picture it shrinks until the data URL fits the note. */
 function cutoutEncode(el,mask){
   const W=el.naturalWidth, H=el.naturalHeight, big=Math.max(W,H);
-  let side=big;
+  let side=Math.min(big, Math.floor(big*Math.sqrt(Math.min(1,CUTOUT_MAX_PIXELS/Math.max(1,W*H)))));
+  let blanks=0;
   for(;;){
     const k=side/big, cw=Math.max(1,Math.round(W*k)), ch=Math.max(1,Math.round(H*k));
     const cv=document.createElement('canvas'); cv.width=cw; cv.height=ch;
@@ -3006,10 +3301,33 @@ function cutoutEncode(el,mask){
     x.drawImage(el,0,0,cw,ch);
     x.globalCompositeOperation='destination-in';
     x.drawImage(mask,0,0,cw,ch);
-    const src=cv.toDataURL('image/png');
+    /* a canvas the device could not give memory to comes back empty: a
+       smaller one is tried rather than an invisible picture kept */
+    const blank=canvasBlank(cv);
+    const src=blank?'':cv.toDataURL('image/png');
+    dropCanvas(cv);
     if(typeof src==='string'&&src.length<=CUTOUT_MAX_CHARS&&src.length>'data:,'.length) return src;
+    if(blank&&++blanks>=3) throw new Error('this device ran short of memory for the picture. close other apps or tabs and try again.');
     if(side<=200) throw new Error('that picture is too large to keep without its background.');
     side=Math.max(200,Math.round(side*.7));
+  }
+}
+/* One matte, asked of the worker. When the runtime could not find the
+   memory to start (the handwriting readers hold theirs beside it, and a
+   tablet only has so much), the readers are let go - they start again when
+   next needed - and a fresh worker tries once more. */
+async function cutoutMatte(rgba,progress,slide=false){
+  const ask=()=>{ const copy=rgba.slice(); return cutoutAsk({rgba:copy.buffer,lean:CUTOUT_LEAN,slide},[copy.buffer],progress); };
+  try{ return await ask(); }
+  catch(e){
+    if(!e||!e.memory) throw e;
+    cutoutStop(); N.recog&&N.recog.release&&N.recog.release();
+    await new Promise(r=>setTimeout(r,600));
+    try{ return await ask(); }
+    catch(e2){
+      if(e2&&e2.memory){ cutoutStop(); throw new Error('this device ran short of memory for the background remover. close other apps or tabs, then try again.'); }
+      throw e2;
+    }
   }
 }
 function loadPicture(src){
@@ -3020,10 +3338,40 @@ function loadPicture(src){
     img.src=src;
   });
 }
+/* A picture keeps what the other half of the toggle needs: bg, the original
+   with its background, while the background is gone, and cut, the cut-out,
+   once the background is back. Only ever one of them, and both whole and
+   uncropped like full, so the toggle is a swap and never runs the model
+   twice. The current crop is cut again from whichever comes back. */
+const BACKGROUND_KEYS=['src','full','bg','cut','crop','x','y','w','h'];
+function backgroundState(im){ const o={}; for(const k of BACKGROUND_KEYS) o[k]=im[k]; return o; }
+function setBackground(id,v){
+  const x=S.images.find(i=>i.id===id); if(!x) return;
+  for(const k of BACKGROUND_KEYS){ if(v[k]===undefined) delete x[k]; else x[k]=v[k]; }
+}
+async function swapBackground(id,back){
+  const im=S.images.find(i=>i.id===id); if(!im) return false;
+  const other=back?im.bg:im.cut; if(!other) return false;
+  const note=S.id, before=backgroundState(im), crop=im.full&&im.crop?im.crop:null, base=crop?im.full:im.src;
+  let src=other;
+  if(crop){
+    try{ src=cropEncode(await loadPicture(other),crop,/^data:image\/jpeg/i.test(other)); }
+    catch(e){ C.toast(e.message||'that picture could not be changed.'); return false; }
+  }
+  const live=S.images.find(i=>i.id===id);
+  if(note!==S.id||!live||live.src!==before.src||live.full!==before.full) return false;
+  const now={...before, src, full:crop?other:before.full, bg:back?undefined:base, cut:back?base:undefined};
+  C.act(back?'undo background':'remove background',()=>setBackground(id,now),()=>setBackground(id,before));
+  after(); showSelBar();
+  return true;
+}
+function undoBackground(id){ return swapBackground(id,true); }
 async function removeBackground(id){
   const im=S.images.find(i=>i.id===id); if(!im) return false;
+  if(im.bg) return false;
+  if(im.cut) return swapBackground(id,false);
   if(cutoutBusy){ C.toast('still removing a background.'); return false; }
-  cutoutBusy=true;
+  cutoutBusy=id; showSelBar();
   /* a cropped picture loses the background of its whole original, so a
      later crop that widens the box does not bring the background back */
   const note=S.id, before=im.src, beforeFull=im.full, crop=im.full&&im.crop?im.crop:null, base=crop?im.full:im.src;
@@ -3035,35 +3383,73 @@ async function removeBackground(id){
     const sx=small.getContext('2d',{willReadFrequently:true});
     sx.imageSmoothingQuality='high'; sx.drawImage(el,0,0,n,n);
     const rgba=sx.getImageData(0,0,n,n).data;
-    const {alpha}=await cutoutAsk({rgba:rgba.buffer},[rgba.buffer],d=>{
-      if(d.phase==='download'&&!told){ told=true; C.toast('downloading the background remover, about 94 MB. this happens once.', 600000); }
+    /* a picture that drew as nothing (out of canvas memory, or a decode
+       that failed quietly) would come back as nothing to keep */
+    let seen=false; for(let i=3;i<rgba.length;i+=64) if(rgba[i]>8){ seen=true; break; }
+    if(!seen){ dropCanvas(small); throw new Error('that picture could not be read just now. try again in a moment.'); }
+    const progress=d=>{
+      if(d.phase==='download'&&!told){ told=true; C.toast('downloading the background remover. this happens once per model.', 600000); }
       else if(d.phase==='running'){ N.downloads&&N.downloads.set('cutout','ready'); if(told) C.toast('removing the background.', 600000); }
-    });
+    };
+    // Detect a projected slide first. Keep its entire visible projection,
+    // including text and diagrams; other pictures use the general model.
+    // Only one inference worker is retained at a time on memory-limited devices.
+    let result;
+    try{result=await cutoutMatte(rgba,progress,true);}catch(e){result=null;}
+    if(!result?.slideDetected)result=await cutoutMatte(rgba,progress,false);
+    const {alpha}=result;
+    /* A matte with nothing in it would leave a blank picture on the page:
+       the model found no subject (a page of notes, a flat photo of a
+       poster). The picture keeps its background instead, and says why. */
+    let kept=0; for(let i=0;i<alpha.length;i++) if(alpha[i]>127) kept++;
+    if(kept<alpha.length*0.004){ dropCanvas(small); throw Object.assign(new Error('no clear subject was found in this picture, so its background was left.'),{quiet:true}); }
     const mask=sx.createImageData(n,n);
     for(let i=0;i<alpha.length;i++) mask.data[i*4+3]=alpha[i];
     sx.putImageData(mask,0,0);
-    const cut=cutoutEncode(el,small);
-    const src=crop?cropEncode(await loadPicture(cut),crop,false):cut;
+    let cut;
+    try{ cut=cutoutEncode(el,small); } finally { dropCanvas(small); }
+    // Trim transparent margins within the existing crop. Keep the full matte
+    // so manual cropping and the background toggle remain reversible.
+    const cutEl=await loadPicture(cut), W=cutEl.naturalWidth, H=cutEl.naturalHeight;
+    const bounds=crop||{l:0,t:0,r:1,b:1};
+    const scan=document.createElement('canvas'); scan.width=W; scan.height=H;
+    const scanContext=scan.getContext('2d',{willReadFrequently:true}); scanContext.drawImage(cutEl,0,0);
+    const pixels=scanContext.getImageData(0,0,W,H).data;
+    let left=W,top=H,right=0,bottom=0;
+    for(let y=Math.round(bounds.t*H);y<Math.round(bounds.b*H);y++){
+      for(let x=Math.round(bounds.l*W);x<Math.round(bounds.r*W);x++){
+        if(pixels[(y*W+x)*4+3]>8){left=Math.min(left,x);top=Math.min(top,y);right=Math.max(right,x+1);bottom=Math.max(bottom,y+1);}
+      }
+    }
+    dropCanvas(scan);
+    if(right<=left||bottom<=top) throw Object.assign(new Error('no clear subject was found inside this crop, so its background was left.'),{quiet:true});
+    const trimmed={l:left/W,t:top/H,r:right/W,b:bottom/H};
+    const src=cropEncode(cutEl,trimmed,false);
+    const decoded=await loadPicture(src); decoded._src=src;
     /* the note, or the picture, may have changed during the few seconds */
     const live=S.images.find(i=>i.id===id);
-    if(note!==S.id||!live||live.src!==before||live.full!==beforeFull){ C.toast('that picture changed, so its background was left.'); return false; }
-    const set=(s,f)=>{ const x=S.images.find(i=>i.id===id); if(!x) return; x.src=s; if(f) x.full=f; else delete x.full; };
-    C.act('remove background',()=>set(src,crop?cut:beforeFull),()=>set(before,beforeFull));
+    if(note!==S.id||!live||live.src!==before||live.full!==beforeFull||live.bg||live.cut){ C.toast('that picture changed, so its background was left.'); return false; }
+    const F=fullFrame(live).frame, w=(trimmed.r-trimmed.l)*F.w, h=(trimmed.b-trimmed.t)*F.h;
+    const mid=cropPoint(F,(trimmed.l+trimmed.r)/2,(trimmed.t+trimmed.b)/2);
+    const was=backgroundState(live), now={src, full:cut, crop:trimmed, bg:base,
+      x:mid.x-w/2,y:mid.y-h/2,w,h};
+    imgCache.set(id,decoded);
+    C.act('remove background',()=>setBackground(id,now),()=>setBackground(id,was));
     after(); showSelBar();
     C.toast('background removed.');
     return true;
   }catch(e){
-    N.downloads&&N.downloads.set('cutout','error');
-    C.toast(e.message||'could not remove the background.');
+    if(!e||!e.quiet) N.downloads&&N.downloads.set('cutout','error');
+    C.toast((e&&e.message)||'could not remove the background.');
     return false;
-  }finally{ cutoutBusy=false; }
+  }finally{ cutoutBusy=false; showSelBar(); }
 }
 /* ---- cropping a picture ----
    Two taps on a picture (a double click with a mouse) open its crop: the
    whole original picture with a box on it, a handle at each corner and edge,
    and the part being cut away dimmed. Drag a handle to move that side, drag
-   inside to slide the box; two fingers pinch the box (spread to zoom in,
-   pinch to zoom out) and twist the picture. done, a tap off the picture or
+   inside to move the picture under the fixed box; two fingers zoom and pan
+   the picture. The crop guide stays still and ignores accidental twists. done, a tap off the picture or
    Enter keeps the box; cancel or Escape leaves the picture as it was.
    Cropping keeps the original (im.full, with im.crop the box as fractions of
    it), so a later crop starts from the whole picture and can take back what
@@ -3152,8 +3538,8 @@ function drawCrop(ctx){
 function cropDown(ev,kind){
   if(!S.images.some(i=>i.id===cropping.id)){ cropping=null; return; }
   const F=cropping.F, w=toWorld(ev), p=cropLocal(F,w), k=cropHandleAt(F,w,kind==='touch');
-  if(k){ cropDrag={k,start:p,from:{...cropping}}; return; }
-  if(inCropBox(p)){ cropDrag={k:'move',start:p,from:{...cropping}}; return; }
+  if(k){ cropDrag={k,start:p,from:{...cropping,F:{...cropping.F}}}; return; }
+  if(inCropBox(p)){ cropDrag={k:'move',start:p,from:{...cropping,F:{...cropping.F}}}; return; }
   cropDrag={k:inImage(w.x,w.y,F)?'none':'outside'};
 }
 function cropMove(w){
@@ -3162,8 +3548,8 @@ function cropMove(w){
   const mu=Math.min(.5,CROP_MIN/F.w), mv=Math.min(.5,CROP_MIN/F.h);
   let {l,t,r,b}=f;
   if(d.k==='move'){
-    const cw=r-l, ch=b-t;
-    l=C.clamp(l+du,0,1-cw); t=C.clamp(t+dv,0,1-ch); r=l+cw; b=t+ch;
+    const start=cropPoint(f.F,d.start.u,d.start.v);
+    transformCrop(f,1,start,w); render(); showSelBar(); return;
   }else{
     if(d.k.includes('w')) l=C.clamp(f.l+du,0,f.r-mu);
     if(d.k.includes('e')) r=C.clamp(f.r+du,f.l+mu,1);
@@ -3172,6 +3558,18 @@ function cropMove(w){
   }
   Object.assign(cropping,{l,t,r,b});
   render(); showSelBar();
+}
+/* Transform only the image. Recompute source fractions so all four crop
+   corners remain at the same page coordinates, and keep the box covered. */
+function transformCrop(from,scale,anchor,target){
+  const F=from.F, a=cropLocal(F,anchor), z=cropLocal(F,target);
+  const k=C.clamp(scale,Math.max(from.r-from.l,from.b-from.t),Math.max(1,6000/F.w));
+  const cw=(from.r-from.l)/k, ch=(from.b-from.t)/k;
+  const l=C.clamp(a.u+(from.l-z.u)/k,0,1-cw), t=C.clamp(a.v+(from.t-z.v)/k,0,1-ch);
+  const fixed=cropPoint(F,from.l,from.t), w=F.w*k, h=F.h*k;
+  const co=Math.cos(F.rot||0), si=Math.sin(F.rot||0), dx=(l-.5)*w, dy=(t-.5)*h;
+  cropping.F={x:fixed.x-dx*co+dy*si-w/2,y:fixed.y-dx*si-dy*co-h/2,w,h,rot:F.rot};
+  Object.assign(cropping,{l,t,r:l+cw,b:t+ch});
 }
 function cropCursor(w){
   const F=cropping.F, k=cropHandleAt(F,w,false);
@@ -3207,7 +3605,8 @@ async function applyCrop(){
   const before=pictureState(im), note=S.id, F=c.F;
   const whole=c.l<=.001&&c.t<=.001&&c.r>=.999&&c.b>=.999;
   const same=before.full===c.full&&before.crop&&['l','t','r','b'].every(k=>Math.abs(before.crop[k]-c[k])<1e-6);
-  const turnSame=Math.abs((before.rot||0)-(F.rot||0))<1e-9;
+  const oldFrame=fullFrame(im).frame;
+  const turnSame=['x','y','w','h','rot'].every(k=>Math.abs((oldFrame[k]||0)-(F[k]||0))<1e-9);
   if((whole&&!before.full||same)&&turnSame){ render(); showSelBar(); return false; }
   let now;
   if(whole) now={src:c.full, x:F.x, y:F.y, w:F.w, h:F.h, rot:F.rot};
@@ -3227,7 +3626,7 @@ async function applyCrop(){
 /* ---- two fingers on a selection ----
    With a picture or lassoed ink selected, two fingers that start on it move,
    scale and turn it together, about the point between them, as one undo; in
-   a crop they pinch the box and turn the picture. Two fingers anywhere else
+   a crop they move and zoom the picture beneath a stationary guide. Two fingers anywhere else
    still pan and zoom the page. */
 let twin=null, twinIgnore=null;
 function twinSpan(){
@@ -3240,13 +3639,13 @@ function snapTurn(rot){
 }
 function startTwin(){
   const ids=[...pointers.entries()].filter(([,r])=>r.type==='touch').map(([id])=>id).slice(0,2);
-  if(ids.length<2) return false;
+  if(ids.length<2||S.lines.some(l=>S.selection.includes(l.id))) return false;
   if(moving){ moving=null; }
-  if(cropDrag){ if(cropDrag.from) Object.assign(cropping,{l:cropDrag.from.l,t:cropDrag.from.t,r:cropDrag.from.r,b:cropDrag.from.b}); cropDrag=null; }
+  if(cropDrag){ if(cropDrag.from) Object.assign(cropping,{l:cropDrag.from.l,t:cropDrag.from.t,r:cropDrag.from.r,b:cropDrag.from.b,F:{...cropDrag.from.F}}); cropDrag=null; }
   twin={ids};
   const s=twinSpan(); if(!s){ twin=null; return false; }
   Object.assign(twin,s0(s));
-  if(cropping){ twin.kind='crop'; twin.box={l:cropping.l,t:cropping.t,r:cropping.r,b:cropping.b}; twin.rot0=cropping.F.rot||0; }
+  if(cropping){ twin.kind='crop'; twin.crop={...cropping,F:{...cropping.F}}; }
   else if(S.imageSelection){ const im=S.images.find(i=>i.id===S.imageSelection); twin.kind='image'; twin.id=im.id; twin.was=pictureState(im); }
   else{ twin.kind='ink'; twin.orig=grabStrokes(S.selection); }
   activeId=null; clearLive(); render(); showSelBar();
@@ -3258,12 +3657,7 @@ function twinMove(){
   const c1=toWorld({clientX:s.x,clientY:s.y}), c0=twin.c0;
   let k=s.d/twin.d0, da=s.a-twin.a0;
   if(twin.kind==='crop'){
-    /* spread to zoom in: the box shrinks about its centre; pinch to zoom out */
-    const b=twin.box, F=cropping.F, mu=Math.min(1,CROP_MIN/F.w), mv=Math.min(1,CROP_MIN/F.h);
-    const cw=C.clamp((b.r-b.l)/k,mu,1), ch=C.clamp((b.b-b.t)/k,mv,1);
-    const mx=C.clamp((b.l+b.r)/2,cw/2,1-cw/2), my=C.clamp((b.t+b.b)/2,ch/2,1-ch/2);
-    Object.assign(cropping,{l:mx-cw/2,r:mx+cw/2,t:my-ch/2,b:my+ch/2});
-    cropping.F.rot=snapTurn(twin.rot0+da);
+    transformCrop(twin.crop,k,c0,c1);
   }else if(twin.kind==='image'){
     const w0=twin.was; k=C.clamp(k,40/w0.w,6000/w0.w);
     const rot=snapTurn((w0.rot||0)+da); da=rot-(w0.rot||0);
@@ -3308,8 +3702,8 @@ function selectAll(){
 }
 function deleteSelection(){
   const ids=S.selection.slice(); if(!ids.length) return false;
-  const gone=S.strokes.filter(s=>ids.includes(s.id));
-  C.act('delete', ()=>{ S.strokes = S.strokes.filter(s=>!ids.includes(s.id)); }, ()=>{ S.strokes = S.strokes.concat(gone); });
+  const gone=S.strokes.filter(s=>ids.includes(s.id)),lines=S.lines.filter(l=>ids.includes(l.id));
+  C.act('delete', ()=>{ S.strokes=S.strokes.filter(s=>!ids.includes(s.id));S.lines=S.lines.filter(l=>!ids.includes(l.id));N.text.render(); }, ()=>{ S.strokes=S.strokes.concat(gone.filter(g=>!S.strokes.some(s=>s.id===g.id)));S.lines=S.lines.concat(lines.filter(g=>!S.lines.some(l=>l.id===g.id)));N.text.render(); });
   clearSelection(); after(); return true;
 }
 /* Strokes stored relative to the group's top-left, so they can land anywhere. */
@@ -3345,10 +3739,12 @@ function clipMarker(clip){ return clip?'notas-ink:'+clip.at:''; }
 function copySelection(cut){
   const list=selectedStrokes(); if(!list.length) return false;
   const clip=packStrokes(list);
+  /* cut ink is on no page any more: the kept copy is the only one */
+  if(cut)clip.cut=true;
   try{localStorage.setItem(CLIP_KEY,JSON.stringify(clip));}
   catch(e){C.toast('that is too much ink to copy at once. select less and try again.');return false;}
   if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(clipMarker(clip)).catch(()=>{});
-  if(cut)deleteSelection();
+  if(cut){ S.selection=list.map(s=>s.id); deleteSelection(); }
   // Routine edits do not announce themselves: a cut is visible, and a copy is
   // confirmed by the selection bar's Paste becoming available.
   return true;
@@ -3365,9 +3761,9 @@ function placeStrokes(clip,at,verb){
   let y=at?Number(at.y):vo.y+80;
   if(!Number.isFinite(x))x=24;if(!Number.isFinite(y))y=80;
   x=C.clamp(Math.round(x),0,maxX);y=Math.max(0,Math.round(y));
-  for(let i=0;i<12&&S.strokes.some(s=>Math.abs(s.bbox[0]-(x+rel[0]))<2&&Math.abs(s.bbox[1]-(y+rel[1]))<2);i++){x=Math.min(x+24,maxX);y+=24;}
+  for(let i=0;i<=S.strokes.length&&S.strokes.some(s=>Math.abs(s.bbox[0]-(x+rel[0]))<2&&Math.abs(s.bbox[1]-(y+rel[1]))<2);i++){x=Math.min(x+24,maxX);y+=24;}
   const strokes=unpackStrokes(clip,x,y),ids=strokes.map(s=>s.id);
-  C.act(verb,()=>{S.strokes=S.strokes.concat(strokes);},()=>{S.strokes=S.strokes.filter(s=>!ids.includes(s.id));});
+  C.act(verb,()=>{S.strokes=S.strokes.concat(strokes.filter(st=>!S.strokes.some(s=>s.id===st.id)));},()=>{S.strokes=S.strokes.filter(s=>!ids.includes(s.id));});
   C.growDoc(y+clip.h);
   setTool('select');S.selection=ids;S.imageSelection=null;
   after();showSelBar();
@@ -3376,7 +3772,16 @@ function placeStrokes(clip,at,verb){
 function pasteInk(at){
   const clip=readClip(); if(!clip) return false;
   placeStrokes(clip,at,'paste');
+  if(clip.cut){ delete clip.cut; try{localStorage.setItem(CLIP_KEY,JSON.stringify(clip));}catch(e){} }
   return true;
+}
+/* Ink that was cut and never pasted back, when the clipboard has since
+   moved on to something the page cannot paste: without this it stayed kept
+   where nothing could reach it. Copied ink is still on its page, so it
+   waits for its marker as before. */
+function pasteCut(at){
+  const clip=readClip(); if(!clip||!clip.cut) return false;
+  return pasteInk(at);
 }
 /* Duplicate never touches any clipboard: the copy goes straight below the
    original, inside the column, ready to drag. */
@@ -3395,20 +3800,30 @@ function showSelBar(){
   if(!S.selection.length&&!S.imageSelection){ bar.hidden = true; selBarKind = ''; return; }
   /* ink the reader made nothing of gets a way to ask nota about it */
   const unread = !S.imageSelection && !!(N.nota && N.nota.askSelection && N.recog && N.recog.selectionUnread && N.recog.selectionUnread(S.selection));
-  const turned = S.imageSelection && !!(S.images.find(i=>i.id===S.imageSelection)||{}).rot;
+  const picked = S.imageSelection && S.images.find(i=>i.id===S.imageSelection) || {};
+  const busy = S.imageSelection && cutoutBusy===S.imageSelection;
+  const turned = S.imageSelection && !!picked.rot, cutout = S.imageSelection && !!picked.bg;
   if(cropping && cropping.id !== S.imageSelection){ cropping = null; cropDrag = null; }
-  const kind = cropping ? 'crop' : S.imageSelection ? (turned ? 'image-turned' : 'image') : (unread ? 'ink-unread' : 'ink');
+  const textSelected=S.lines.some(l=>S.selection.includes(l.id));
+  const kind = textSelected ? 'text' : cropping ? 'crop' : S.imageSelection ? 'image' + (turned ? '-turned' : '') + (cutout ? '-cutout' : '') + (busy ? '-busy' : '') : (unread ? 'ink-unread' : 'ink');
   if(kind !== selBarKind || !bar.childElementCount){
     bar.innerHTML = '';
     const mk = (label, fn, aria)=>{ const b=document.createElement('button'); b.textContent=label; b.onclick=fn;if(aria)b.setAttribute('aria-label',aria);bar.appendChild(b); };
-    if(kind === 'crop'){
+    if(kind === 'text'){
+      mk('edit text',()=>{const id=S.lines.find(l=>S.selection.includes(l.id))?.id;clearSelection();setTool('text');if(id)N.text.focusLine(id);});
+      mk('delete',deleteSelection);
+    }else if(kind === 'crop'){
       mk('done', ()=>applyCrop());
       mk('cancel', cancelCrop);
-    }else if(kind === 'image' || kind === 'image-turned'){
+    }else if(kind.startsWith('image')){
       /* moving, sizing and turning are done on the picture itself, by its
          frame; the bar keeps only what the frame cannot do */
       if(turned) mk('straighten',()=>straightenImage(S.imageSelection));
-      mk('remove background',()=>removeBackground(S.imageSelection));
+      if(busy){
+        mk('removing background…',()=>{});
+        const b=bar.lastElementChild; b.disabled=true; b.setAttribute('aria-busy','true'); b.setAttribute('role','status');
+      }else if(cutout) mk('undo background',()=>undoBackground(S.imageSelection));
+      else mk('remove background',()=>removeBackground(S.imageSelection));
       mk('delete',()=>deleteImage(S.imageSelection));
     }else{
       mk('solve this', ()=>{ N.recog && N.recog.solveSelection(); });
@@ -3628,29 +4043,87 @@ function touchDraws(){
    It reports no tilt, its altitude sits at the vertical default, and its
    pressure is either none or exactly the 0.5 the spec hands out when the
    hardware cannot measure any. A touch that carries any of those is the pen. */
+/* Android is the exception to the pressure rule: it reports a real,
+   varying pressure for a fingertip (the contact's size, as the hardware
+   sees it), and it reports a stylus as 'pen' in any case. There every finger
+   looked like a pencil, a pen never joins a gesture, and two fingers meant
+   to scroll drew two lines. On Android only tilt or altitude count. */
+const ANDROID = /Android/i.test(navigator.userAgent);
 function stylusLikeTouch(ev){
   if(ev.pointerType !== 'touch') return false;
   if(ev.tiltX || ev.tiltY || ev.twist) return true;
   if(typeof ev.altitudeAngle === 'number' && ev.altitudeAngle < Math.PI/2 - 0.01) return true;
+  if(ANDROID) return false;
   const pr = ev.pressure;
   return pr > 0 && Math.abs(pr - 0.5) > 0.001;
 }
+/* Nobody writes with two pencils. A second contact that the browser calls
+   touch, landing while another touch-labelled contact is already down, is
+   two fingers, whatever pressure either reports: both are filed as fingers
+   so the pair can scroll and pinch. Not on an iPad: there the Pencil itself
+   is sometimes labelled touch, and it lands while the palm is already down. */
+const APPLE_TOUCH = /iPad|iPhone|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+function secondTouch(ev){
+  if(APPLE_TOUCH || ev.pointerType !== 'touch') return false;
+  for(const [id, rec] of pointers) if(id !== ev.pointerId && rec.raw === 'touch') return true;
+  return false;
+}
 /* what the pointer is for routing: a stylus however the browser labelled it */
 function kindOf(ev){ return ev.pointerType === 'pen' || stylusLikeTouch(ev) ? 'pen' : ev.pointerType; }
+/* A deliberate finger swipe opens notes. Keep a candidate until direction
+   is clear, so vertical scrolling and two-finger gestures remain native. */
+let notesSwipe=null;
+document.addEventListener('pointerdown',ev=>{
+  if(notesSwipe){ notesSwipe=null; return; }
+  if(kindOf(ev)!=='touch'||!ev.isPrimary||penIsDown()||pointers.size||cropping||S.imageSelection||S.selection.length||N.library?.isOpen) return;
+  if(touchDraws() && S.tool !== 'text') return;
+  if(!ev.target.closest('#scroller')||ev.target.closest('button,input,textarea,a')) return;
+  if(document.querySelector('.sheet:not(.leave)')) return;
+  const phone=Math.min(innerWidth,innerHeight)<700;
+  if(!phone&&ev.clientX>Math.max(40,sc.getBoundingClientRect().left+32)) return;
+  notesSwipe={id:ev.pointerId,x:ev.clientX,y:ev.clientY,t:performance.now(),on:false,left:sc.scrollLeft,top:sc.scrollTop};
+},true);
+document.addEventListener('pointermove',ev=>{
+  const n=notesSwipe; if(!n||ev.pointerId!==n.id) return;
+  const dx=ev.clientX-n.x,dy=ev.clientY-n.y;
+  if(!n.on){
+    if(dx < -12 || Math.abs(dy)>18&&Math.abs(dy)>Math.abs(dx) || performance.now()-n.t>900){ notesSwipe=null; return; }
+    if(dx<22||dx<Math.abs(dy)*2) return;
+    n.on=true;
+    cur=null; lasso=null; panning=false; tapImage=null; tapChip=null; activeId=null;
+    pointers.delete(ev.pointerId); stopCoast(); pan.samples.length=0; delete cInk.dataset.pan;
+    clearLive(); sc.scrollLeft=n.left; sc.scrollTop=n.top;
+  }
+  ev.preventDefault(); ev.stopImmediatePropagation();
+}, {capture:true,passive:false});
+for(const type of ['pointerup','pointercancel']) document.addEventListener(type,ev=>{
+  const n=notesSwipe; if(!n||ev.pointerId!==n.id) return;
+  notesSwipe=null;
+  if(!n.on) return;
+  ev.preventDefault(); ev.stopImmediatePropagation();
+  const dx=ev.clientX-n.x,dy=ev.clientY-n.y;
+  if(type==='pointerup'&&dx>=80&&dx>Math.abs(dy)*2&&performance.now()-n.t<1400) N.library?.open();
+}, {capture:true,passive:false});
 cInk.addEventListener('pointerdown', ev=>{
+  if(ev.pointerType === 'mouse' && ev.button !== 0 && ev.button !== 1) return;
+  if(cur && ev.pointerType === 'mouse') finishInput();
   sweepStale();
   stopCoast();                                 /* a touch lands on a coasting page and it stops */
-  const kind = kindOf(ev);
+  let kind = kindOf(ev);
+  if(kind === 'pen' && secondTouch(ev)){
+    kind = 'touch';
+    for(const rec of pointers.values()) if(rec.raw === 'touch') rec.type = 'touch';
+  }
   if(kind === 'pen'){ penSeen = Date.now(); penEverSeen = true; penTakesOver(); }
   else if(kind === 'touch' && penIsDown()){
     trace('PALM', ev, 'rejected: the pen is writing');
     return;
   }
 
-  pointers.set(ev.pointerId, {x:ev.clientX, y:ev.clientY, t:Date.now(), seen:Date.now(), moved:0, type:kind});
+  pointers.set(ev.pointerId, {x:ev.clientX, y:ev.clientY, t:Date.now(), seen:Date.now(), moved:0, type:kind, raw:ev.pointerType});
   trace('down', ev, kind !== ev.pointerType ? 'stylus reported as touch' : '');
 
-  /* Two and three finger gestures are exactly that: fingers. A pen was allowed
+  /* Pan and pinch gestures use fingers only. A pen was allowed
      to make up the count, so any stray pointer alongside the pencil turned the
      stroke into a scroll and threw it away. A pen never joins a gesture. */
   if(twin) return;   /* a third finger while two turn a selection */
@@ -3883,13 +4356,8 @@ function endPointer(ev){
 
   if(gesture){
     if(pointers.size === 0){
-      const quick = Date.now() - gesture.t < 320 && gesture.moved < 12;
-      /* A hand brushing the glass mid-line is not a two-finger tap: the line
-         that was interrupted must not be undone by the touch that interrupted it. */
-      if(quick && gesture.n === 2 && !gesture.interrupted) C.undo();
-      if(quick && gesture.n === 3) C.redo();
       gesture = null;
-      if(!quick) panEnd();
+      panEnd();
     } else {
       /* one finger left first: the average jumps, so re-anchor rather than
          let the page leap, and a pinch cannot continue with one finger */
@@ -3959,6 +4427,7 @@ function endPointer(ev){
       S.imageSelection=null;
       S.selection = S.strokes.filter(s=>(s.author==='user' || s.author==='ai') &&
         pointInPoly((s.bbox[0]+s.bbox[2])/2, (s.bbox[1]+s.bbox[3])/2, poly)).map(s=>s.id);
+      for(const ln of S.lines){const b=selectedLineBox(ln);if(ln.text&&pointInPoly((b[0]+b[2])/2,(b[1]+b[3])/2,poly))S.selection.push(ln.id);}
       /* a loop round a picture and no ink selects the picture (the topmost
          one whose centre it encloses), with its own bar: remove background,
          delete. Ink and a picture are never one selection. */
@@ -3980,6 +4449,17 @@ function endPointer(ev){
 }
 cInk.addEventListener('pointerup', endPointer);
 cInk.addEventListener('pointercancel', endPointer);
+cInk.addEventListener('lostpointercapture', ev=>{ if(pointers.has(ev.pointerId)) endPointer(ev); });
+window.addEventListener('pointerup', ev=>{ if(pointers.has(ev.pointerId)) endPointer(ev); });
+window.addEventListener('pointercancel', ev=>{ if(pointers.has(ev.pointerId)) endPointer(ev); });
+function finishInput(){
+  commitStroke(); flush();
+  pointers.clear(); activeId=null; notesSwipe=null; gesture=null; lasso=null; panning=false;
+  tapImage=null; tapChip=null; moving=null; resizing=null; turning=null; twin=null; twinIgnore=null; cropDrag=null;
+  stopCoast(); delete cInk.dataset.pan; clearLive();
+}
+window.addEventListener('blur', finishInput);
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden)finishInput(); });
 cInk.addEventListener('contextmenu', e=>e.preventDefault());
 
 /* ---- never select, never drag ----
@@ -4017,7 +4497,7 @@ sc.addEventListener('wheel', ev=>{
     C.setZoom(M.zoom * k, ev.clientX, ev.clientY);
     return;
   }
-  if(ev.target.closest && ev.target.closest('.chip.open,.plot')) return;
+  if(ev.target.closest && ev.target.closest('.plot')) return;
   if(C.smoothWheel(sc, ev, 'both')) ev.preventDefault();
 }, {passive:false});
 window.addEventListener('resize', ()=>C.layout());
@@ -4075,6 +4555,7 @@ function setPillOpen(open){
 moreBtn.addEventListener('click', ()=>setPillOpen(!pillOpen()));
 pill.addEventListener('pointerdown', ev=>{
   if(ev.button !== 0 && ev.pointerType === 'mouse') return;
+  if(pillDrag)return;
   pillDrag = { id:ev.pointerId, x:ev.clientX, y:ev.clientY, sl:strip.scrollLeft, live:false };
   pillSwiped = false;
 });
@@ -4111,8 +4592,8 @@ pill.addEventListener('wheel', ev=>{
 }, { passive:false });
 pill.addEventListener('keydown', ev=>{ if(ev.key === 'Escape' && pillOpen()){ setPillOpen(false); moreBtn.focus(); } });
 
-N.ink = { render, renderAI, resize, setTool, setPen, pen, setPillOpen, setPenPop, toWorld, viewOrigin, bboxOf, hitStroke, drawStroke,
-          clearSelection, showSelBar, inkColor, colors, refreshColors, isTyping, after, flush, selectImage, nudgeImage, resizeImage, deleteImage, straightenImage, removeBackground, prefetchCutout, startCrop, applyCrop, cancelCrop, cropping:()=>cropping&&{...cropping}, frameOf, frameHandles,
+N.ink = { render, renderAI, pasteCut, resize, finishInput, setTool, setPen, pen, setPillOpen, setPenPop, toWorld, viewOrigin, bboxOf, hitStroke, drawStroke,
+          clearSelection, showSelBar, inkColor, colors, refreshColors, isTyping, after, flush, selectImage, nudgeImage, resizeImage, deleteImage, straightenImage, removeBackground, undoBackground, prefetchCutout, startCrop, applyCrop, cancelCrop, cropping:()=>cropping&&{...cropping}, frameOf, frameHandles,
           copySelection, duplicateSelection, deleteSelection, pasteInk, readClip, clipMarker, selectAll, imageAt, pickImage,
           now:inkNow, drawing:()=>!!cur, peerShift, drag:()=>moving?{dx:moving.dx,dy:moving.dy}:null,
           /* what the pointer is in the middle of, for the others on a shared
@@ -4356,6 +4837,33 @@ function spanning(){
   if(!a || !b || a.ln === b.ln) return null;
   return {a:a.ln, b:b.ln, start:a.off, end:b.off};
 }
+/* A step over the lines, kept as what it did to each line rather than as a
+   copy of the whole page. Putting back a copy of every line undid whatever
+   had been written since: in a shared note, someone else's new line went and
+   their words were reverted, for everyone. Now only the lines this step
+   touched are put back, and a line someone has written in since keeps their
+   words (it only takes back its place). */
+function lineChanges(before, after){
+  const was = new Map(before.map(l=>[l.id, l])), now = new Map(after.map(l=>[l.id, l])), changes = [];
+  for(const id of new Set([...was.keys(), ...now.keys()])){
+    const a = was.get(id), b = now.get(id);
+    if(!a || !b || JSON.stringify(a) !== JSON.stringify(b)) changes.push({id, a:a ? {...a} : null, b:b ? {...b} : null});
+  }
+  const put = (to, from)=>{
+    for(const c of changes){
+      const want = c[to], left = c[from], at = S.lines.findIndex(l=>l.id === c.id), cur = at >= 0 ? S.lines[at] : null;
+      const theirs = !!(cur && left && (cur.text||'') !== (left.text||''));
+      if(!want){ if(cur && !theirs) S.lines.splice(at, 1); }
+      else if(!cur) S.lines.push({...want});
+      else S.lines[at] = theirs ? {...want, text:cur.text} : {...want};
+    }
+  };
+  return { forward:()=>put('b', 'a'), back:()=>put('a', 'b') };
+}
+function lineStep(label, before, after){
+  const ch = lineChanges(before, after);
+  C.act(label, ()=>{ ch.forward(); render(); queue(); }, ()=>{ ch.back(); render(); queue(); });
+}
 /* the words between the two ends go: the top line keeps its head and takes
    the bottom line's tail, the lines between and the bottom one are removed
    and what is under them moves up. One step, one undo. The caret is left at
@@ -4370,8 +4878,7 @@ function collapseSpan(span){
   const before = S.lines.map(l=>({...l}));
   const text = first.text.slice(0, s) + last.text.slice(en);
   const after = before.filter(l=>!goneIds.has(l.id)).map(l=>l.id === first.id ? {...l, text} : l.y > last.y ? {...l, y:l.y - H} : {...l});
-  const restore = list=>{ S.lines = list.map(l=>({...l})); render(); queue(); };
-  C.act('delete across lines', ()=>restore(after), ()=>restore(before));
+  lineStep('delete across lines', before, after);
   const step = C.Undo.back[C.Undo.back.length-1]; if(step) step.typingJoins = performance.now();
   const ln = byId(first.id), input = els.get(first.id)?.firstChild; if(!ln || !input) return null;
   /* the joined line may take fewer rows than the top one did */
@@ -4413,7 +4920,9 @@ root.addEventListener('dragstart', e=>e.preventDefault());
 root.addEventListener('drop', e=>{ e.preventDefault(); const t = e.dataTransfer && e.dataTransfer.getData('text/plain'); if(t) pasteText(t); });
 /* what the browser is about to do, before it does it */
 root.addEventListener('beforeinput', e=>{
+  if(e.isComposing)return;
   const t = e.inputType || '';
+  if(t === 'historyUndo' || t === 'historyRedo')return; // Native text history must not delete the active selection first.
   if(/^format/.test(t)){ e.preventDefault(); return; }
   if(t === 'insertParagraph' || t === 'insertLineBreak'){
     e.preventDefault();
@@ -4506,19 +5015,32 @@ function paintGhost(ln){
    so the arrow keys reach it, Enter below it starts an ordinary line, and one
    undo takes the whole reply out. A single line holding three dots stands in
    until the first word. */
+/* Lines taken out, and each line below moved up by the lines that went from
+   above it. Moving everything under the first by all of them put a line the
+   student kept, from the middle of a reply, on top of the question. */
+function closeUp(gone){
+  if(!gone.length)return false;
+  const goneIds=new Set(gone.map(l=>l.id)),cuts=gone.map(l=>({y:l.y,h:Math.max(C.LINE_H,l.h||C.LINE_H)}));
+  S.lines=S.lines.filter(l=>!goneIds.has(l.id));
+  for(const l of S.lines){ let dy=0; for(const c of cuts)if(c.y<l.y)dy+=c.h; l.y-=dy; }
+  return true;
+}
 function notaReply(id){
   const ln=byId(id);if(!ln)return null;
-  const before=S.lines.map(l=>({...l}));
   const top=ln.y+Math.max(C.LINE_H,ln.h||C.LINE_H);
-  let rows=['…'],ids=[C.uid()],waiting=true;
-  const build=()=>{
-    const list=before.map(l=>({...l})),delta=rows.length*C.LINE_H;
-    for(const l of list)if(l.y>=top)l.y+=delta;
-    rows.forEach((t,i)=>list.push({id:ids[i],y:top+i*C.LINE_H,text:t,h:C.LINE_H,tutor:true,...(waiting?{wait:true}:{})}));
-    return list;
+  let rows=['…'],ids=[C.uid()],waiting=true,frozen=false;
+  /* undo takes out the reply's red lines and closes the gap; it used to put
+     back a copy of the whole page from before the question was answered */
+  const takeOut=()=>{ if(closeUp(ids.map(byId).filter(l=>l&&l.tutor))){render();queue();} };
+  const putIn=()=>{
+    if(ids.some(i=>byId(i)))return;
+    const list=rows.map((t,i)=>({id:ids[i],y:top+i*C.LINE_H,text:t,h:C.LINE_H,tutor:true,...(waiting?{wait:true}:{})}));
+    const delta=list.length*C.LINE_H;
+    for(const l of S.lines)if(l.y>=top)l.y+=delta;
+    S.lines.push(...list);
+    render();queue();
   };
-  const restore=list=>{S.lines=list.map(l=>({...l}));render();queue();};
-  C.act('nota',()=>restore(build()),()=>restore(before));
+  C.act('nota',putIn,takeOut);
   const entry=C.Undo.back[C.Undo.back.length-1];
   const fit=()=>{
     for(const i of ids){const l=byId(i),el=els.get(i)?.firstChild;if(l&&el){el._fitKey='';fitLine(l,el,true);}}
@@ -4526,20 +5048,28 @@ function notaReply(id){
   };
   return {
     alive(){return !!byId(ids[0])?.tutor;},
+    /* Only the reply's own red lines are nota's to rewrite or take away. A
+       line the student has typed in (it lost its red) is theirs: rewording
+       the question used to delete it along with the old answer. */
     reset(){
-      const l=byId(ids[0]);if(!l)return false;
-      rows=['…'];waiting=true;l.text=rows[0];l.wait=true;
-      for(const i of ids.slice(1)){const g=byId(i);if(g){S.lines=S.lines.filter(x=>x!==g);for(const o of S.lines)if(o.y>g.y)o.y-=Math.max(C.LINE_H,g.h||C.LINE_H);}}
+      const l=byId(ids[0]);if(!l||!l.tutor)return false;
+      rows=['…'];waiting=true;frozen=false;l.text=rows[0];l.wait=true;
+      for(const i of ids.slice(1)){const g=byId(i);if(g&&g.tutor){S.lines=S.lines.filter(x=>x!==g);for(const o of S.lines)if(o.y>g.y)o.y-=Math.max(C.LINE_H,g.h||C.LINE_H);}}
       ids=ids.slice(0,1);render();queue();C.markDirty();return true;
     },
     update(text){
+      if(frozen)return true;
       const next=String(text||'').split(/\n+/).map(t=>t.trim()).filter(Boolean);
       if(!next.length)return true;
-      let prev=byId(ids[0]);if(!prev||!prev.tutor)return false;      /* the reply was undone or erased: stop writing */
+      let prev=byId(ids[0]);if(!prev)return false;      /* the reply was undone or erased: stop writing */
+      /* the student is writing in it: the reply stops where it is, and
+         everything on the page stays */
+      if(!prev.tutor){frozen=true;return true;}
       waiting=false;
       for(let i=0;i<next.length;i++){
         if(!ids[i])ids.push(C.uid());
         let l=byId(ids[i]);
+        if(l&&!l.tutor){frozen=true;next.length=i;break;}
         if(!l){
           const y=prev.y+Math.max(C.LINE_H,prev.h||C.LINE_H);
           for(const o of S.lines)if(o.y>=y)o.y+=C.LINE_H;
@@ -4551,12 +5081,7 @@ function notaReply(id){
       rows=next;render();fit();queue();C.markDirty();return true;
     },
     remove(){
-      const gone=ids.map(byId).filter(l=>l?.tutor);
-      if(gone.length){
-        const topY=Math.min(...gone.map(l=>l.y)),H=gone.reduce((a,l)=>a+Math.max(C.LINE_H,l.h||C.LINE_H),0);
-        S.lines=S.lines.filter(l=>!ids.includes(l.id));
-        for(const l of S.lines)if(l.y>topY)l.y-=H;
-      }
+      closeUp(ids.map(byId).filter(l=>l?.tutor));
       if(C.Undo.back[C.Undo.back.length-1]===entry){C.Undo.back.pop();C.paintUndo();}
       render();queue();C.markDirty();
     }
@@ -4586,7 +5111,8 @@ function render(){
       root.insertBefore(d, root.children[at] || null);
     }
     const i = d.firstChild;
-    if(d.style.width !== M.contentW+'px'){ d.style.width = M.contentW+'px'; i.style.width = M.contentW+'px'; }
+    const available=Math.max(80,M.contentW-(ln.x||0));
+    if(d.style.width !== available+'px'){ d.style.width=available+'px';i.style.width=available+'px'; }
     /* while typing, the input handler keeps ln.text equal to the value, so a
        difference on the focused line means the data changed underneath it
        (undo, a split, a join): refresh it too, caret kept where it was */
@@ -4620,11 +5146,21 @@ function refreshPlaceholder(){
   const want = placeholderFor(ln);
   if(d.firstChild.placeholder !== want) d.firstChild.placeholder = want;
 }
+/* The caret bar is placed by measuring the line it is in, and it was only
+   measured again on a key, a tap or a selection change. A line that moved
+   under it without any of those left the bar behind, on the line that now
+   sits where it was: nota's reply arriving above the line being typed on,
+   one reply line after another, an undo or redo, a line above rewrapping,
+   the column narrowing, a picture dropped in, a shared note's line from
+   someone else. Every one of them places the lines through here. */
 function renderPositions(){
+  let moved = false;
   for(const ln of S.lines){
     const d=els.get(ln.id);if(!d)continue;
-    d.style.top=ln.y+'px';d.style.height=Math.max(C.LINE_H,ln.h||C.LINE_H)+'px';
+    const left=(ln.x||0)+'px',top=ln.y+'px',height=Math.max(C.LINE_H,ln.h||C.LINE_H)+'px';
+    if(d.style.left!==left||d.style.top!==top||d.style.height!==height){ d.style.left=left;d.style.top=top;d.style.height=height;moved=true; }
   }
+  if(moved && N.typing) N.typing.refresh();
 }
 /* Measuring a textarea means writing its height and reading it back, which
    forces a layout. Doing that for every line on every render was one layout
@@ -4693,7 +5229,7 @@ function queue(){ clearTimeout(qt); qt = setTimeout(()=>{
 
 function add(y, focus){
   const ln = { id:C.uid(), y:snap(y), text:'' };
-  C.act('add line', ()=>{ S.lines.push(ln); }, ()=>{ S.lines = S.lines.filter(l=>l.id!==ln.id); });
+  C.act('add line', ()=>{ if(!S.lines.some(l=>l.id===ln.id))S.lines.push(ln); }, ()=>{ S.lines = S.lines.filter(l=>l.id!==ln.id); });
   C.growDoc(ln.y + 200);
   render();
   if(focus !== false) focusLine(ln.id);      /* synchronous: no window for keys to escape */
@@ -4759,12 +5295,11 @@ function enter(ln, input){
     const delta=Math.max(0,C.LINE_H*2-oldH);
     for(const l of after)if(l.id!==ln.id&&l.y>ln.y)l.y+=delta;
     after.push({id:newId,y:ln.y+C.LINE_H,text:tail,h:C.LINE_H});
-    const restore=list=>{S.lines=list.map(l=>({...l}));render();queue();};
     /* render() leaves the focused textarea's value alone, and this one is
        still focused: write the head in here or the tail stays on screen as
        well, a line that then reads as duplicated and edits the wrong text */
     input.value=head; input._fitKey='';
-    C.act('split line',()=>restore(after),()=>restore(before));
+    lineStep('split line',before,after);
     focusLine(newId,false);
     const next=els.get(newId)?.firstChild;if(next)next.setSelectionRange(0,0);
 }
@@ -4778,17 +5313,18 @@ function joinUp(ln, input){
     if(!prev) return false;
     const before=S.lines.map(l=>({...l})),goneH=Math.max(C.LINE_H,ln.h||C.LINE_H),seam=prev.text.length;
     const after=before.filter(l=>l.id!==ln.id).map(l=>({...l,y:l.y>ln.y?l.y-goneH:l.y}));
-    after.find(l=>l.id===prev.id).text=prev.text+input.value;
-    const restore=list=>{S.lines=list.map(l=>({...l}));render();queue();};
-    C.act('join lines',()=>restore(after),()=>restore(before));
+    const joined=after.find(l=>l.id===prev.id);joined.text=prev.text+input.value;
+    /* words of the student's joined onto one of nota's red lines make it the
+       student's: a red line is nota's to rewrite, and would take them along */
+    if(joined.tutor&&!ln.tutor){delete joined.tutor;delete joined.wait;}
+    lineStep('join lines',before,after);
     focusLine(prev.id,false);
     const el=els.get(prev.id)?.firstChild;if(el){el._fitKey='';fitLine(byId(prev.id),el,true);renderPositions();el.setSelectionRange(seam,seam);}
     return true;
   }
   const before=S.lines.map(l=>({...l})),goneH=Math.max(C.LINE_H,ln.h||C.LINE_H);
   const after=before.filter(l=>l.id!==ln.id).map(l=>({...l,y:l.y>ln.y?l.y-goneH:l.y}));
-  const restore=list=>{S.lines=list.map(l=>({...l}));render();queue();};
-  C.act('remove line',()=>restore(after),()=>restore(before));
+  lineStep('remove line',before,after);
   if(prev) focusLine(prev.id, true);
   else{
     /* the top line went: carry on at the start of the one that moved up */
@@ -4803,9 +5339,9 @@ function joinDown(ln, input){
   if(!next) return false;
   const before=S.lines.map(l=>({...l})),goneH=Math.max(C.LINE_H,next.h||C.LINE_H),seam=input.value.length;
   const after=before.filter(l=>l.id!==next.id).map(l=>({...l,y:l.y>next.y?l.y-goneH:l.y}));
-  after.find(l=>l.id===ln.id).text=input.value+next.text;
-  const restore=list=>{S.lines=list.map(l=>({...l}));render();queue();};
-  C.act('join lines',()=>restore(after),()=>restore(before));
+  const joined=after.find(l=>l.id===ln.id);joined.text=input.value+next.text;
+  if(joined.tutor&&!next.tutor){delete joined.tutor;delete joined.wait;}
+  lineStep('join lines',before,after);
   const el=els.get(ln.id)?.firstChild;if(el){el._fitKey='';fitLine(byId(ln.id),el,true);renderPositions();el.setSelectionRange(seam,seam);}
   return true;
 }
@@ -4868,16 +5404,23 @@ function eraseCharacters(touched,radius){
       : Array.from(ln.text).map((segment,i,a)=>({segment,index:a.slice(0,i).join('').length}));
     for(const {segment,index} of segments){
       range.setStart(text,index);range.setEnd(text,index+segment.length);
-      const rect=range.getBoundingClientRect();
-      const point=N.ink.toWorld({clientX:rect.x+rect.width/2,clientY:rect.y+rect.height/2});
-      after+=rect.width&&touched(point.x,point.y,radius)?'':segment;
+      // A wrapping space may have rectangles on both rows; their union's
+      // centre is not a point on either glyph. Zero-width marks still have
+      // a caret rectangle and must be erasable with their neighbours.
+      const rects=[...range.getClientRects()];
+      const hit=rects.some(rect=>{
+        if(!rect.height)return false;
+        const point=N.ink.toWorld({clientX:rect.x+rect.width/2,clientY:rect.y+rect.height/2});
+        return touched(point.x,point.y,radius);
+      });
+      after+=hit?'':segment;
     }
     mirror.remove();
     if(after!==ln.text)edits.push({line:ln,before:ln.text,after});
   }
   return edits;
 }
-N.text = { render, add, focusLine, focusLast, snap, queue, reset, reflow, relayout, isFocused, setGhost, focusedLine, currentText, pasteText,
+N.text = { render, add, lineChanges, focusLine, focusLast, snap, queue, reset, reflow, relayout, isFocused, setGhost, focusedLine, currentText, pasteText,
            eraseCharacters, notaReply, refreshPlaceholder };
 })();
 </script>
@@ -4928,6 +5471,23 @@ function latexToMath(s){
   t = t.replace(/\\[dt]?frac\s*\{\s*d\s*\}\s*\{\s*d([a-zA-Z])\s*\}/g, 'd/d$1 ');
   t = t.replace(/\\int\s*_\s*(?:\{([^{}]*)\}|(\S))\s*\^\s*(?:\{([^{}]*)\}|(\S))\s*([\s\S]*?)\s*d([a-zA-Z])\b/g, (m,a1,a2,b1,b2,f,v)=>'defint(('+f+'),'+(a1??a2)+','+(b1??b2)+','+v+')');
   t = t.replace(/\\int\s*([\s\S]*?)\s*d([a-zA-Z])\b/g, 'integrate(($1),$2)');
+  /* Read balanced groups before removing braces; nested powers and fractions
+     must retain their grouping. Unknown commands stay visible as errors. */
+  t = t.replace(/\\(?:lvert|rvert|vert)\b/g,'|');
+  t = t.replace(/\|([^|]+)\|/g,'abs($1)');
+  t = t.replace(/\\pm(?![A-Za-z])/g,'±');
+  function groups(text){
+    let out='',i=0;
+    const read=()=>{while(/\s/.test(text[i]||'')&&i<text.length)i++;if(text[i]!=='{')throw new Error('missing LaTeX group');let start=++i,depth=1;while(i<text.length&&depth){if(text[i]==='{')depth++;if(text[i]==='}')depth--;i++;}if(depth)throw new Error('unclosed LaTeX group');return groups(text.slice(start,i-1));};
+    while(i<text.length){
+      const m=/^\\(?:dfrac|tfrac|frac|sqrt)\b/.exec(text.slice(i));
+      if(m){i+=m[0].length;let root=null;if(m[0]==='\\sqrt'&&text[i]==='['){const end=text.indexOf(']',++i);if(end<0)throw new Error('unclosed root');root=groups(text.slice(i,end));i=end+1;}const a=read();
+        if(m[0]==='\\sqrt')out+=root===null?'sqrt('+a+')':'nthRoot(('+a+'),('+root+'))';
+        else {const b=read(),mixed=/(^|[+\-=(])\s*(\d+)\s*$/.exec(out);if(mixed)out=out.slice(0,mixed.index)+mixed[1]+'('+mixed[2]+'+(('+a+')/('+b+')))';else out+='(('+a+')/('+b+'))';}
+      }else if(text[i]==='{')out+='('+read()+')';else out+=text[i++];
+    }return out;
+  }
+  try{t=groups(t);}catch(e){return 'invalid_latex('+JSON.stringify(String(s))+')';}
   t = t.replace(/\\dfrac|\\tfrac|\\frac/g,'\\frac');
   for(let i=0;i<6;i++) t = t.replace(/\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, '(($1)/($2))');
   t = t.replace(/\\sqrt\s*\[([^\]]*)\]\s*\{([^{}]*)\}/g, 'nthRoot(($2),($1))');
@@ -4943,7 +5503,7 @@ function latexToMath(s){
   t = t.replace(/\\(sin|cos|tan|log|ln|exp|arcsin|arccos|arctan|sinh|cosh|tanh|sec|csc|cot)\s+(?![({])([A-Za-z]|\d+(?:\.\d+)?)/g,'$1($2)');
   t = t.replace(/\\(sin|cos|tan|log|ln|exp|min|max|det|arcsin|arccos|arctan|sinh|cosh|tanh|sec|csc|cot)/g,'$1');
   t = t.replace(/\\(le|leq)\b/g,'<=').replace(/\\(ge|geq)\b/g,'>=').replace(/\\(ne|neq)\b/g,'!=');
-  t = t.replace(/[{}]/g,'').replace(/\\[a-zA-Z]+/g,'');
+  t = t.replace(/[{}]/g,'');
   return t;
 }
 function normalize(s){
@@ -4959,7 +5519,7 @@ function normalize(s){
   t = t.replace(/(\d)[xX](?=\d)/g, '$1*');
   /* "20 min" reads as 20 times the min() function, so name the unit in full */
   t = t.replace(/(\d\s*)mins?\b(?!ute)/g, '$1minute');
-  t = t.replace(/\bln\s*\(/g,'log(');
+  t = t.replace(/\bln\s*\(/g,'naturalLog(');
   return t;
 }
 function looksLikeMath(s){
@@ -4976,9 +5536,10 @@ function looksLikeMath(s){
 const D = Math.PI/180;
 function num(v){ try{ return typeof v==='number' ? v : Number(math.number(v)); }catch(e){ return Number(v); } }
 function baseScope(){
-  const sp = {};
+  const sp = {naturalLog:x=>Math.log(num(x)),log:(x,b=10)=>Math.log(num(x))/Math.log(num(b))};
   if(S.settings.angle === 'deg'){
     sp.sin = x=>Math.sin(num(x)*D); sp.cos = x=>Math.cos(num(x)*D); sp.tan = x=>Math.tan(num(x)*D);
+    sp.sec=x=>1/Math.cos(num(x)*D); sp.csc=x=>1/Math.sin(num(x)*D); sp.cot=x=>1/Math.tan(num(x)*D);
     sp.asin = x=>Math.asin(num(x))/D; sp.acos = x=>Math.acos(num(x))/D; sp.atan = x=>Math.atan(num(x))/D;
   }
   return sp;
@@ -5000,14 +5561,14 @@ function fmt(v){
   if(S.settings.fractions){
     try{
       const f = math.fraction(v);
-      if(String(f.d) !== '1') return math.format(f, {fraction:'ratio'});
+      if(String(f.d) !== '1' && (typeof v!=='number'||(Number(f.d)<=10000 && Math.abs(Number(f)-v)<=Number.EPSILON*Math.max(1,Math.abs(v))*4))) return math.format(f, {fraction:'ratio'});
     }catch(e){}
   }
   /* the number as it is, never "1e+5": whole numbers keep every digit,
      however many, and the rest is written out to 14 places, which is
      enough to show what was calculated without the float noise at the end */
   if(typeof v === 'number' && Number.isFinite(v)){
-    if(Number.isInteger(v)) return Math.abs(v) < 1e21 ? String(v) : plainDigits(v);
+    if(Number.isInteger(v)) return Number.isSafeInteger(v) ? String(v) : '≈ '+v.toExponential(13);
     try{ return math.format(v, {precision:14, lowerExp:-100, upperExp:100}); }catch(e){ return String(v); }
   }
   try{ return math.format(v, {precision:14, lowerExp:-100, upperExp:100}); }catch(e){ return String(v); }
@@ -5031,8 +5592,8 @@ function collect(){
   const out = [];
   for(const ln of S.lines){
     if(ln.tutor) continue;              /* nota's red lines are never calculated */
-    out.push({ kind:'line', id:ln.id, y:ln.y, x:0,
-               right: textWidth(ln.text) + 4, mid: ln.y + C.LINE_H/2, src:ln.text, ref:ln });
+    out.push({ kind:'line', id:ln.id, y:ln.y, x:ln.x||0,
+               right: (ln.x||0)+textWidth(ln.text) + 4, mid: ln.y + C.LINE_H/2, src:ln.text, ref:ln });
   }
   for(const cl of S.clusters){
     out.push({ kind:'cluster', id:cl.id, y:cl.bbox[1], x:cl.bbox[0],
@@ -5055,7 +5616,7 @@ function freeVars(expr){
     const names = new Set();
     (rawParse || math.parse)(expr).traverse(n=>{ if(n.isSymbolNode) names.add(n.name); });
     for(const k of ['pi','e','i','true','false','Infinity','NaN']) names.delete(k);
-    for(const k of [...names]) if(math && math[k] !== undefined) names.delete(k);
+    for(const k of [...names]) if(math && (math[k] !== undefined || k in baseScope())) names.delete(k);
     return [...names];
   }catch(e){ return []; }
 }
@@ -5068,6 +5629,7 @@ function freeVars(expr){
 const evalMemo = new Map();
 const savedMemo = new Map();
 function savedAnswers(){
+  if(!window.math)return S.savedAnswers||[];
   const ids=new Set(collect().map(n=>n.kind+':'+(n.ref.hash||n.id)));
   return [...savedMemo].filter(([id])=>ids.has(id));
 }
@@ -5077,7 +5639,7 @@ function restoreAnswers(entries){
 }
 const provSrc = new Map();
 function memoKey(src, defined){
-  let k = 'answer-v1|'+src+'|'+S.settings.angle+'|'+(S.settings.fractions?1:0);
+  let k = 'answer-v2|'+src+'|'+S.settings.angle+'|'+(S.settings.fractions?1:0);
   for(const name of defined) k += '|'+name+'='+(provSrc.get(name)||'');
   return k;
 }
@@ -5098,22 +5660,23 @@ function evalNode(node, scope, defined){
   const hit = evalMemo.get(node.id);
   if(hit && hit.key === key){
     node.result = hit.result; node.provides = hit.provides; node.stated = !!hit.stated;
-    if(hit.provides){ scope[hit.provides] = hit.value; defined.add(hit.provides); provSrc.set(hit.provides, src); }
+    if(hit.provides){ if(hit.functionDefinition)rawEval(src,scope);else scope[hit.provides] = hit.value; defined.add(hit.provides); provSrc.set(hit.provides, src); }
     return;
   }
   evalMemo.delete(node.id);
   evalNodeFresh(node, scope, defined, src);
   if(continuing&&node.result&&!/=\s*$/.test(node.src)&&normalize(node.src.slice(prefix.length)).trim()===node.result)node.stated=true;
   if(!node.error && !node.pending && !node.plot && node.result){
-    evalMemo.set(node.id, { key, result:node.result, provides:node.provides, stated:node.stated, value:node.provides ? scope[node.provides] : undefined });
+    evalMemo.set(node.id, { key, result:node.result, provides:node.provides, functionDefinition:!!src.match(RE_FN), stated:node.stated, value:node.provides ? scope[node.provides] : undefined });
     /* Definitions rebuild runtime scope; plain answers are safe JSON and can
        be restored without invoking the evaluator or symbolic solver. */
     if(!node.provides){savedMemo.set(savedId,{key,result:node.result,stated:!!node.stated});C.markDirty();}
   }
 }
 function evalNodeFresh(node, scope, defined, src){
+  if(src.includes('±')){const results=['+','-'].map(sign=>{const child={ref:node.ref};evalNodeFresh(child,Object.assign({},scope),new Set(defined),src.replace(/±/g,sign));return child.error?'':child.result;});if(results.every(Boolean))node.result=[...new Set(results)].join(' or ');else node.error='cannot solve this yet';return;}
   let m = src.match(RE_FN);
-  if(m){
+  if(m && math[m[1]]===undefined && !(m[1] in baseScope())){
     try{
       rawEval(src, scope);
       node.provides = m[1];
@@ -5125,6 +5688,7 @@ function evalNodeFresh(node, scope, defined, src){
   m = src.match(RE_VAR);
   if(m){
     const name = m[1], body = m[2];
+    if(math[name]!==undefined||name in baseScope()){node.error='reserved name';return;}
     if(name === 'y' && freeVars(body).includes('x')){
       /* a graph, not a value: the plot card is the output, so do not evaluate */
       if(!node.ref._plotVals) node.ref._plotVals = {};
@@ -5145,7 +5709,8 @@ function evalNodeFresh(node, scope, defined, src){
   /* "12 x 7 = 84": the answer is already on the line. When the left side
      works out to the right side there is nothing to add, and the solver must
      not go looking for an unknown in it. */
-  const stated = src.match(/^([^=<>!]+?)\s*=\s*([^=<>!]+?)\s*$/);
+  const stated = src.match(/^([^=<>]+?)\s*=\s*([^=<>]+?)\s*$/);
+  if(stated){const vars=freeVars('('+stated[1]+')-('+stated[2]+')');if(vars.length){if(casPending()){node.pending=true;return;}node.result=solve(src,scope)||'';if(!node.result)node.error='cannot solve this yet';return;}}
   if(stated){
     let lv, same = false;
     try{ lv = rawEval(stated[1], scope); }catch(e){ lv = undefined; }
@@ -5181,7 +5746,7 @@ function evalNodeFresh(node, scope, defined, src){
   }catch(e){ node.error = clean(e, scope, src); }
 }
 function sameValue(a, b){
-  if(typeof a === 'number' && typeof b === 'number') return Math.abs(a-b) <= 1e-9*Math.max(1, Math.abs(a), Math.abs(b));
+  if(typeof a === 'number' && typeof b === 'number') return Number.isFinite(a)&&Number.isFinite(b)&&Math.abs(a-b) <= Number.EPSILON*8*Math.max(1, Math.abs(a), Math.abs(b));
   try{ return fmt(a) === fmt(b); }catch(e){ return false; }
 }
 function clean(e, scope, src){
@@ -5212,11 +5777,13 @@ function casPending(){
   ensureCAS(); return true;
 }
 function solve(src, scope){
-  let eq = src.replace(/^\s*solve\s*/i,'').replace(/^\(|\)\s*$/g,'').trim();
+  let eq = src.replace(/^\s*solve\s*/i,'').trim();
+  if(/^\s*solve\s*\(/i.test(src)&&eq.endsWith(')'))eq=eq.slice(1,-1);
   let want = null;
   const parts = eq.split(',');
   if(parts.length === 2 && /^\s*[A-Za-z_]\w*\s*$/.test(parts[1])){ want = parts[1].trim(); eq = parts[0]; }
-  if(!want){ const fv = freeVars(eq.replace('=','-(')+')'); want = fv[0] || 'x'; }
+  if(!want){ const sides=eq.split('=');const fv = freeVars(sides.length===2?'('+sides[0]+')-('+sides[1]+')':eq); want = fv[0] || 'x'; }
+  try{const sides=eq.split('=');if(sides.length===2&&rawParse(sides[0]).toString()===rawParse(sides[1]).toString())return 'all '+want;const linear=N.localMath?.linear(eq);if(linear&&linear.a===0)return linear.b===0?'all '+want:'no solution';}catch(e){}
   if(typeof nerdamer !== 'undefined'){
     try{
       const r = nerdamer.solve(eq, want);
@@ -5229,6 +5796,9 @@ function solve(src, scope){
     const sides = eq.split('=');
     const f = sides.length === 2 ? '('+sides[0]+')-('+sides[1]+')' : eq;
     const roots = [];
+    const at=x=>num(rawEval(f,Object.assign({},scope,{[want]:x})));
+    const accept=r=>{const residual=at(r);if(Number.isFinite(r)&&Number.isFinite(residual)&&Math.abs(residual)<1e-7&&!roots.some(o=>Math.abs(o-r)<1e-4))roots.push(r);};
+    for(const seed of [0,1,-1,100,-100,10000,-10000,1000000,-1000000]){let x=seed;for(let k=0;k<40;k++){const y=at(x),h=Math.max(1e-5,Math.abs(x)*1e-5),d=(at(x+h)-at(x-h))/(2*h);if(!Number.isFinite(y)||!Number.isFinite(d)||Math.abs(d)<1e-15)break;const next=x-y/d;if(!Number.isFinite(next))break;x=next;if(Math.abs(y)<1e-9)break;}accept(x);}
     let prev = null;
     for(let x=-50; x<=50; x+=0.05){
       let v; try{ v = num(rawEval(f, Object.assign({}, scope, {[want]:x}))); }catch(e){ continue; }
@@ -5241,11 +5811,11 @@ function solve(src, scope){
           if((vm<=0) === (va<=0)) a = mdl; else b = mdl;
         }
         const r = Math.round(((a+b)/2)*1e6)/1e6;
-        if(!roots.some(o=>Math.abs(o-r)<1e-4)) roots.push(r);
+        accept(r);
       }
       prev = {x, v};
     }
-    if(roots.length) return want+' = '+roots.join(' or ');
+    if(roots.length) return want+' = '+roots.sort((a,b)=>a-b).map(fmt).join(' or ');
   }catch(e){}
   return '';
 }
@@ -5268,6 +5838,13 @@ function readsAsProse(src){
   // quiet. Recognition preserves the name's case; no fuzzy scope substitution.
   if(/^\s*[A-Za-z][A-Za-z0-9_]*\s*[=+*/^-]\s*[-+\d.(][\d\s.+*/^()=-]*$/.test(String(src||'')))return false;
   return (String(src||'').match(/[A-Za-z]{3,}/g) || []).some(word => !KNOWN_WORD.test(word));
+}
+/* "hey nota," written on the page is a question for nota, not a sum: the
+   maths reader reads it as one anyway ("=2y*y*y*y="), and its "cannot
+   calculate" chip sat under the question, where the answer is written */
+function callInk(n){
+  return n.kind === 'cluster' && !n.ref?.asked && !n.ref?.confirmed && !!(N.nota && N.nota.isCallStroke) &&
+    !!n.ref?.strokeIds?.some(id=>N.nota.isCallStroke(id));
 }
 function asksForAnswer(n){
   if(n.kind !== 'cluster') return true;
@@ -5324,7 +5901,7 @@ function dismissPassed(){
   if(!fresh.length) return;
   let changed = false;
   for(const [id, el] of chips){
-    if(!el.classList.contains('offer') || el.classList.contains('open')) continue;
+    if(!el.classList.contains('offer')) continue;
     const cl = S.clusters.find(c=>c.id===id); if(!cl || cl.dismissed || cl.asked) continue;
     if(!fresh.some(s=>grouped.get(s) !== cl)) continue;
     cl.dismissed = true;
@@ -5341,7 +5918,7 @@ function run(){
   const scope = baseScope(), defined = new Set();
   provSrc.clear();
   S.nodes = nodes;
-  for(const n of nodes) if(!n.ref?.review && !n.pending && asksForAnswer(n)) evalNode(n, scope, defined);
+  for(const n of nodes) if(!n.ref?.review && !n.pending && !callInk(n) && asksForAnswer(n)) evalNode(n, scope, defined);
   if(evalMemo.size > nodes.length + 50){ const live = new Set(nodes.map(n=>n.id)); for(const id of [...evalMemo.keys()]) if(!live.has(id)) evalMemo.delete(id); }
   for(const n of nodes) if(n.error) n.error = clean({message:n.error});
   S.scope = scope;
@@ -5403,7 +5980,7 @@ function refreshWaiting(){
   let replace = false;
   for(const [id, el] of chips){
     const n = S.nodes.find(o=>o.id === id);
-    if(!n || !n.pending || el.classList.contains('open')) continue;
+    if(!n || !n.pending) continue;
     const html = pendingHTML(n, waitOn);
     if(el.dataset.html === html) continue;
     /* the count changing is the usual case: the words are swapped inside the
@@ -5450,7 +6027,7 @@ function paint(nodes){
       if(ghost || n.stated) continue;
     }
     const show = n.pending || n.result || visibleError || n.ref?.review || offer || (n.kind==='cluster' && n.src && asksForAnswer(n));
-    if(!show || (n.kind==='cluster' && n.ref?.dismissed)) continue;
+    if(!show || (n.kind==='cluster' && n.ref?.dismissed) || callInk(n)) continue;
     /* Ink still warm from the pen gets no chip yet. The chip lands right after
        the working, where the next symbol goes, and a reading that arrived in
        the middle of writing was a thing in the way. It waits for the pen to
@@ -5466,17 +6043,11 @@ function paint(nodes){
     let el = chips.get(n.id);
     if(!el){
       el = document.createElement('div'); el.className = 'chip';
+      /* the answer is read where it stands; only Solve is pressed */
       el.addEventListener('click', e=>{
-        const current=S.nodes.find(o=>o.id===el.dataset.node);
-        if(!current)return;
-        if(e.target.closest('.solve')){ e.stopPropagation(); requestSolve(current.id); return; }
-        /* words being selected on the open card are being copied, not a tap to close it */
-        const sel=document.getSelection();
-        if(el.classList.contains('open')&&sel&&!sel.isCollapsed&&sel.anchorNode&&el.contains(sel.anchorNode)) return;
-        expand(el,current);
+        if(!e.target.closest('.solve')) return;
+        e.stopPropagation(); requestSolve(el.dataset.node);
       });
-      el.setAttribute('role','button');el.tabIndex=0;
-      el.addEventListener('keydown', e=>{if(e.target===el&&(e.key==='Enter'||e.key===' ')){e.preventDefault();el.click();}});
       marginEl.appendChild(el); chips.set(n.id, el);
     }
     el.classList.remove('yield');           /* stepped aside for the pen; the paint puts it back */
@@ -5487,27 +6058,25 @@ function paint(nodes){
        fixed answer font size. Typed-line answers keep the normal chip size. */
     const handwritingHeight=n.kind==='cluster'&&(n.result||n.pending)&&n.ref?.bbox
       ? Math.max(1,n.ref.bbox[3]-n.ref.bbox[1]) : 0;
-    if(!el.classList.contains('open')&&!el.classList.contains('explaining')){
-      el.style.fontSize=handwritingHeight?handwritingHeight+'px':'';
-      el.setAttribute('role','button');el.classList.toggle('error',!!visibleError);
-      el.classList.toggle('offer',offer);
-      el.classList.toggle('typed', n.kind === 'line' && !offer && !visibleError && !n.pending);
-      let html;
-      if(offer){
-        el.setAttribute('aria-label','handwriting read as '+n.src+'. open to correct it.');
-        html = '<span class="reading">'+readingHTML(n.ref)+'</span>'+
-          '<button class="solve" type="button" aria-label="solve '+escape(n.src)+'"><i class="ph ph-equals" aria-hidden="true"></i>solve</button>';
-      }else{
-        el.removeAttribute('aria-label');
-        html = n.pending
-          ? pendingHTML(n, waitOn)
-          : escape(visibleError ? 'cannot calculate, '+visibleError : (n.result || 'edit expression'));
-      }
-      /* Rewritten only when it changes. A blur on a typed line re-runs the
-         maths at once, and replacing the Solve button between the press and
-         the release of a tap on it swallowed the tap. */
-      if(el.dataset.html !== html){ el.innerHTML = html; el.dataset.html = html; }
+    el.style.fontSize=handwritingHeight?handwritingHeight+'px':'';
+    el.classList.toggle('error',!!visibleError);
+    el.classList.toggle('offer',offer);
+    el.classList.toggle('typed', n.kind === 'line' && !offer && !visibleError && !n.pending);
+    let html;
+    if(offer){
+      el.setAttribute('aria-label','handwriting read as '+n.src+'.');
+      html = '<span class="reading">'+readingHTML(n.ref)+'</span>'+
+        '<button class="solve" type="button" aria-label="solve '+escape(n.src)+'"><i class="ph ph-equals" aria-hidden="true"></i>solve</button>';
+    }else{
+      el.removeAttribute('aria-label');
+      html = n.pending
+        ? pendingHTML(n, waitOn)
+        : escape(visibleError ? 'cannot calculate, '+visibleError : (n.result || 'could not read this'));
     }
+    /* Rewritten only when it changes. A blur on a typed line re-runs the
+       maths at once, and replacing the Solve button between the press and
+       the release of a tap on it swallowed the tap. */
+    if(el.dataset.html !== html){ el.innerHTML = html; el.dataset.html = html; }
     /* right after the working. The paper, not the column, is the limit - the
        same freedom a drag has - so an equation moved into the margin keeps its
        answer beside it instead of pinned at the column edge. When the paper
@@ -5538,9 +6107,9 @@ function paint(nodes){
       el.style.maxWidth=Math.max(MIN_PILL,paperR-6-left)+'px';
       /* the height one line of this answer takes; a handwritten answer is
          set at the handwriting's height, so the fixed room check above
-         cannot know whether it will fit beside. Cards, offers and errors
-         are more than one line by design and are left where they are. */
-      const plain=!el.classList.contains('open')&&!el.classList.contains('explaining')&&!offer&&!visibleError;
+         cannot know whether it will fit beside. Offers and errors are
+         more than one line by design and are left where they are. */
+      const plain=!offer&&!visibleError;
       const lineH=!plain?0:handwritingHeight?handwritingHeight*1.15:(n.kind==='line'?16*1.4:21*1.15);
       place.push([el,n.mid||n.y,lineH,below]);
     }
@@ -5573,84 +6142,6 @@ function readingHTML(ref){
   }
   return escape(ref.ascii || latexToMath(ref.latex || ''));
 }
-/* The clipboard write has to start inside the tap, so no awaits first. The
-   execCommand path is for browsers that hide the async API outside https. */
-function copyText(text){
-  const done=()=>C.toast('copied '+text+'.');
-  if(navigator.clipboard&&navigator.clipboard.writeText){
-    navigator.clipboard.writeText(text).then(done,()=>copyFallback(text)?done():C.toast('could not copy. select the answer and copy it by hand.'));
-    return;
-  }
-  copyFallback(text)?done():C.toast('could not copy. select the answer and copy it by hand.');
-}
-function copyFallback(text){
-  const ta=document.createElement('textarea');ta.value=text;ta.setAttribute('readonly','');
-  ta.style.cssText='position:fixed;top:0;left:0;opacity:0;pointer-events:none';
-  document.body.appendChild(ta);ta.select();
-  let ok=false;try{ok=document.execCommand('copy');}catch(e){}
-  ta.remove();return ok;
-}
-
-function expand(el, n){
-  const open = el.classList.toggle('open');
-  el.setAttribute('role',open?'group':'button');
-  delete el.dataset.html;                 /* the card replaces the chip: the next paint must write it back */
-  if(!open){ run(); return; }
-  /* The expanded card needs room to breathe, so pull it back from the edge.
-     Width follows the space actually left rather than a fixed minimum. The
-     card is bounded by the paper, the same bounds a drag or a resting chip
-     has, so a chip in the margin opens across the margin instead of being
-     yanked back toward the column and wrapping. */
-  const edge = 8, widest = 320, narrowest = 150;
-  const zc=M.zoom, docW=$('#doc').offsetWidth||M.vw;
-  const paperL=-M.colLeft/zc, paperR=(docW-M.colLeft)/zc;
-  const room = Math.max(narrowest, Math.min(M.colW, paperR-paperL) - edge * 2);
-  const want = Math.max(paperL+edge, Math.min(parseFloat(el.style.left || 0), paperR - edge - Math.min(widest, room)));
-  el.style.left = want + 'px';
-  el.style.maxWidth = Math.min(widest, Math.max(narrowest, paperR - want - edge)) + 'px';
-  let html = '<button class="chip-close" type="button" aria-label="close">×</button>';
-  const tx = n.ref && n.ref.latex ? n.ref.latex : (n.kind==='cluster' ? (n.ref.ascii||'') : n.src);
-  if(tx){
-    html += '<span class="tx">'+(n.kind==='cluster' ? readingHTML(n.ref) : escape(tx))+'</span>';
-  }
-  html += escape(n.result || '');
-  if(offersSolve(n))html += '<button class="solve" type="button"><i class="ph ph-equals" aria-hidden="true"></i>solve</button>';
-  if(n.result)html += '<button class="copy-answer" type="button">copy answer</button>';
-  if(n.kind==='cluster')html += '<button class="copy-answer chip-dismiss" type="button" aria-label="dismiss this box">dismiss</button>';
-  if(n.error)html += '<span class="tx">'+escape(n.error)+'</span>';
-  if(n.ref?.review)html += '<span class="tx">'+escape(n.ref.error||'this reading could not be calculated.')+'</span>';
-  else if(n.kind==='cluster' && !n.ref?.confirmed && n.ref?.latex)html += '<span class="tx">'+(n.ref.needsConfirmation?'check this reading before solving.':'read automatically. correct it below if it is wrong.')+'</span>';
-  if(n.steps && n.steps.length){
-    html += '<span class="steps">' + n.steps.map(s=>'<div>'+escape(s)+'</div>').join('') + '</span>';
-  }
-  if(n.kind === 'cluster'){
-    html += '<label class="fix">read as<input aria-label="recognized expression" value="'+escape(n.ref.ascii || latexToMath(n.ref.latex||''))+'"></label>';
-    if(!n.ref.confirmed&&n.ref.alternatives?.length)html+='<span class="tx">other readings</span>'+n.ref.alternatives.map(t=>'<button class="reading-option" data-expression="'+escape(latexToMath(t))+'">'+escape(latexToMath(t))+'</button>').join(' ');
-    html+='<button class="confirm-reading">use expression</button>';
-  }
-  el.innerHTML = html;
-  const close=el.querySelector('.chip-close');
-  if(close)close.onclick=e=>{e.stopPropagation();el.classList.remove('open');run();};
-  const copy=el.querySelector('.copy-answer:not(.chip-dismiss)');
-  if(copy)copy.onclick=e=>{e.stopPropagation();copyText(n.result);};
-  const away=el.querySelector('.chip-dismiss');
-  if(away)away.onclick=e=>{e.stopPropagation();el.classList.remove('open');dismiss(n.id);};
-  const solve=el.querySelector('.solve');
-  if(solve)solve.onclick=e=>{e.stopPropagation();el.classList.remove('open');requestSolve(n.id);};
-  const fix = el.querySelector('.fix input');
-  if(fix){
-    for(const option of el.querySelectorAll('.reading-option'))option.onclick=e=>{e.stopPropagation();fix.value=option.dataset.expression;fix.focus();};
-    fix.addEventListener('click', e=>e.stopPropagation());
-    const apply=()=>{const live=S.clusters.find(c=>c.id===n.id);if(!live)return;el.classList.remove('open');N.recog.confirm(live,fix.value);};
-    fix.addEventListener('keydown', e=>{e.stopPropagation();if(e.key==='Enter')apply();});
-    el.querySelector('.confirm-reading').onclick=e=>{e.stopPropagation();apply();};
-  }
-  /* When the page is zoomed or scrolled the panel can open outside the visible
-     area even though it sits correctly inside the column. Nudge it into view;
-     'nearest' means nothing moves when it is already fully on screen. */
-  try{ el.scrollIntoView({block:'nearest',inline:'nearest',behavior:C.reducedMotion()?'auto':'smooth'}); }catch(e){}
-}
-
 function reset(){ for(const [,el] of chips) el.remove(); chips.clear(); evalMemo.clear(); savedMemo.clear(); }
 
 /* a graph evaluates its expression a few hundred times per redraw; parsing
@@ -5661,7 +6152,22 @@ function compileRaw(expr){
   if(!c){ c = rawParse(expr).compile(); if(compiled.size > 200) compiled.clear(); compiled.set(expr, c); }
   return c;
 }
-N.mathcore = { run, refreshWaiting, normalize, latexToMath, looksLikeMath, readsAsProse, fmt, freeVars, harden, reset, ensureCAS, savedAnswers, restoreAnswers,
+async function quickMath(source){
+  if(!harden()) throw new Error('maths is still loading. try again in a moment.');
+  const src=normalize(source).replace(/=\s*$/,'').trim();
+  if(!src) return '';
+  if(src.length>160||/[\[\]{};:"]/.test(src)) throw new Error('try a shorter arithmetic expression or equation.');
+  const node={id:'quick',kind:'quick',src,ref:{}};
+  evalNodeFresh(node,baseScope(),new Set(),src);
+  if(node.pending){
+    await ensureCAS();
+    node.pending=false; node.error=''; node.result='';
+    evalNodeFresh(node,baseScope(),new Set(),src);
+  }
+  if(node.error||!node.result) throw new Error('check the equation and try again.');
+  return node.result;
+}
+N.mathcore = { quickMath, run, refreshWaiting, normalize, latexToMath, looksLikeMath, readsAsProse, fmt, freeVars, harden, reset, ensureCAS, savedAnswers, restoreAnswers,
                baseScope, evalRaw:(s,sc)=>rawEval(s,sc), parseRaw:s=>rawParse(s), compileRaw, collect, requestSolve, dismiss, inkLanded };
 })();
 </script>
@@ -6127,11 +6633,14 @@ function ladder(mode){
 /* ---- check my work: the model points, the CAS confirms ---- */
 function verifyPair(a,b){return N.localMath.verifyPair(a,b);}
 async function checkWork(){
-  const steps=(S.nodes||[]).filter(n=>n.src&&!n.ref?.review&&N.mathcore.looksLikeMath(n.src));
+  const selected=new Set(S.selection||[]),all=S.nodes||[];
+  const steps=all.filter(n=>(selected.size<2||selected.has(n.id))&&n.src&&!n.ref?.review&&!n.ref?.needsConfirmation&&N.mathcore.looksLikeMath(n.src));
   if(steps.length<2)return reply('write at least two steps and confirm any handwriting first.');
   const bad=[];let checked=0,unknown=0;
   for(let i=1;i<steps.length;i++){
-    const valid=verifyPair(steps[i-1].src,steps[i].src);
+    const previous=steps[i-1],next=steps[i];
+    const separated=selected.size<2&&(all.indexOf(next)!==all.indexOf(previous)+1||Math.abs((next.y||0)-(previous.y||0))>C.LINE_H*2.5||Math.abs((next.x||0)-(previous.x||0))>100);
+    const valid=separated?null:verifyPair(previous.src,next.src);
     if(valid===false)bad.push(i);
     else if(valid===true)checked++;
     else unknown++;
@@ -6148,14 +6657,29 @@ async function checkWork(){
 }
 // Browser speech recognition may upload audio. This offline build has no microphone.
 function listen(){}
+let speechRequest=0,clearSpeech=()=>{};
 function speak(t){
+  const request=++speechRequest;clearSpeech();
   if(!S.settings.voice||!t||!window.speechSynthesis)return;
+  const synth=speechSynthesis,note=S.id;
+  synth.cancel();
   const lang=/[\uac00-\ud7af]/u.test(t)?'ko':/[\u3040-\u30ff]/u.test(t)?'ja':/[\u3400-\u9fff\uf900-\ufaff]/u.test(t)?'zh':'en';
-  const local=speechSynthesis.getVoices().filter(v=>v.localService);
-  const voice=local.find(v=>v.lang.toLowerCase().startsWith(lang)) || (lang==='en'?local.find(v=>/^en/i.test(v.lang)):null);
-  if(!voice)return;
-  speechSynthesis.cancel();
-  const utterance=new SpeechSynthesisUtterance(t);utterance.lang=voice.lang||lang;utterance.voice=voice;speechSynthesis.speak(utterance);
+  let timer,watch,started=false;
+  const cleanup=()=>{clearTimeout(timer);clearInterval(watch);synth.removeEventListener('voiceschanged',play);};
+  const play=()=>{
+    if(request!==speechRequest||S.id!==note||!S.settings.voice){cleanup();return;}
+    if(started)return;
+    const voice=synth.getVoices().find(v=>v.localService&&v.lang.toLowerCase().startsWith(lang));
+    if(!voice)return;
+    started=true;clearTimeout(timer);synth.removeEventListener('voiceschanged',play);
+    const utterance=new SpeechSynthesisUtterance(t);utterance.lang=voice.lang||lang;utterance.voice=voice;
+    utterance.onend=cleanup;utterance.onerror=cleanup;synth.speak(utterance);
+  };
+  clearSpeech=cleanup;
+  synth.addEventListener('voiceschanged',play);
+  timer=setTimeout(cleanup,2000);
+  watch=setInterval(()=>{if(S.id!==note||!S.settings.voice){cleanup();synth.cancel();}},100);
+  play();
 }
 
 N.tutor = { drawAnnos, addAnno, clearAnnos, ask, checkWork, listen, speak, reply, ladder,
@@ -6202,10 +6726,11 @@ function card(node, top){
   if(box.dataset.for !== want){
     box.dataset.for = want; box.innerHTML = '';
     for(const p of node.plot.params){
-      if(vals[p] === undefined) vals[p] = 1;
+      vals[p] = typeof vals[p]==='number'&&Number.isFinite(vals[p]) ? Math.max(-5,Math.min(5,vals[p])) : 1;
       const row = document.createElement('label');
       row.className = 'sl';
-      row.innerHTML = '<span>'+p+'</span><input type="range" min="-5" max="5" step="0.1" value="'+vals[p]+'"><span class="v">'+vals[p]+'</span>';
+      row.innerHTML = '<span></span><input type="range" min="-5" max="5" step="0.1"><span class="v"></span>';
+      row.firstElementChild.textContent=p;row.querySelector('input').value=String(vals[p]);row.querySelector('.v').textContent=String(vals[p]);
       const inp = row.querySelector('input'), out = row.querySelector('.v');
       inp.setAttribute('aria-label','graph parameter '+p);
       inp.addEventListener('input', ()=>{
@@ -6277,7 +6802,7 @@ function draw(cv, node, w, h, dpr){
   const noFinite=!isFinite(lo)||!isFinite(hi);
   if(noFinite || lo === hi){ lo = -5; hi = 5; }
   const padY = (hi-lo)*0.12; lo -= padY; hi += padY;
-  if(hi-lo > 400){ lo = -20; hi = 20; }
+  if(!Number.isFinite(hi-lo)){lo=-Number.MAX_VALUE/4;hi=Number.MAX_VALUE/4;}
   const sx = v => (v - X0)/(X1-X0)*w;
   const sy = v => h - (v - lo)/(hi - lo)*h;
 
@@ -6585,10 +7110,22 @@ function searchHit(doc,q){
    the list of notes is the library (its own script below): a page of its
    own on a phone, a drawer on a tablet, a sidebar on a desktop */
 function notesSheet(){ return N.library ? N.library.open({focusSearch:true}) : null; }
+/* Everything written on the page is saved before the page changes. A
+   shared note a room keeps changing may never sit still; its edits are in
+   the room's copy on this device too, so a few rounds are enough there. */
+async function settle(){
+  N.ink.finishInput();
+  for(let i=0;;i++){
+    if(!await C.save()) return false;
+    if(!S.dirty) return true;
+    if(i>=3 && N.collab && N.collab.isLive && N.collab.isLive(S.id)) return true;
+  }
+}
 function blank(id){
   N.recog.reset();
   S.id = id || C.uid(); S.title = 'untitled'; S.created = Date.now();
   S.strokes = []; S.lines = []; S.images = []; S.annos = []; S.clusters = []; S.nodes = []; S.textTranscripts = [];
+  S.dirty=false; S.savedAnswers=[]; S.savedTitle='untitled'; S.forkedFrom=null;
   S.docH = 1600; S.selection = []; S.imageSelection=null; S.savedRev=0; S.remoteRev=0;
   C.Undo.back.length = 0; C.Undo.fwd.length = 0; C.Undo.typing = null;
 }
@@ -6604,12 +7141,14 @@ async function newNote(id){
   if(changingNote) return;
   changingNote = true;
   try{
-  do{ if(!await C.save()) return; }while(S.dirty);
+  if(!await settle()) return;
   N.library && await N.library.leaving();
+  /* words or ink that landed while the list drew this note's picture */
+  if(S.dirty && !await settle()) return;
   blank(id);
   /* off the old note's room before anything is written to the blank page */
   N.collab && N.collab.noteChanged();
-  N.text.add(120, false);
+  N.text.add(120, false)._auto=true;
   M.zoom = 1;
   paintAll();
   $('#scroller').scrollTop=0; $('#scroller').scrollLeft=0;
@@ -6620,21 +7159,23 @@ async function newNote(id){
   N.library && N.library.changed();
   }finally{ changingNote = false; }
 }
-async function openNote(id){
+async function openNote(id,opts={}){
+  if(opts.remote&&(S.dirty||N.ink?.drawing?.()))return;
   if(changingNote) return;
   changingNote = true;
   try{
-  do{ if(!await C.save()) return; }while(S.dirty);
+  if(!opts.remote&&!await settle()) return;
   N.library && await N.library.leaving();
   const doc = await C.Store.get('notas.note.'+id);
   if(!doc) return C.toast('that note could not be opened.');
-  while(S.dirty){ if(!await C.save()) return; }
+  if(opts.remote&&(S.id!==id||S.dirty||N.ink?.drawing?.()))return;
+  if(S.dirty && !await settle()) return;
   blank(id);
   S.title = doc.title || 'untitled'; S.created = doc.created || Date.now();
   S.strokes = doc.strokes || []; S.lines = doc.lines || []; S.images = doc.images || [];
   S.textTranscripts = (doc.textTranscripts || []).filter(t=>t&&t.hash&&t.text);
   S.docH = doc.docH || 1600;
-  S.savedRev = doc.rev || 0; S.remoteRev = 0;
+  S.savedRev = doc.rev || 0; S.savedTitle=S.title; S.savedAnswers=doc.answers||[]; S.remoteRev = 0;
   if(doc.settings) for(const k of ['angle','fractions','aiOn']) if(k in doc.settings) S.settings[k]=doc.settings[k];
   C.applyPrefs();
   if(!doc.localVersion)S.settings.aiOn=true;
@@ -6655,6 +7196,79 @@ async function openNote(id){
 }
 
 /* ---- menu ---- */
+/* Quick maths stays in the chrome. Only the answer's insertion choices pop out. */
+const quickInput=$('#quick-expression'),quickPop=$('#quick-result'),quickAnswer=$('#quick-answer'),quickValue=quickAnswer.querySelector('.qa-value'),quickMenu=$('#quick-insert'),quickStatus=$('#quick-status');
+let quickTimer,quickRevision=0,quickResult=null;
+function closeQuickInsert(){quickMenu.hidden=true;quickAnswer.setAttribute('aria-expanded','false');}
+function hideQuickResult(){closeQuickInsert();quickPop.hidden=true;}
+/* the answer hangs from the field: as wide as it, never past the screen */
+function placeQuickResult(){
+  if(quickPop.hidden)return;
+  const r=quickInput.getBoundingClientRect(),v=window.visualViewport,vw=v?v.width:innerWidth,x=v?v.offsetLeft:0;
+  const w=Math.min(vw-24,Math.max(r.width,260));
+  quickPop.style.width=w+'px';
+  quickPop.style.left=Math.max(x+12,Math.min(r.left,x+vw-w-12))+'px';
+  quickPop.style.top=(r.bottom+8)+'px';
+}
+function showQuickResult(){
+  if(!quickResult)return;const was=quickPop.hidden;quickPop.hidden=false;placeQuickResult();
+  if(was&&!C.reducedMotion())quickPop.animate([{opacity:0,transform:'translateY(-4px)'},{opacity:1,transform:'none'}],{duration:180,easing:'ease-out'});
+}
+function openQuickInsert(){if(!quickResult)return;showQuickResult();quickMenu.hidden=false;quickAnswer.setAttribute('aria-expanded','true');placeQuickResult();quickMenu.querySelector('button').focus();}
+async function calculateQuick(rev,insert){
+  const source=quickInput.value.trim();
+  if(!source){quickStatus.textContent='';hideQuickResult();return;}
+  if(quickResult&&quickResult.source===source){if(insert)openQuickInsert();else showQuickResult();return;}
+  try{
+    const answer=await N.mathcore.quickMath(source);
+    if(rev!==quickRevision)return;
+    quickResult={source,answer};quickValue.textContent=answer.includes('=')?answer:'= '+answer;
+    quickAnswer.setAttribute('aria-label',quickValue.textContent+'. insert into note');quickStatus.textContent=quickValue.textContent;
+    showQuickResult();if(insert)openQuickInsert();
+  }catch(e){if(rev===quickRevision){hideQuickResult();quickStatus.textContent=e.message;quickInput.setAttribute('aria-invalid','true');quickInput.title=e.message;}}
+}
+function updateQuick(){
+  clearTimeout(quickTimer);hideQuickResult();quickResult=null;quickValue.textContent='';quickInput.removeAttribute('aria-invalid');quickInput.title='';
+  const rev=++quickRevision;quickTimer=setTimeout(()=>calculateQuick(rev),180);
+}
+quickInput.addEventListener('input',updateQuick);
+quickInput.addEventListener('focus',()=>{if(quickResult&&quickResult.source===quickInput.value.trim())showQuickResult();});
+/* type, read the answer below, enter, then choose how it goes in */
+quickInput.addEventListener('keydown',e=>{
+  if(e.isComposing || e.keyCode===229)return;
+  if(e.key==='Enter'){e.preventDefault();clearTimeout(quickTimer);calculateQuick(quickResult?quickRevision:++quickRevision,true);}
+  if(e.key==='ArrowDown'&&quickResult){e.preventDefault();openQuickInsert();}
+  if(e.key==='Escape'){hideQuickResult();quickInput.blur();}
+});
+quickAnswer.onclick=()=>{if(!quickResult)return;if(quickMenu.hidden)openQuickInsert();else{closeQuickInsert();quickInput.focus();}};
+quickPop.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){closeQuickInsert();quickInput.focus();return;}
+  if(quickMenu.hidden||!['ArrowRight','ArrowLeft','ArrowUp','ArrowDown'].includes(e.key))return;
+  e.preventDefault();const buttons=[...quickMenu.querySelectorAll('button')],i=buttons.indexOf(document.activeElement);
+  if(e.key==='ArrowUp'){closeQuickInsert();quickInput.focus();return;}
+  buttons[i===0?1:0].focus();
+});
+document.addEventListener('pointerdown',e=>{if(!quickPop.contains(e.target)&&e.target!==quickInput)hideQuickResult();},true);
+addEventListener('resize',placeQuickResult);
+window.visualViewport?.addEventListener('resize',placeQuickResult,{passive:true});
+quickMenu.addEventListener('click',e=>{
+  const mode=e.target.closest('[data-mode]')?.dataset.mode;if(!mode||!quickResult)return;
+  const {source,answer}=quickResult;hideQuickResult();document.activeElement?.blur();
+  const latest=S.strokes.filter(st=>st.author==='user'||st.author==='ai').at(-1);
+  const lastLine=S.lines.filter(l=>l.text.trim()).at(-1);
+  const y=latest?latest.bbox[3]+24:lastLine?lastLine.y+Math.max(C.LINE_H,lastLine.h||0)+24:Math.max(120,N.ink.viewOrigin().y+80);
+  if(mode==='text'){
+    const line={id:C.uid(),y,text:source.replace(/=\s*$/,''),h:C.LINE_H};
+    C.act('insert quick maths',()=>S.lines.push(line),()=>{S.lines=S.lines.filter(l=>l.id!==line.id);});
+    N.text.render();N.mathcore.run();N.ink.setTool('select');S.selection=[line.id];S.imageSelection=null;N.ink.render();N.ink.showSelBar();C.growDoc(line.y+120);
+  }else{
+    const writer=N.nota.Writer({x:latest?Math.max(8,latest.bbox[0]):8,y:y-12,rowH:32,label:'insert quick maths',color:N.ink.colors.graphite,instant:true});
+    writer.feed(source.replace(/=\s*$/,'')+' ');writer.finish();writer.setColor(N.ink.colors.blue);
+    writer.feed((answer.includes('=')?'  ':' = ')+answer);writer.finish();
+    N.ink.setTool('select');S.selection=writer.ids;S.imageSelection=null;N.ink.after();N.ink.showSelBar();
+  }
+  sc.scrollTop=Math.max(0,y*M.zoom- sc.clientHeight*.45);C.save();
+});
 function menuSheet(){
   const box = openSheet(
     '<h2>menu</h2>' +
@@ -6676,6 +7290,9 @@ function menuSheet(){
     '<div class="mi"><span>show fractions</span><span style="margin-left:auto"><span class="seg" id="seg-frac" role="group" aria-label="show fractions">' +
       '<button data-v="1" aria-pressed="'+(S.settings.fractions)+'">on</button>' +
       '<button data-v="0" aria-pressed="'+(!S.settings.fractions)+'">off</button></span></span></div>' +
+    '<div class="mi"><span>animations</span><span style="margin-left:auto"><span class="seg" id="seg-motion" role="group" aria-label="animations">' +
+      '<button data-v="1" aria-pressed="'+(S.settings.animations!==false)+'">on</button>' +
+      '<button data-v="0" aria-pressed="'+(S.settings.animations===false)+'">off</button></span></span></div>' +
     '<div class="mi"><span>theme</span><span style="margin-left:auto"><span class="seg" id="seg-theme" role="group" aria-label="theme">' +
       '<button data-v="auto" aria-pressed="'+(S.settings.theme==='auto')+'">auto</button>' +
       '<button data-v="light" aria-pressed="'+(S.settings.theme==='light')+'">light</button>' +
@@ -6689,7 +7306,7 @@ function menuSheet(){
     '<button class="mi" id="refresh-reading"><i class="ph ph-arrows-clockwise"></i>refresh handwriting models<span class="k">re-read the page</span></button>' +
     '<button class="mi" id="refresh-site"><i class="ph ph-arrow-circle-up"></i>update<span class="k">fetch the latest app</span></button>' +
     '<div class="sheet-notes"><p>draw with decides what a single finger does. with pen only, a finger scrolls and a resting hand cannot mark the page. it only takes effect once a pen has been used on this device, so it can never leave you unable to draw.</p>' +
-      '<p>handwriting is read on this device. end an expression with an equals sign for an automatic answer, then tap the answer to check or correct what was read. the model downloads once and works offline after that.</p>' +
+      '<p>handwriting is read on this device. end an expression with an equals sign for an automatic answer, written beside it. the model downloads once and works offline after that.</p>' +
       '<p>a local text recogniser powers handwriting search and helps keep variable names. it never changes your ink.</p>' +
       '<p>maths hints use local rules for arithmetic and linear equations.</p></div>' +
     '<hr>' +
@@ -6707,6 +7324,7 @@ function menuSheet(){
   };
   seg('seg-angle', v=>{ S.settings.angle = v; N.mathcore.run(); C.markDirty(); });
   seg('seg-frac',  v=>{ S.settings.fractions = v==='1'; N.mathcore.run(); C.markDirty(); });
+  seg('seg-motion',v=>{S.settings.animations=v==='1';document.documentElement.dataset.motion=S.settings.animations?'on':'off';if(!S.settings.animations)document.getAnimations().forEach(a=>a.cancel());C.savePrefs();});
   seg('seg-theme', v=>{ S.settings.theme = v; applyTheme(); C.savePrefs(); });
   seg('seg-ai',    v=>{ S.settings.aiOn = v==='1'; C.markDirty(); N.ai.toggle(); dlSyncReaders(); });
   /* the choice is its own confirmation: the pressed segment says what is
@@ -6868,22 +7486,23 @@ function loadImages(){
     el.src = im.src;
   })));
 }
-async function renderExport(){
+async function renderExport(opts={}){
   /* Export is a fresh rendering of note state, not a screenshot of whichever
      transient popup happened to be open. Recalculate first so an immediate
      export after typing cannot capture an older answer. */
   N.mathcore.run();
-  const loaded = await loadImages();
-  const w = M.colW, h = contentBottom();
+  const loaded = opts.loaded || await loadImages();
+  const w=M.colW, top=opts.top||0, h=opts.height||contentBottom();
   /* iPadOS gives a canvas at most about 16.7 million pixels and hands back
      nothing past that, so a long note is drawn smaller rather than lost */
-  const scale = Math.min(Math.min(2, Math.max(1, 2400/Math.max(w,h))), Math.sqrt(16e6/(w*h)), 32000/h);
+  const scale=Math.min(2,Math.sqrt(16e6/(w*h)),32000/h);
+  if(scale<1)throw new Error('this note needs multiple export pages.');
   const cv = document.createElement('canvas');
   cv.width = Math.round(w*scale); cv.height = Math.round(h*scale);
   const x = cv.getContext('2d');
   const cs = getComputedStyle(document.documentElement);
   x.fillStyle = cs.getPropertyValue('--paper').trim(); x.fillRect(0,0,cv.width,cv.height);
-  x.scale(scale, scale);
+  x.scale(scale, scale); x.translate(0,-top);
   for(const pair of loaded){
     if(!pair) continue;
     try{
@@ -6935,19 +7554,28 @@ function download(name, href){
 }
 async function exportPNG(){
   try{
-    const cv = await renderExport();
-    cv.toBlob(b=>{
-      if(!b) return C.toast('could not export that image.');
-      const u = URL.createObjectURL(b);
-      download((S.title||'notas')+'.png', u); setTimeout(()=>URL.revokeObjectURL(u), 60000);
-    });
+    N.mathcore.run();
+    const height=contentBottom(),pageHeight=Math.max(1,Math.floor(Math.min(12000,16e6/M.colW))),count=Math.ceil(height/pageHeight),loaded=await loadImages();
+    for(let i=0;i<count;i++){
+      const cv=await renderExport({top:i*pageHeight,height:Math.min(pageHeight,height-i*pageHeight),loaded});
+      const b=await new Promise(r=>cv.toBlob(r));if(!b)throw Error('image export failed');
+      const u=URL.createObjectURL(b);
+      download((S.title||'notas')+(count>1?' part '+(i+1)+' of '+count:'')+'.png',u);
+      setTimeout(()=>URL.revokeObjectURL(u),60000);
+      if(count>1)await new Promise(r=>setTimeout(r,150));
+    }
+    if(count>1)C.toast('exported '+count+' readable images. allow multiple downloads if your browser asks.',7000);
   }catch(e){ C.toast('could not export that image.'); }
 }
-function exportJSON(){
-  const blob = new Blob([JSON.stringify(C.serialize(), null, 1)], {type:'application/json'});
-  const u = URL.createObjectURL(blob);
-  download((S.title||'notas')+'.notas.json', u); setTimeout(()=>URL.revokeObjectURL(u), 60000);
+function downloadJSON(name,value){
+  const text=C.exportText(value),limit=180*1024*1024;
+  const send=(file,body)=>{const u=URL.createObjectURL(new Blob([body],{type:'application/json'}));download(file,u);setTimeout(()=>URL.revokeObjectURL(u),60000);};
+  if(new Blob([text]).size<=limit){send(name,text);return;}
+  const id=C.uid(),width=20*1024*1024,parts=Math.ceil(text.length/width);
+  for(let part=0;part<parts;part++)setTimeout(()=>send(name.replace(/\.json$/i,'')+' part '+(part+1)+' of '+parts+'.json',JSON.stringify({notasParts:1,id,part,parts,text:text.slice(part*width,(part+1)*width)})),part*700);
+  C.toast('this export has '+parts+' parts. select all parts with import in the notes library.',9000);
 }
+function exportJSON(){downloadJSON((S.title||'notas')+'.notas.json',C.serialize());}
 $('#save-retry').onclick=()=>C.save({announce:true});
 $('#save-export').onclick=()=>exportJSON();
 async function printNote(){
@@ -6955,12 +7583,17 @@ async function printNote(){
      window opened after an await as a pop-up */
   const w = window.open('', '_blank');
   if(!w) return C.toast('allow pop-ups to print this note.');
-  let url;
-  try{ url = (await renderExport()).toDataURL('image/png'); }
-  catch(e){ w.close(); return C.toast('could not print this note.'); }
-  w.document.write('<title>'+esc(S.title)+'</title><style>body{margin:0}img{width:100%}</style><img src="'+url+'">');
-  w.document.close();
-  w.onload = ()=>{ w.focus(); w.print(); };
+  try{
+    N.mathcore.run();
+    const height=contentBottom(),pageHeight=Math.max(1,Math.floor(M.colW*1.414)),loaded=await loadImages();
+    w.document.write('<title>'+esc(S.title)+'</title><style>@page{margin:10mm}body{margin:0}img{display:block;width:100%;break-after:page}img:last-child{break-after:auto}</style>');
+    for(let top=0;top<height;top+=pageHeight){
+      const cv=await renderExport({top,height:Math.min(pageHeight,height-top),loaded});
+      const img=w.document.createElement('img');img.src=cv.toDataURL('image/png');w.document.body.appendChild(img);
+      await img.decode();
+    }
+    w.document.close();w.focus();w.print();
+  }catch(e){w.close();C.toast('could not print this note.');}
 }
 
 /* ---- import, photo drop and paste ---- */
@@ -6982,6 +7615,15 @@ function chooseNoteImport(){pickFile('.json,.notas.json,application/json',f=>imp
    in a supported format keep their exact bytes, so an animated GIF stays
    animated and a photo is not recompressed. */
 const IMAGE_MAX_SIDE=2000, IMAGE_KEEP_BYTES=4*1024*1024, IMAGE_MAX_CHARS=8*1024*1024;
+/* what one note may hold in pictures, so that everything a note can hold
+   also comes back through import */
+const NOTE_IMAGES=200, NOTE_IMAGE_CHARS=64*1024*1024;
+function imageRoom(adding){
+  if(S.images.length>=NOTE_IMAGES){ C.toast('a note holds up to '+NOTE_IMAGES+' pictures. start a new note for more.',6000); return false; }
+  const used=S.images.reduce((n,im)=>n+(im.src||'').length+(im.full||'').length+(im.bg||im.cut||'').length,0);
+  if(used+adding>NOTE_IMAGE_CHARS){ C.toast('this note is full of pictures. start a new note for more.',6000); return false; }
+  return true;
+}
 const IMAGE_KEEP=/^image\/(png|jpeg|gif|webp)$/i, IMAGE_OPAQUE=/^image\/(jpeg|bmp|tiff|heic|heif)$/i;
 function readAsDataURL(f){
   return new Promise((resolve,reject)=>{
@@ -7062,7 +7704,7 @@ function imageSpot(at,w,h){
   if(!Number.isFinite(x))x=24;if(!Number.isFinite(y))y=80;
   const maxX=Math.max(0,M.contentW-80);
   x=C.clamp(Math.round(x),0,maxX);y=Math.max(0,Math.round(y));
-  for(let i=0;i<12&&S.images.some(im=>Math.abs(im.x-x)<2&&Math.abs(im.y-y)<2);i++){x=Math.min(x+24,maxX);y+=24;}
+  for(let i=0;i<=S.images.length&&S.images.some(im=>Math.abs(im.x-x)<2&&Math.abs(im.y-y)<2);i++){x=Math.min(x+24,maxX);y+=24;}
   const iw=Math.min(M.contentW-x,Math.max(80,w));
   return {x,y,w:iw,h:iw*h/w};
 }
@@ -7077,7 +7719,7 @@ function flowImage(img,ln){
   if(h>maxH){h=maxH;w=h*img.w/img.h;}
   w=Math.round(w);h=Math.round(h);
   const y=ln.text?ln.y+lineH+gap:ln.y;
-  const im={id:C.uid(),x:0,y,w,h,src:img.src};
+  const im={id:C.uid(),z:Math.max(Date.now(),...S.images.map(i=>(i.z||0)+1)),x:0,y,w,h,src:img.src};
   const before=S.lines.map(l=>({...l}));
   /* room for the picture, and for the fresh line under it when one is added */
   const shift=h+gap*2+(ln.text?C.LINE_H:0);
@@ -7088,8 +7730,8 @@ function flowImage(img,ln){
   /* the caret continues under the picture: the empty line that was replaced,
      or a new line when the picture sits under written text */
   if(ln.text)after.push({id:nextId,y:y+h+gap*2,text:'',h:C.LINE_H});
-  const restore=list=>{S.lines=list.map(l=>({...l}));N.text.render();N.text.queue();};
-  C.act('add image',()=>{S.images.push(im);restore(after);},()=>{S.images=S.images.filter(i=>i.id!==im.id);restore(before);});
+  const ch=N.text.lineChanges(before,after),redraw=()=>{N.text.render();N.text.queue();};
+  C.act('add image',()=>{if(!S.images.some(i=>i.id===im.id))S.images.push(im);ch.forward();redraw();},()=>{S.images=S.images.filter(i=>i.id!==im.id);ch.back();redraw();});
   N.text.focusLine(ln.text?nextId:ln.id,false);
   return im;
 }
@@ -7101,12 +7743,13 @@ async function insertImageFile(f,at,flowLine){
   catch(e){C.toast(e.message||'could not read that image.');return false;}
   // The note may have changed while a large image was decoding.
   if(note!==S.id)return false;
+  if(!imageRoom(img.src.length))return false;
   let im;
   const line=flowLine&&S.lines.find(l=>l.id===flowLine.id);
   if(line)im=flowImage(img,line);
   else{
-    im={id:C.uid(),...imageSpot(at,img.w,img.h),src:img.src};
-    C.act('add image',()=>{S.images.push(im);},()=>{S.images=S.images.filter(i=>i.id!==im.id);});
+    im={id:C.uid(),z:Math.max(Date.now(),...S.images.map(i=>(i.z||0)+1)),...imageSpot(at,img.w,img.h),src:img.src};
+    C.act('add image',()=>{if(!S.images.some(i=>i.id===im.id))S.images.push(im);},()=>{S.images=S.images.filter(i=>i.id!==im.id);});
   }
   C.growDoc(im.y+im.h);C.layout();N.ink.render();N.text.refreshPlaceholder();
   return true;
@@ -7212,6 +7855,8 @@ async function pasteFromClipboard(){
   }
   if(files.length)return (await insertImages(files))>0;
   if(inkIsNewest(text))return N.ink.pasteInk();
+  /* ink cut here and not pasted since is the one thing that would be lost */
+  if(N.ink.pasteCut())return true;
   C.toast(N.ink.readClip()?'nothing new to paste. copy ink with select, or copy an image, then try again.':'nothing to paste. copy ink with select, or copy an image, then try again.',4500);
   return false;
 }
@@ -7228,7 +7873,11 @@ function validateImportedNote(doc){
   const idSet=new Set(),safeId=raw=>{
     const id=String(raw||C.uid());if(id.length>160||idSet.has(id))throw new Error('this note contains invalid or duplicate item ids.');idSet.add(id);return id;
   };
-  if(doc.strokes.length>20000||doc.lines.length>5000||doc.images.length>200)throw new Error('this note is too large to import safely.');
+  /* Anything notas itself can make comes back in. The caps used to be lower
+     than a long notebook or a few screenshots reach, so an export of such a
+     note was a backup that could not be restored. Pictures are held to the
+     same caps when they are added (NOTE_IMAGES, NOTE_IMAGE_CHARS). */
+  if(doc.strokes.length>200000||doc.lines.length>50000||doc.images.length>NOTE_IMAGES)throw new Error('this note is too large to import safely.');
   const strokes=doc.strokes.map(st=>{
     if(!st||!Array.isArray(st.pts)||st.pts.length<3||st.pts.length%3||st.pts.length>600000)throw new Error('this note contains invalid ink data.');
     const pts=st.pts.map(Number);
@@ -7246,9 +7895,9 @@ function validateImportedNote(doc){
       ...(typeof st.color==='string'&&/^#[0-9a-f]{6}$/i.test(st.color)?{color:st.color}:{})};
   });
   const lines=doc.lines.map(l=>{
-    if(!l||!coord(l.y)||typeof l.text!=='string'||l.text.length>250000)throw new Error('this note contains invalid typed text.');
+    if(!l||!coord(l.y)||typeof l.text!=='string'||l.text.length>5000000)throw new Error('this note contains invalid typed text.');
     const h=Number(l.h||C.LINE_H);if(!Number.isFinite(h)||h<C.LINE_H||h>200000)throw new Error('this note contains invalid text layout.');
-    return {id:safeId(l.id),y:Number(l.y),text:l.text,h,...(l.tutor?{tutor:true}:{}),...(typeof l.answerPrefix==='string'&&l.text.startsWith(l.answerPrefix)?{answerPrefix:l.answerPrefix}:{}),...(l.suppressAnswer===l.text?{suppressAnswer:l.text}:{})};
+    return {id:safeId(l.id),y:Number(l.y),...(coord(l.x)?{x:Number(l.x)}:{}),text:l.text,h,...(l.tutor?{tutor:true}:{}),...(typeof l.answerPrefix==='string'&&l.text.startsWith(l.answerPrefix)?{answerPrefix:l.answerPrefix}:{}),...(l.suppressAnswer===l.text?{suppressAnswer:l.text}:{})};
   });
   let imageChars=0;
   const images=doc.images.map(im=>{
@@ -7256,12 +7905,18 @@ function validateImportedNote(doc){
     /* a cropped picture keeps its original and the box cut from it */
     const c=im.crop,full=typeof im.full==='string'&&PICTURE.test(im.full)&&c&&typeof c==='object'&&
       [c.l,c.t,c.r,c.b].every(v=>Number.isFinite(v)&&v>=0&&v<=1)&&c.l<c.r&&c.t<c.b?im.full:'';
-    imageChars+=im.src.length+full.length;if(im.src.length>16*1024*1024||full.length>16*1024*1024||imageChars>32*1024*1024)throw new Error('embedded images are too large to import safely.');
+    /* a picture without its background keeps the original (bg), and one
+       with it back keeps the cut-out (cut): never both */
+    const bg=typeof im.bg==='string'&&PICTURE.test(im.bg)?im.bg:'',cut=!bg&&typeof im.cut==='string'&&PICTURE.test(im.cut)?im.cut:'';
+    /* a crop keeps its original in full and the background toggle the
+       other version, so a note can hold up to three times what the
+       pictures added to it came to */
+    imageChars+=im.src.length+full.length+bg.length+cut.length;if(im.src.length>16*1024*1024||full.length>16*1024*1024||(bg||cut).length>16*1024*1024||imageChars>3*NOTE_IMAGE_CHARS)throw new Error('embedded images are too large to import safely.');
     if(!place(im.x)||!place(im.y)||!finite(im.w)||!finite(im.h)||Number(im.w)<=0||Number(im.h)<=0)throw new Error('this note contains invalid image geometry.');
     // a picture is a picture: readings an older build attached to it are dropped
     return {id:safeId(im.id),x:Number(im.x),y:Number(im.y),w:Number(im.w),h:Number(im.h),src:im.src,
       ...(finite(im.rot,100)&&Number(im.rot)?{rot:Number(im.rot)}:{}),
-      ...(full?{full,crop:{l:c.l,t:c.t,r:c.r,b:c.b}}:{})};
+      ...(full?{full,crop:{l:c.l,t:c.t,r:c.r,b:c.b}}:{}),...(bg?{bg}:{}),...(cut?{cut}:{})};
   });
   const textTranscripts=Array.isArray(doc.textTranscripts)?doc.textTranscripts.filter(t=>t&&typeof t.hash==='string'&&typeof t.text==='string'&&t.hash.length<=500&&t.text.length<=10000).map(t=>({hash:t.hash,text:t.text,confidence:Number(t.confidence)||0,modelVersion:String(t.modelVersion||''),...(t.asked?{asked:true}:{})})):[];
   const transcripts=Array.isArray(doc.transcripts)?doc.transcripts.filter(t=>t&&typeof t.hash==='string'&&t.hash.length<=500).slice(0,20000).map(t=>({
@@ -7279,22 +7934,27 @@ function validateImportedNote(doc){
   }
   const answers=Array.isArray(doc.answers)?doc.answers.filter(e=>Array.isArray(e)&&typeof e[0]==='string'&&e[0].length<=1000&&e[1]&&typeof e[1].key==='string'&&e[1].key.length<=250000&&typeof e[1].result==='string'&&e[1].result.length<=250000).slice(0,20000):[];
   return {title:typeof doc.title==='string'?doc.title.slice(0,500):'imported note',strokes,lines,images,textTranscripts,transcripts,answers,
+    created:Number.isFinite(Number(doc.created))&&Number(doc.created)>0?Number(doc.created):Date.now(),folder:typeof doc.folder==='string'?doc.folder.slice(0,200):'',
     docH:finite(doc.docH,2e6)?Math.max(1600,Number(doc.docH)):1600,settings};
 }
 async function importNoteFile(f){
   if(changingNote)return false;
   changingNote=true;
   try{
-    do{if(!await C.save())return false;}while(S.dirty);
-    if(f.size>36*1024*1024)throw new Error('that note export is too large to import safely.');
+    if(!await settle())return false;
+    if(f.size>200*1024*1024)throw new Error('that note export is too large to import safely.');
     const raw=JSON.parse(await f.text());
+    if(raw?.notasParts)throw Error('select all parts together using import in the notes library.');
     /* a backup of many notes goes into the library rather than onto the page */
     if(raw&&raw.notasBundle&&Array.isArray(raw.notes)&&N.library)return await N.library.importBundle(raw);
     const doc=validateImportedNote(raw);
+    /* what was written while the file was read belongs to the old note */
+    if(S.dirty&&!await settle())return false;
     blank();
     N.collab&&N.collab.noteChanged();
     S.title=typeof doc.title==='string'&&doc.title.trim()?doc.title.trim():'imported note';
-    S.created=Date.now();
+    S.created=doc.created;
+    if(doc.folder)S.newFolder={id:S.id,folder:doc.folder};
     S.strokes=doc.strokes;S.lines=doc.lines;S.images=doc.images;
     S.textTranscripts=doc.textTranscripts;
     S.docH=Math.max(1600,Number(doc.docH)||1600);
@@ -7411,6 +8071,8 @@ window.addEventListener('keydown', e=>{
   if(mod && e.shiftKey && k === 'n'){ e.preventDefault(); newNote(); return; }
   if((mod && e.key === '/') || (!typing && e.key === '?')){ e.preventDefault(); shortcutsSheet(); return; }
   if(typing) return;
+  if(e.defaultPrevented)return;
+  if(document.querySelector('.sheet:not(.leave)') || N.library?.modal){ if(e.key==='Escape'){e.preventDefault();closeSheet();} return; }
   if(mod && k === 'a'){ e.preventDefault(); N.ink.selectAll(); return; }
   /* The hint surface is intentionally hidden in this build. Do not let its old
      shortcut expose a panel that has no visible launcher. */
@@ -7428,10 +8090,10 @@ window.addEventListener('keydown', e=>{
   if(mod && k === 'z'){ e.preventDefault(); e.shiftKey ? C.redo() : C.undo(); return; }
   if(mod && k === 'y'){ e.preventDefault(); C.redo(); return; }
   /* Shift makes the key 'Z', and Caps Lock does too: compare the lower case */
-  if(k === 'z' && !mod){ e.shiftKey ? C.redo() : C.undo(); return; }
+  if(k === 'z' && !mod && !e.altKey){ e.shiftKey ? C.redo() : C.undo(); return; }
   const map = {'p':'pen','v':'select','t':'text'};
-  if(map[k]){ N.ink.setTool(map[k]); if(map[k] === 'pen') penNotice(); return; }
-  if(k === 'e' && !e.repeat){ springFrom = S.tool; springAt = Date.now(); N.ink.setTool('eraser'); }
+  if(!mod && !e.altKey && map[k]){ N.ink.setTool(map[k]); if(map[k] === 'pen') penNotice(); return; }
+  if(!mod && !e.altKey && k === 'e' && !e.repeat){ springFrom = S.tool; springAt = Date.now(); N.ink.setTool('eraser'); }
   if(e.key === 'Delete' || e.key === 'Backspace'){
     if(S.imageSelection){
       const del=[...document.querySelectorAll('#selbar button')].find(b=>b.textContent==='delete');
@@ -7451,10 +8113,11 @@ window.addEventListener('keydown', e=>{
 window.addEventListener('keyup', e=>{
   if(typeof e.key === 'string' && e.key.toLowerCase() === 'e' && springFrom){
     /* held long enough to be a spring, short enough to be a switch */
-    if(Date.now() - springAt > 350) N.ink.setTool(springFrom);
+    if(!N.ink.isTyping(e) && Date.now() - springAt > 350) N.ink.setTool(springFrom);
     springFrom = null;
   }
 });
+window.addEventListener('blur', ()=>{ if(springFrom){N.ink.setTool(springFrom);springFrom=null;} });
 $('#btn-undo').onclick = ()=>C.undo();
 $('#btn-share').onclick = ()=>N.collab && N.collab.share();
 
@@ -7518,9 +8181,17 @@ function dlRender(){
   }
 }
 function dlPlace(){
-  const r = dlBtn.getBoundingClientRect();
-  dlPop.style.top = Math.round(r.bottom + 8)+'px';
-  dlPop.style.right = Math.max(16, Math.round(innerWidth - r.right))+'px';
+  const r=dlBtn.getBoundingClientRect(), v=window.visualViewport;
+  const x=v?v.offsetLeft:0, y=v?v.offsetTop:0, w=v?v.width:innerWidth, h=v?v.height:innerHeight;
+  const bar=$('#topbar').getBoundingClientRect();
+  const left=Math.max(x+12,bar.left), right=Math.min(x+w-12,bar.right);
+  const width=Math.max(0,Math.min(400,right-left));
+  const top=Math.max(y+12,Math.min(r.bottom+8,y+h-80));
+  dlPop.style.width=width+'px';
+  dlPop.style.left=Math.max(left,Math.min(r.right-width,right-width))+'px';
+  dlPop.style.right='auto';
+  dlPop.style.top=top+'px';
+  dlPop.style.maxHeight='max(0px, calc('+Math.max(0,y+h-12-top)+'px - var(--safe-b)))';
 }
 function dlOpen(open){
   if(dlPop.hidden === !open) return;
@@ -7533,6 +8204,7 @@ dlBtn.onclick = ()=>dlOpen(dlPop.hidden);
 dlPop.addEventListener('keydown', e=>{ if(e.key === 'Escape'){ e.preventDefault(); dlOpen(false); } });
 document.addEventListener('pointerdown', e=>{ if(!dlPop.hidden && !dlPop.contains(e.target) && !dlBtn.contains(e.target)) dlOpen(false); }, true);
 addEventListener('resize', ()=>{ if(!dlPop.hidden) dlPlace(); });
+for(const type of ['resize','scroll']) window.visualViewport?.addEventListener(type,()=>{ if(!dlPop.hidden) dlPlace(); });
 /* the two readers report their own setup; the panel mirrors it */
 function dlSyncReaders(){
   if(!N.ai) return;
@@ -7571,6 +8243,7 @@ function endTitleEdit(keep){
 }
 titleEl.onclick = editTitle;
 titleIn.addEventListener('keydown', e=>{
+  if(e.isComposing || e.keyCode===229)return;
   if(e.key === 'Enter'){ e.preventDefault(); endTitleEdit(true); titleEl.focus(); }
   else if(e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); endTitleEdit(false); titleEl.focus(); }
 });
@@ -7582,15 +8255,18 @@ function checkIcons(){
   if(document.fonts && document.fonts.ready) document.fonts.ready.then(()=>{ if(!ok()) document.body.classList.add('noicons'); });
 }
 
-document.addEventListener('visibilitychange', ()=>{ if(document.hidden){ C.flushView(); C.save().then(()=>N.library && N.library.leaving()); } });
-window.addEventListener('pagehide', ()=>{ C.flushView(); const t=$('#toast'); if(t) t.classList.remove('in'); });
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden){ C.flushView(); C.rescueSave(); C.save().then(()=>N.library && N.library.leaving()); } });
+/* pagehide is the last event some browsers give (a tab closed, a page
+   bfcached without a visibility change): a note with unsaved words starts
+   its save here too */
+window.addEventListener('pagehide', ()=>{ C.flushView(); if(S.dirty){C.rescueSave(); C.save();} const t=$('#toast'); if(t) t.classList.remove('in'); });
 window.addEventListener('beforeunload', e=>{ C.flushView(); if(S.dirty){ C.save(); } });
 
 /* closing "the panel" from outside also closes the notes library when it
    is the thing covering the page */
 function closePanel(immediate){ if(!sheet && immediate !== true && N.library) N.library.close(); closeSheet(immediate); }
 N.ui = { openSheet, closeSheet:closePanel, notesSheet, menuSheet, privacySheet, penNotice, refreshTitle, newNote, openNote,
-         shortcutsSheet, applyTheme, checkIcons, showAsk, exportPNG, exportJSON, printNote, renderExport, paintAll,
+         shortcutsSheet, applyTheme, checkIcons, showAsk, exportPNG, exportJSON, printNote, renderExport, downloadJSON, paintAll,
          searchText, searchHit, fuzzyHandwriting, chooseImage, chooseNoteImport, importNoteFile,
           insertImageFile, insertImages, pasteFromClipboard, transferImages, transferHasText, imageSpot, normaliseImage,
           validateImportedNote, download, esc, get changing(){ return changingNote; } };
@@ -7608,7 +8284,7 @@ N.ui = { openSheet, closeSheet:closePanel, notesSheet, menuSheet, privacySheet, 
    actions, where to move it, confirming a delete) are still sheets on touch
    and a small menu under the pointer on a desktop.
    Notes are filed in flat folders, can be pinned, and go to a trash that
-   empties itself after 30 days. Each has a small WebP picture of its first
+   keeps notes until they are explicitly deleted. Each has a small WebP picture of its first
    screen, because a page of handwriting is recognised by its shape long
    before anyone reads its title.
    ========================================================================= */
@@ -7662,8 +8338,12 @@ function sorted(rows){
   const trash = L.view === 'trash';
   return rows.slice().sort((a,b)=>trash ? (b.trashed-a.trashed) : ((!!b.pinned - !!a.pinned) || cmp(a,b)));
 }
+let unreadWarned = 0;
 async function refresh(){
-  L.ix = await C.Store.index();
+  /* a list that cannot be read now keeps what it showed last */
+  try{ L.ix = await C.Store.index(); }
+  catch(e){ if(Date.now()-unreadWarned > 60000){ unreadWarned = Date.now(); C.toast('your notes could not be read just now. they are safe. reload if this keeps happening.', 7000); } }
+  warnTrashedHere();
   await purgeTrash();
   L.folders = await loadFolders();
   if(L.view.startsWith('f:') && !L.folders.includes(L.view.slice(2))) L.view = 'all';
@@ -7672,12 +8352,22 @@ async function refresh(){
   paintChips();
   if(L.query) await runSearch(L.query); else paint();
 }
-/* notes that have sat in the trash for 30 days go for good, once a session */
-async function purgeTrash(){
-  if(L.purged) return; L.purged = true;
-  const cutoff = Date.now() - TRASH_DAYS*864e5, old = L.ix.filter(r=>r.trashed && r.trashed < cutoff && r.id !== S.id);
-  for(const r of old) await C.deleteStoredNote(r.id);
-  if(old.length) L.ix = await C.Store.index();
+/* Trash is retained until explicitly deleted, even if the device clock jumps. */
+async function purgeTrash(){ L.purged=true; }
+/* The open note went to the trash from another tab. It still saves, but
+   into the trash, so the page says so once rather than let it be written
+   in until it is purged. */
+let trashedWarned = null;
+/* notes this tab is moving to the trash itself: it moves off them anyway */
+const trashingHere = new Set();
+function warnTrashedHere(){
+  for(const id of trashingHere) if(id !== S.id) trashingHere.delete(id);
+  if(trashingHere.has(S.id)) return;
+  const row = L.ix.find(r=>r.id===S.id);
+  if(!row || !row.trashed){ if(trashedWarned===S.id) trashedWarned = null; return; }
+  if(trashedWarned === S.id) return;
+  trashedWarned = S.id;
+  C.toast('this note is in the trash (moved there from another tab). restore it from the trash to keep it.', 9000);
 }
 
 function chip(view, icon, label, count){
@@ -7720,7 +8410,7 @@ function setView(v){
 
 function emptyText(){
   if(L.query) return 'no notes match that yet.';
-  if(L.view === 'trash') return 'the trash is empty. deleted notes wait here for '+TRASH_DAYS+' days.';
+  if(L.view === 'trash') return 'the trash is empty. notes stay here until you delete them forever.';
   if(L.view === 'shared') return 'no shared notes.';
   if(L.view.startsWith('f:')) return 'nothing in this folder yet. move notes here from their menu, or start one with new note.';
   return 'no notes yet. start one with new note.';
@@ -7781,6 +8471,7 @@ search.addEventListener('input', ()=>{
   searchTimer = setTimeout(()=>runSearch(L.query), 150);
 });
 search.addEventListener('keydown', e=>{
+  if(e.isComposing || e.keyCode===229)return;
   if(e.key === 'ArrowDown'){ const f = list.querySelector('.note-row .t'); if(f){ e.preventDefault(); f.focus(); } }
   if(e.key === 'Enter'){ const f = list.querySelector('.note-row'); if(f){ e.preventDefault(); openRow(f.dataset.id); } }
 });
@@ -8033,7 +8724,7 @@ el.addEventListener('keydown', e=>{
 /* drawer: a swipe toward the edge it came from puts it away */
 {
   let sw = null;
-  panel.addEventListener('pointerdown', e=>{ if(el.dataset.mode === 'drawer' && e.pointerType !== 'mouse') sw = {x:e.clientX, y:e.clientY, id:e.pointerId}; });
+  panel.addEventListener('pointerdown', e=>{ if(!sw && el.dataset.mode === 'drawer' && e.pointerType !== 'mouse') sw = {x:e.clientX, y:e.clientY, id:e.pointerId}; });
   panel.addEventListener('pointermove', e=>{
     if(!sw || e.pointerId !== sw.id) return;
     const dx = e.clientX - sw.x, dy = e.clientY - sw.y;
@@ -8109,6 +8800,7 @@ list.addEventListener('contextmenu', e=>{
   rowMenu(row.dataset.id, kb ? row.querySelector('.lib-more') : {x:e.clientX, y:e.clientY});
 });
 list.addEventListener('pointerdown', e=>{
+  if(swipe)return;
   lastPointer = e.pointerType;
   const row = e.target.closest('.note-row'); if(!row || e.button !== 0 || e.target.closest('.lib-more')) return;
   if(e.pointerType === 'mouse') return;
@@ -8381,16 +9073,16 @@ async function rename(id, name){
     S.title = name; C.markDirty(); N.ui.refreshTitle(); await C.save();
   } else {
     const ok = await C.withNoteLock(id, async()=>{
-      const doc = await C.Store.get('notas.note.'+id); if(!doc) return false;
-      doc.title = name; doc.rev = (doc.rev||0) + 1;
+      const doc = await C.Store.read('notas.note.'+id); if(!doc) return false;
+      doc.title = name;
       if(!await C.Store.set('notas.note.'+id, doc)) return false;
       await C.withIndexLock(async()=>{
         const ix = await C.Store.index(), at = ix.findIndex(r=>r.id===id);
         if(at >= 0){ ix[at] = {...ix[at], title:name}; await C.Store.putIndex(ix); }
-      });
-      chan && chan.postMessage({id, rev:doc.rev});
+      }).catch(()=>{});
+      chan && chan.postMessage({id, rev:doc.rev,title:name});
       return true;
-    });
+    }).catch(()=>false);
     if(!ok) C.toast('could not rename that note.');
     L.docs.delete(id);
   }
@@ -8401,13 +9093,17 @@ async function trash(ids){
   if(!ids.length) return;
   if(ids.includes(S.id)) await C.save();
   const now = Date.now();
-  if(!await C.patchIndexRows(ids, ()=>({trashed:now}))) C.toast('could not move that to the trash.');
-  endSelect();
-  /* the open note went to the trash: the page moves on to the next note */
-  if(ids.includes(S.id)){
-    const next = (await C.Store.index()).filter(r=>!r.trashed && !ids.includes(r.id)).sort((a,b)=>(b.updated||0)-(a.updated||0))[0];
-    if(next) await N.ui.openNote(next.id); else await N.ui.newNote();
-  }
+  ids.forEach(id=>trashingHere.add(id));
+  try{
+    if(!await C.patchIndexRows(ids, ()=>({trashed:now}))) C.toast('could not move that to the trash.');
+    endSelect();
+    /* the open note went to the trash: the page moves on to the next note */
+    if(ids.includes(S.id)){
+      let next = null;
+      try{ next = (await C.Store.index()).filter(r=>!r.trashed && !ids.includes(r.id)).sort((a,b)=>(b.updated||0)-(a.updated||0))[0]; }catch(e){}
+      if(next) await N.ui.openNote(next.id); else await N.ui.newNote();
+    }
+  }finally{ ids.forEach(id=>{ if(id !== S.id) trashingHere.delete(id); }); }
   await refresh();
   offerUndo(ids.length > 1 ? ids.length+' notes moved to the trash.' : 'moved to the trash.', async()=>{
     await C.patchIndexRows(ids, ()=>({trashed:undefined})); await refresh();
@@ -8433,7 +9129,7 @@ async function duplicate(id){
       ix.splice(at < 0 ? 0 : at, 0, fresh);
       return await C.Store.putIndex(ix);
     });
-  });
+  }).catch(()=>false);
   if(!ok) return C.toast('could not copy that note.');
   const t = await thumbOf(id); if(t) await storeThumb(nid, {...t, at:now});
   broadcast(); await refresh();
@@ -8444,20 +9140,43 @@ async function duplicate(id){
 async function exportNotes(ids, backup){
   if(ids.includes(S.id)) await C.save();
   const docs = [];
+  let unread = 0;
   for(const id of ids){
-    const doc = id === S.id ? C.serialize() : await C.Store.get('notas.note.'+id);
+    let doc = null;
+    try{ doc = id === S.id ? C.serialize() : await C.Store.read('notas.note.'+id); }catch(e){}
     const row = L.ix.find(r=>r.id===id);
-    if(doc) docs.push(row && row.folder ? {...doc, folder:row.folder} : doc);
+    if(doc) docs.push(row && row.folder ? {...doc, folder:row.folder} : doc); else unread++;
   }
-  if(!docs.length) return C.toast('nothing to export.');
+  /* a note that could not be read is said, not left out of a backup quietly */
+  if(!docs.length) return C.toast(unread ? 'those notes could not be read just now, so nothing was exported. try again.' : 'nothing to export.', 7000);
+  if(unread) C.toast(unread+' of '+ids.length+' notes could not be read just now and are not in this file. export again to include them.', 9000);
   const day = new Date().toISOString().slice(0,10);
-  let name, body;
-  if(docs.length === 1 && !backup){ name = (C.displayTitle(docs[0].title, docs[0].lines)||'notas')+'.notas.json'; body = docs[0]; }
-  else { name = (backup ? 'notas backup ' : 'notas '+docs.length+' notes ')+day+'.notas.json'; body = {notasBundle:1, exported:new Date().toISOString(), notes:docs}; }
-  const blob = new Blob([JSON.stringify(body, null, 1)], {type:'application/json'});
-  const url = URL.createObjectURL(blob);
-  N.ui.download(name.replace(/[\\/:*?"<>|]+/g,' '), url);
-  setTimeout(()=>URL.revokeObjectURL(url), 60000);
+  const save = (name, text, delay)=>setTimeout(()=>{
+    const url = URL.createObjectURL(new Blob([text], {type:'application/json'}));
+    N.ui.download(name.replace(/[\\/:*?"<>|]+/g,' '), url);
+    setTimeout(()=>URL.revokeObjectURL(url), 60000);
+  }, delay);
+  if(docs.length === 1 && !backup){ N.ui.downloadJSON((C.displayTitle(docs[0].title, docs[0].lines)||'notas')+'.notas.json',docs[0]); endSelect(); return; }
+  /* A bundle bigger than import takes (200 MB a file) could never be
+     restored, so a large one is split into parts; import takes them all
+     back at once, several files chosen together. */
+  const PART = 150*1024*1024, exported = new Date().toISOString(), parts = [];
+  let cur = [], size = 0;
+  for(const d of docs){
+    const t = JSON.stringify(d);
+    const bytes=new Blob([t]).size;
+    if(cur.length && size + bytes > PART){ parts.push(cur); cur = []; size = 0; }
+    cur.push(t); size += bytes;
+  }
+  parts.push(cur);
+  const stem = (backup ? 'notas backup ' : 'notas '+docs.length+' notes ')+day;
+  parts.forEach((list, i)=>{
+    const text = parts.length === 1 && size < 8*1024*1024
+      ? JSON.stringify({notasBundle:1, exported, notes:list.map(t=>JSON.parse(t))}, null, 1)
+      : '{"notasBundle":1,"exported":'+JSON.stringify(exported)+(parts.length > 1 ? ',"part":'+(i+1)+',"parts":'+parts.length : '')+',"notes":['+list.join(',')+']}';
+    setTimeout(()=>N.ui.downloadJSON(stem+(parts.length > 1 ? ' part '+(i+1)+' of '+parts.length : '')+'.notas.json',JSON.parse(text)),i*700);
+  });
+  if(parts.length > 1) C.toast('the backup is '+parts.length+' files. keep them together, and choose them all when importing.', 9000);
   endSelect();
 }
 function importPick(){
@@ -8465,13 +9184,25 @@ function importPick(){
   input.type = 'file'; input.accept = '.json,.notas.json,application/json'; input.multiple = true; input.hidden = true;
   input.onchange = async()=>{
     const files = [...(input.files||[])]; input.remove();
-    const notes = [];
+    const notes = [],chunks=new Map();
     for(const f of files){
       try{
         if(f.size > 200*1024*1024) throw new Error('too large');
         const raw = JSON.parse(await f.text());
-        if(raw && raw.notasBundle && Array.isArray(raw.notes)) notes.push(...raw.notes); else notes.push(raw);
+        if(raw?.notasParts){
+          if(typeof raw.id!=='string'||!Number.isInteger(raw.parts)||raw.parts<1||raw.parts>100||!Number.isInteger(raw.part)||raw.part<0||raw.part>=raw.parts||typeof raw.text!=='string')throw Error('invalid part');
+          let group=chunks.get(raw.id);if(!group){group={parts:raw.parts,text:new Map()};chunks.set(raw.id,group);}
+          if(group.parts!==raw.parts||group.text.has(raw.part))throw Error('duplicate or inconsistent part');
+          group.text.set(raw.part,raw.text);
+        }else if(raw && raw.notasBundle && Array.isArray(raw.notes)) notes.push(...raw.notes); else notes.push(raw);
       }catch(e){ C.toast('could not read '+f.name+'.', 5000); }
+    }
+    for(const group of chunks.values()){
+      try{
+        if(group.text.size!==group.parts)throw Error('missing parts');
+        const raw=JSON.parse(Array.from({length:group.parts},(_,i)=>group.text.get(i)).join(''));
+        if(raw?.notasBundle&&Array.isArray(raw.notes))notes.push(...raw.notes);else notes.push(raw);
+      }catch(e){C.toast('that split export is incomplete or damaged. select every part together.',7000);}
     }
     if(notes.length) await importBundle({notasBundle:1, notes}, L.view.startsWith('f:') ? L.view.slice(2) : '');
   };
@@ -8489,18 +9220,23 @@ async function importBundle(raw, intoFolder){
       if(!v.lines.length) v.lines.push({id:C.uid(), y:120, text:'', h:C.LINE_H});
       const doc = {id, title:v.title.trim()||'untitled', created, updated, rev:1, settings:v.settings, docH:v.docH, view:{scrollTop:0, scrollLeft:0},
         strokes:v.strokes, lines:v.lines, images:v.images, localVersion:2, answers:v.answers, transcripts:v.transcripts, textTranscripts:v.textTranscripts};
-      if(!await C.Store.set('notas.note.'+id, doc)){ bad++; continue; }
       const folder = cleanFolder(intoFolder || note.folder);
+      doc.library=folder?{folder}:{};
+      if(!await C.Store.set('notas.note.'+id, doc)){ bad++; continue; }
       if(folder) folders.add(folder);
       rows.push({id, title:doc.title, updated, created, preview:C.firstLine(doc.lines), ...(folder ? {folder} : {})});
     }catch(e){ bad++; }
   }
+  let listed = true;
   if(rows.length){
-    await C.withIndexLock(async()=>{ const ix = await C.Store.index(); await C.Store.putIndex([...rows, ...ix]); });
+    /* the notes are stored already; a list that cannot take them now gets
+       them at the next launch, when stored notes missing from it are listed */
+    listed = await C.withIndexLock(async()=>{ const ix = await C.Store.index(); return await C.Store.putIndex([...rows, ...ix]); }).catch(()=>false);
     if(folders.size) await saveFolders([...(await C.Store.get('notas.folders')||[]), ...folders]);
     broadcast();
   }
   if(L.open) await refresh();
+  if(!listed){ C.toast('the imported notes are saved, but the list could not be updated. reload to see them.', 8000); return true; }
   C.toast(rows.length ? 'imported '+rows.length+' note'+(rows.length>1?'s':'')+(bad ? ', '+bad+' could not be read.' : '.') : 'no notes could be imported from that file.', 6000);
   return rows.length > 0;
 }
@@ -8532,7 +9268,12 @@ if(chan) chan.onmessage = e=>{
       (window.requestIdleCallback||setTimeout)(()=>pictureCurrent(), {timeout:2000});
     }
   }
-  if(!L.open) return;
+  if(!L.open){
+    /* closed, the list is not kept up, but the open note going to the trash
+       from another tab is still said */
+    if(m.index){ clearTimeout(refreshTimer); refreshTimer = setTimeout(()=>{ C.Store.index().then(ix=>{ L.ix = ix; warnTrashedHere(); }, ()=>{}); }, 250); }
+    return;
+  }
   clearTimeout(refreshTimer);
   refreshTimer = setTimeout(()=>{ if(!swipe && !pop) refresh(); }, 250);
 };
@@ -8796,7 +9537,7 @@ function run(){
   ok('x stays a variable before a bracket', mc.normalize('3 x (x+2)') === '3 x (x+2)', mc.normalize('3 x (x+2)'));
   ok('x stays a variable when assigned', mc.normalize('x = 5') === 'x = 5', mc.normalize('x = 5'));
   ok('latex fraction', mc.latexToMath('\\frac{3}{4}') === '((3)/(4))', mc.latexToMath('\\frac{3}{4}'));
-  ok('latex sqrt', mc.latexToMath('\\sqrt{9}') === 'sqrt((9))', mc.latexToMath('\\sqrt{9}'));
+  ok('latex sqrt', mc.evalRaw(mc.latexToMath('\\sqrt{9}'),mc.baseScope()) === 3, mc.latexToMath('\\sqrt{9}'));
   ok('latex times', ev('12 \\times 7') === '84', ev('12 \\times 7'));
 
   S.settings.angle = 'deg';
@@ -8934,9 +9675,44 @@ async function prepareOffline(){
     registration.addEventListener('updatefound',()=>watch(registration.installing));
   }catch{failed();}
 }
+/* The notebook does not open without its storage. Opening anyway showed an
+   empty notebook, and the first thing written replaced the list of notes
+   with a list of one, while the others were still on the device. */
+function cannotOpen(detail, goOn){
+  const word=document.getElementById('prep-word'),text=document.getElementById('prep-detail');
+  if(word)word.textContent='not opened';
+  if(text){
+    text.textContent=detail+' ';
+    const button=(label,run)=>{
+      const b=document.createElement('button');
+      b.type='button';b.textContent=label;b.className='prep-retry';
+      b.style.cssText='margin:12px 6px 0 0;padding:6px 14px;border-radius:999px;background:var(--tint);color:var(--graphite);font:inherit';
+      b.onclick=run;text.appendChild(b);
+    };
+    text.appendChild(document.createElement('br'));
+    button('reload',()=>location.reload());
+    if(goOn)button('write without them for now',()=>{ text.textContent='opening your notebook.'; if(word)word.textContent='preparing'; goOn(); });
+  }
+}
 async function boot(){
   await Promise.all(CORE_LIBS.map(loadLib));
-
+  if(!window.idbKeyval)await loadLib('idb');
+  if(!window.idbKeyval){ cannotOpen('notas could not finish loading, so your notes are not open yet. they are safe. connect, then reload.'); return; }
+  try{ await C.Store.probe(); }
+  catch(e){
+    /* storage that stays broken (a damaged browser profile) must not lock
+       the notebook for good: what is written now is kept in this browser's
+       other storage, apart from the notes, and both are listed once the
+       notes can be read again */
+    cannotOpen('your notes could not be read just now. they are safe. reload to try again.', ()=>{
+      C.Store.lsOnly=true;
+      openNotebook().then(()=>C.toast('your saved notes are not open. what you write now is kept apart from them, and both are listed once they can be read again.',10000));
+    });
+    return;
+  }
+  return openNotebook();
+}
+async function openNotebook(){
   if(!window.math){
     C.toast('the maths engine could not load. connect once, then it works offline.', 9000);
   }
@@ -8946,8 +9722,16 @@ async function boot(){
   if(/[?&]selftest=1/.test(location.search)){ N.selftest.run(); return; }
 
   C.layout();
-  if(!(N.collab && await N.collab.openLink())){
-    const ix = (await C.Store.index()).filter(r=>!r.trashed).sort((a,b)=>(b.updated||0)-(a.updated||0));
+  /* notes that dropped out of the list are listed again */
+  try{
+    await C.recoverRescues();
+    const back = await C.repairIndex();
+    if(back) C.toast(back === 1 ? 'a note that had gone missing from your list is back.' : back+' notes that had gone missing from your list are back.', 7000);
+  }catch(e){}
+  let ix;
+  try{ ix = (await C.Store.index()).filter(r=>!r.trashed).sort((a,b)=>(b.updated||0)-(a.updated||0)); }
+  catch(e){ cannotOpen('your notes could not be read just now. they are safe. reload to try again.'); return; }
+  if(!(N.collab && await N.collab.openLink().catch(()=>false))){
     const active=C.getActive();
     const target=(active&&ix.find(r=>r.id===active))||ix[0];
     if(target&&target.id) await N.ui.openNote(target.id);
