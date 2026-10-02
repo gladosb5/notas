@@ -1,5 +1,5 @@
 'use strict';
-const CACHE='notas-local-v108';
+const CACHE='notas-local-v109';
 self.addEventListener('message',event=>{
   if(event.data?.type==='GET_VERSION')event.ports[0]?.postMessage({version:CACHE.replace('notas-local-','')});
 });
