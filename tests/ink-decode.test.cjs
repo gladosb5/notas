@@ -3,13 +3,13 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 
-function worker(){
+function worker(points=3){
   const live=new Set();
   class Tensor{
     constructor(type,data,dims){Object.assign(this,{type,data,dims});live.add(this);}
     dispose(){assert.ok(live.delete(this),'tensor disposed exactly once');}
   }
-  const ctx={self:{location:{href:'http://localhost/ink-worker.js'},NOTAS_INK_FEATURES:{features:()=>({data:new Float32Array(12),points:1}),resample:s=>s}},
+  const ctx={self:{location:{href:'http://localhost/ink-worker.js'},NOTAS_INK_FEATURES:{features:()=>({data:new Float32Array(points*12),points}),resample:s=>s}},
     ort:{env:{wasm:{}},Tensor},navigator:{hardwareConcurrency:1},URL,importScripts(){}};
   vm.createContext(ctx);vm.runInContext(fs.readFileSync('ink-worker.js','utf8'),ctx);
   vm.runInContext("vocab=['<PAD>','<SOS>','<EOS>','<UNK>','x','y','+','1','{','}'];pad=0;sos=1;eos=2;",ctx);
@@ -80,4 +80,11 @@ test('beam preserves the primary reading, offers alternatives, and releases cach
     else{const result=await vm.runInContext('recognize([])',ctx);assert.equal(result.latex,'x');assert.equal(result.terminated,true);assert.ok(result.alternatives.includes('y'));}
     assert.equal(live.size,0,'all inference tensors released');
   }
+});
+
+for(const points of [1,2])test(`${points}-point input never reaches ConvInteger or allocates inference tensors`,async()=>{
+  const {ctx,live}=worker(points);
+  const result=await vm.runInContext('recognizeInk([{pts:[10,20,.5]}])',ctx);
+  assert.equal(result.latex,'');assert.equal(result.confidence,0);
+  assert.equal(result.decoderCalls,0);assert.equal(live.size,0);
 });

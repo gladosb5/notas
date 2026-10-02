@@ -1,5 +1,8 @@
 'use strict';
-const CACHE='notas-local-v107';
+const CACHE='notas-local-v108';
+self.addEventListener('message',event=>{
+  if(event.data?.type==='GET_VERSION')event.ports[0]?.postMessage({version:CACHE.replace('notas-local-','')});
+});
 const RECOGNITION_ASSET=/\/assets\/(?:text|smart|ink)\//;
 const INK_MODEL=/\/assets\/ink\/[^?]*\.onnx$/;
 const SHELL=['./notas.html','./model-contract.js','./local-recognition.js','./ink-worker.js','./ink-features.js','./model-store.js','./text-worker.js','./bg-worker.js','./slide-surface.js','./assets/slide/model.js',

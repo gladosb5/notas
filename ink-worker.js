@@ -137,7 +137,11 @@ function inkTokens(values,ids,k){
   return best.sort((a,b)=>b.logp-a.logp).slice(0,k);
 }
 async function recognize(strokes,beamWidth=BEAM_WIDTH){
-  const f=features(strokes),src=new ort.Tensor('float32',f.data,[1,f.points,12]),lengths=new ort.Tensor('int64',BigInt64Array.from([BigInt(f.points)]),[1]);
+  const f=features(strokes);
+  // The first convolution has kernel=5, padding=1: it needs at least
+  // three samples. Keep shorter taps as ink without disabling the reader.
+  if(f.points<3)return {latex:'',alternatives:[],confidence:0,minTokenConfidence:0,tokenCount:0,terminated:true,truncated:false,decoderCalls:0};
+  const src=new ort.Tensor('float32',f.data,[1,f.points,12]),lengths=new ort.Tensor('int64',BigInt64Array.from([BigInt(f.points)]),[1]);
   let enc;
   try{enc=await encoder.run({src,src_lengths:lengths});}finally{src.dispose();lengths.dispose();}
   const memK=enc.mem_k,memV=enc.mem_v,mask=enc.mem_mask;
