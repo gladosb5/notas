@@ -1,5 +1,5 @@
 'use strict';
-const CACHE='notas-local-v109';
+const CACHE='notas-local-v120';
 self.addEventListener('message',event=>{
   if(event.data?.type==='GET_VERSION')event.ports[0]?.postMessage({version:CACHE.replace('notas-local-','')});
 });
@@ -15,7 +15,7 @@ const SHELL=['./notas.html','./model-contract.js','./local-recognition.js','./in
   // controls the page, so "available offline" came with neither reader
   // able to start offline. scripts/model-contract.mjs checks these hashes.
   './assets/smart/ort.wasm.min.js?v=4043d2de','./assets/smart/ort-wasm-simd-threaded.js?v=5687566b','./assets/smart/ort-wasm-simd-threaded.wasm?v=be0e1299',
-  './local-math-help.js','./nota.js','./collab.js','./manifest.webmanifest','./asset-manifest.json',
+  './local-math-help.js','./diagram.js','./nota.js','./collab.js','./manifest.webmanifest','./asset-manifest.json',
   './assets/icon-16.png','./assets/icon-32.png','./assets/icon-192.png','./assets/icon-512.png',
   './assets/icon-maskable-512.png','./assets/apple-touch-icon.png',
   // the wordmark is drawn through a CSS mask on the launch screen and top bar

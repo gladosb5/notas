@@ -314,3 +314,18 @@ test('two stacked bars restore an equals sign the decoder read as a minus',async
   cl=use([stroke('num',[[140,70],[160,88]],3,0),stroke('rule',[[120,100],[200,100]],3,300),stroke('den',[[140,112],[160,130]],3,600),stroke('under',[[118,140],[202,140]],3,900)]);
   assert.equal(N.recog.stackedBarPairs(S.strokes).length,0,'a fraction rule and an underline with ink between are not an equals sign');
 });
+
+test('uncertain split-letter equations require an existing unique ink candidate and independent text',()=>{
+  const {textSupportedEquation,needsConfirmation}=controller().recog;
+  const out={engine:'ink',latex:'41=x',alternatives:['y=x','49=x'],confidence:.7736,minTokenConfidence:.4,terminated:true,truncated:false};
+  const selected=textSupportedEquation(out,{text:'Y = X',confidence:.8433});
+  assert.equal(selected.latex,'y=x');assert.equal(selected.confidence,out.confidence);
+  assert.equal(needsConfirmation(selected),true);assert.ok(selected.alternatives.includes('41=x'));
+  for(const change of [{confidence:.9},{confidence:.69},{terminated:false},{truncated:true},{engine:'smart'},
+    {alternatives:[]},{alternatives:['y=X']},{alternatives:['y=x','Y=x']},{latex:'41+x'},
+    {latex:'41=x^2'},{alternatives:['y=z']},{alternatives:['y=2*x']}]){
+    const value={...out,...change};assert.equal(textSupportedEquation(value,{text:'Y=X',confidence:.99}),value);
+  }
+  for(const text of [{text:'41=x',confidence:.99},{text:'y=x',confidence:.79},{text:'z=x',confidence:.99}])assert.equal(textSupportedEquation(out,text),out);
+  assert.equal(textSupportedEquation({...out,latex:'12=t',alternatives:['r=t']},{text:'R=T',confidence:.9}).latex,'r=t','rule is not a y=x replacement');
+});

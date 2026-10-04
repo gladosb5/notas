@@ -14,6 +14,8 @@ page.on('pageerror',e=>{throw e;});
 
 const REPLY='The square root of 144 is 12, because 12 x 12 = 144.';
 const calls=[];
+// a question's words, whether it went as text alone or as text and a picture of the page
+const said=c=>typeof c==='string'?c:c.filter(p=>p.type==='text').map(p=>p.text).join('\n');
 const sse=(text)=>text.split(/(?<= )/).map(piece=>`data: ${JSON.stringify({choices:[{delta:{content:piece}}]})}\n\n`).join('')+'data: [DONE]\n\n';
 await context.route(/recognizer\.onnx/,route=>route.fulfill({status:200,contentType:'application/octet-stream',body:Buffer.alloc(3*1048576)}));
 let holdMs=900;
@@ -74,9 +76,11 @@ try{
   await page.waitForFunction(()=>N.core.S.lines.some(l=>l.tutor&&l.text.includes('144.')),null,{timeout:5000});
   assert.equal(calls.length,1,'one request for one question');
   assert.equal(calls[0].auth,undefined,'the private key is never sent to the proxy');
-  assert.match(calls[0].body.messages[1].content,/12 x 12 = 144/,'the page is the context');
-  assert.match(calls[0].body.messages[1].content,/Question: what is the square root of this\?/,'the question is sent without the call');
-  assert.doesNotMatch(calls[0].body.messages[1].content,/hey nota/,'the call word is not part of the question');
+  assert.equal(calls[0].body.model,'qwen-3.8-27b','the model that reads pictures is asked');
+  assert.equal(typeof calls[0].body.messages[1].content,'string','a page with no ink or pictures sends words alone');
+  assert.match(said(calls[0].body.messages[1].content),/12 x 12 = 144/,'the page is the context');
+  assert.match(said(calls[0].body.messages[1].content),/Question: what is the square root of this\?/,'the question is sent without the call');
+  assert.doesNotMatch(said(calls[0].body.messages[1].content),/hey nota/,'the call word is not part of the question');
   const typed=await page.evaluate(()=>N.core.S.lines.slice().sort((a,b)=>a.y-b.y).map(l=>({text:l.text,tutor:!!l.tutor,wait:!!l.wait,y:l.y})).filter(l=>l.y>=150));
   assert.equal(typed.length,3,'the note holds the sum, the question and the reply: '+JSON.stringify(typed));
   assert.equal(typed[1].text,'hey nota, what is the square root of this?','the question is untouched');
@@ -149,7 +153,9 @@ try{
     return {count:ai.length,top,left,right,questionBottom:S.strokes.find(s=>s.id==='q1').bbox[3],clusters:S.clusters.filter(c=>c.strokeIds.some(id=>ai.some(s=>s.id===id))).length};
   });
   assert.equal(calls.length,2,'the handwritten question made one request');
-  assert.match(calls[1].body.messages[1].content,/Question: what is the square root of this\?/,'the handwritten question was sent');
+  assert.match(said(calls[1].body.messages[1].content),/Question: what is the square root of this\?/,'the handwritten question was sent');
+  const shot=calls[1].body.messages[1].content.find?.(p=>p.type==='image_url');
+  assert.ok(shot&&/^data:image\/jpeg;base64,/.test(shot.image_url.url),'a handwritten question goes with a picture of the page round it');
   assert.ok(red.count>40,'the reply was written as strokes: '+red.count);
   assert.ok(red.top>red.questionBottom,'the reply sits under the question');
   assert.ok(red.left>=100-1&&red.right<=N_CONTENT_W(),'the reply stays within the column');
@@ -230,7 +236,7 @@ try{
   assert.equal(calls.length,n1,'the second row started the wait over');
   for(let i=0;i<60&&calls.length<n1+1;i++)await page.waitForTimeout(100);
   assert.equal(calls.length,n1+1,'the two rows are one handwritten question');
-  assert.match(calls[n1].body.messages[1].content,/Question: what is the square root of 144/,'the second row is part of the question');
+  assert.match(said(calls[n1].body.messages[1].content),/Question: what is the square root of 144/,'the second row is part of the question');
 
   console.log('nota: blue call, red reply lines, red ink, waiting dots, save, erase, undo and a handwritten question over two rows all pass');
 }finally{

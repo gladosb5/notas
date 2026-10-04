@@ -1,6 +1,8 @@
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import {startServer} from '../scripts/serve.mjs';
+// a question's words, whether it went as text alone or as text and a picture of the page
+const said=c=>typeof c==='string'?c:c.filter(p=>p.type==='text').map(p=>p.text).join('\n');
 const server=await startServer(0),browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
 try{
  for(const width of [320,390,820,1280]){
@@ -42,8 +44,36 @@ try{
  assert.equal(written.selection.length,written.strokes.length,'all inserted writing is selected');
  assert.ok(written.strokes.some(s=>s.color===written.blue)&&written.strokes.some(s=>s.color===written.graphite),'question and answer use graphite and blue');
  assert.ok(written.strokes.every(s=>s.bbox[1]>260),'writing is below the latest stroke');
+ const semantic=await page.evaluate(()=>{
+   const S=N.core.S,where={x:0,y:900},original=S.strokes.slice();
+   const before=N.nota.context(where);
+   const imported=N.ui.validateImportedNote(N.core.serialize());
+   S.strokes=imported.strokes;const restored=N.nota.context(where);
+   S.strokes=S.strokes.map(st=>N.collab._test.cleanStroke(st,st.id));const shared=N.nota.context(where);
+   const i=S.strokes.findIndex(st=>st.quickGroup&&!st.quickMath);const removed=S.strokes.splice(i,1)[0];
+   const partial=N.nota.context(where);S.strokes.splice(i,0,removed);
+   const skip=N.nota.context({...where,skip:new Set([removed.id])});
+   S.strokes=original;
+   return {before,restored,shared,partial,skip};
+ });
+ for(const key of ['before','restored','shared'])assert.ok(semantic[key].includes('2 + 4 * 7 / 5 = 7.6'),'Quick Maths exact context survives '+key);
+ for(const key of ['partial','skip'])assert.ok(!semantic[key].includes('2 + 4 * 7 / 5 = 7.6'),'Incomplete or excluded writing leaves no stale context '+key);
+ await page.evaluate(()=>N.ink.duplicateSelection());
+ assert.equal(await page.evaluate(()=>N.nota.context({x:0,y:900}).split('2 + 4 * 7 / 5 = 7.6').length-1),2,'Duplicated writing has its own context group');
+ await page.evaluate(()=>N.core.undo());
  await page.evaluate(()=>N.core.undo());assert.equal(await page.evaluate(()=>N.core.S.strokes.length),count,'one undo removes the complete writing');
  await page.evaluate(()=>N.core.redo());assert.equal(await page.evaluate(()=>N.core.S.strokes.length),count+written.strokes.length,'redo restores writing');
+ if(width===1280){
+   let request;
+   await page.route('**/nota/chat',route=>{request=route.request().postDataJSON();return route.fulfill({status:200,contentType:'text/event-stream',body:'data: '+JSON.stringify({choices:[{delta:{content:'Work through the operations in order.'}}]})+'\n\ndata: [DONE]\n\n'});});
+   await page.evaluate(()=>{const ln=N.text.add(900,false);ln.text='hey nota, why is that the answer?';N.text.render();N.mathcore.run();N.nota.onTyped(ln);});
+   for(let i=0;i<50&&!request;i++)await page.waitForTimeout(100);
+   assert.ok(request,'Tutor request was sent');
+   assert.ok(said(request.messages[1].content).includes('2 + 4 * 7 / 5 = 7.6'),'Actual tutor request includes the inserted calculation');
+   await page.waitForFunction(()=>!N.nota.busy);
+   assert.ok(await page.evaluate(()=>N.core.S.lines.some(l=>l.tutor&&l.text.includes('Work through the operations'))),'Mock tutor reply appears');
+   assert.ok(await page.evaluate(()=>!N.nota.context({x:0,y:900}).includes('Work through the operations')),'Tutor replies remain excluded');
+ }
  await page.waitForTimeout(350);
  if(width===390||width===1280)await page.screenshot({path:`test-results/quick-maths-inline-${width}.png`});
  await page.locator('#btn-menu').click();await page.locator('#seg-motion [data-v="0"]').click();

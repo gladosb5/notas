@@ -6,7 +6,7 @@ const C=N.core,S=C.S;
 // transcripts, so any such change must bump this version and re-read them.
 // v11: the Smart image model is gone; the stroke reader is the one maths engine
 // and pictures are pictures.
-const MODEL_VERSION='recognition-v13:'+globalThis.NOTAS_MODEL_CONTRACT.math.id;
+const MODEL_VERSION='recognition-v14:'+globalThis.NOTAS_MODEL_CONTRACT.math.id;
 const RESULT_VERSION={ink:MODEL_VERSION+':ink'};
 const TEXT_VERSION='ppocrv6-small-v3:'+globalThis.NOTAS_MODEL_CONTRACT.text.id;
 // Joint calibration: 0.80 retains 90/100 real IAM handwriting lines while the
@@ -22,9 +22,26 @@ const engines=new Map();
 let serial=0,queue=Promise.resolve(),active=null;
 const cache=new Map(),attempted=new Set();
 let timer=null,epoch=0,warned=false,inkError='';
+let memoryPaused=0;
+function memoryFailure(error){return /out of memory|\boom\b|memory access out of bounds|allocat|memory.*(?:grow|limit)|no available backend/i.test(String(error?.message||error));}
+function readerError(error){
+  if(!error?.memory&&!memoryFailure(error))return error;
+  return Object.assign(new Error('Not enough available memory for handwriting recognition. Close a few apps or tabs, then tap retry. You can keep writing.'),{memory:true});
+}
+function pauseForImage(){
+  memoryPaused++;
+  const cancelled=new DOMException('Handwriting paused while processing your image','AbortError');
+  stop(cancelled);stopText(cancelled);
+  clearTimeout(timer);clearTimeout(textTimer);clearTimeout(indexTimer);
+  let resumed=false;
+  return ()=>{
+    if(resumed)return;resumed=true;memoryPaused--;
+    if(!memoryPaused&&enabled()){attempted.clear();textAttempted.clear();schedule();scheduleText();scheduleIndex();}
+  };
+}
 const textState={worker:null,booting:null,ready:false,requests:new Map(),broken:false,gen:0};
 const textAttempted=new Set();
-let textTimer=null,textQueue=Promise.resolve();
+let textTimer=null,textQueue=Promise.resolve(),textRestartSeq=0;
 // Ignore any legacy saved recognizer preference. There is one math engine.
 function preferred(){return 'ink';}
 function compatibleReading(stored){
@@ -115,28 +132,29 @@ function stop(message='recognition stopped.',only){
     if(only&&only!==name)continue;
     e.gen++;
     e.worker?.terminate();e.worker=null;e.ready=false;e.booting=null;
-    for(const request of e.requests.values()){clearTimeout(request.timer);request.reject(new Error(message));}
+    for(const request of e.requests.values()){clearTimeout(request.timer);request.reject(typeof message==='string'?new Error(message):message);}
     e.requests.clear();
   }
   active=null;
 }
 function stopText(message='Handwriting search stopped'){
   textState.gen++;
-  if(textState.broken)textProgress('error',message);
+  if(textState.broken&&message?.name!=='AbortError')textProgress('error',typeof message==='string'?message:message.message);
   textState.worker?.terminate();textState.worker=null;textState.ready=false;textState.booting=null;
   for(const request of textState.requests.values()){
-    clearTimeout(request.timer);request.reject(new Error(message));
+    clearTimeout(request.timer);request.reject(typeof message==='string'?new Error(message):message);
   }
   textState.requests.clear();
 }
 function send(name,payload,transfer=[],timeout=15000){
+  if(memoryPaused)return Promise.reject(new DOMException('Handwriting paused while processing your image','AbortError'));
   const e=state(name);
   return new Promise((resolve,reject)=>{
     const id=++serial;
     const expire=()=>{stop('handwriting took too long. tap retry to try again.',name);report('handwriting paused, retry.',true);};
     if(!e.worker){reject(new Error('Handwriting stopped'));return;}
     e.requests.set(id,{resolve,reject,expire,timeout,timer:setTimeout(expire,timeout)});
-    e.worker.postMessage({...payload,id},transfer);
+    try{e.worker.postMessage({...payload,id},transfer);}catch(error){stop(readerError(error),name);}
   });
 }
 // The model files are kept in IndexedDB by the workers (model-store.js),
@@ -158,6 +176,7 @@ function persistStorage(){
 // The stroke reader is about 44 MB, fetched once and kept on the device;
 // small enough to fetch unasked.
 async function setup(name=preferred()){
+  if(memoryPaused)throw new DOMException('Handwriting paused while processing your image','AbortError');
   const e=state(name),spec=ENGINES[name];
   if(!spec)throw new Error('unknown handwriting engine.');
   if(e.ready) return;
@@ -172,6 +191,7 @@ async function setup(name=preferred()){
     persistStorage();
     e.worker=new Worker(spec.url);
     e.worker.onmessage=({data})=>{
+      if(!mine())return;
       const request=e.requests.get(data.id);
       if(data.progress){
         // Progress keeps the timeout alive. A tap restarts a stalled download.
@@ -181,7 +201,7 @@ async function setup(name=preferred()){
       }
       if(!request)return;
       clearTimeout(request.timer);e.requests.delete(data.id);
-      data.error?request.reject(new Error(data.error)):request.resolve(data);
+      data.error?request.reject(readerError(new Error(data.error))):request.resolve(data);
     };
     // An uncaught error inside a worker is re-reported on window unless the
     // event is cancelled here. That is what turned a failure this code already
@@ -203,17 +223,18 @@ async function setup(name=preferred()){
     e.ready=true;
     report('handwriting ready.',false,true);
     progress('ready','');
-  })().catch(error=>{if(mine()){preparing=false;progress('error',error?.message||'');stop(error.message,name);}throw error;});
+  })().catch(error=>{error=readerError(error);if(mine()){preparing=false;progress('error',error?.message||'');stop(error.message,name);}throw error;});
   return e.booting;
 }
 function textSend(payload,transfer=[],timeout=45000){
+  if(memoryPaused)return Promise.reject(new DOMException('Handwriting paused while processing your image','AbortError'));
   return new Promise((resolve,reject)=>{
     const id=++serial;
     const expire=()=>{textBroke();stopText('Handwriting search took too long.');reject(new Error('Handwriting search took too long.'));};
     if(!textState.worker){reject(new Error('Handwriting search stopped'));return;}
     const request={resolve,reject,timer:setTimeout(expire,timeout),expire,timeout};
     textState.requests.set(id,request);
-    textState.worker.postMessage({...payload,id},transfer);
+    try{textState.worker.postMessage({...payload,id},transfer);}catch(error){stopText(readerError(error));}
   });
 }
 // A failure is not for the whole session: the reader is tried again once
@@ -221,11 +242,12 @@ function textSend(payload,transfer=[],timeout=45000){
 // arriving, a connection that was not there), and at once when the page
 // asks for it outright (ask nota) or the connection returns.
 const TEXT_RETRY_AFTER=45000;
-function textBroke(){textState.broken=true;textState.brokeAt=Date.now();}
-function textHealable(){return textState.broken&&Date.now()-(textState.brokeAt||0)>=TEXT_RETRY_AFTER;}
-function healText(){textState.broken=false;textState.brokeAt=0;}
+function textBroke(error){textState.broken=true;textState.brokeAt=Date.now();textState.memoryBlocked=!!(error?.memory||memoryFailure(error));}
+function textHealable(){return textState.broken&&!textState.memoryBlocked&&Date.now()-(textState.brokeAt||0)>=TEXT_RETRY_AFTER;}
+function healText(){textState.broken=false;textState.brokeAt=0;textState.memoryBlocked=false;}
 window.addEventListener('online',()=>{if(textState.broken){healText();scheduleText();}});
 async function setupText(){
+  if(memoryPaused)throw new DOMException('Handwriting paused while processing your image','AbortError');
   if(textState.ready)return;
   if(textHealable())healText();
   if(textState.broken)throw new Error('Handwriting search is unavailable.');
@@ -245,13 +267,14 @@ async function setupText(){
         return;
       }
       clearTimeout(request.timer);textState.requests.delete(data.id);
-      data.error?request.reject(new Error(data.error)):request.resolve(data);
+      data.error?request.reject(readerError(new Error(data.error))):request.resolve(data);
     };
     textState.worker.onerror=event=>{
       event&&event.preventDefault&&event.preventDefault();
       if(!mine())return;
-      textBroke();
-      stopText((event&&event.message)||'Handwriting search could not start.');
+      const error=readerError(new Error((event&&event.message)||'Handwriting search could not start. Tap retry.'));
+      textBroke(error);
+      stopText(error.message);
     };
     textProgress('download','');
     persistStorage();
@@ -259,18 +282,25 @@ async function setupText(){
     if(!mine())return;
     textState.ready=true;
     textProgress('ready','');
-  })().catch(error=>{if(mine()){textBroke();stopText(error.message);}throw error;});
+  })().catch(error=>{error=readerError(error);if(mine()){textBroke(error);stopText(error.message);}throw error;});
   return textState.booting;
 }
 // Setup failure remains visible and retryable; never substitute another model.
 let bootSeq=0;
 async function boot(){
   const seq=++bootSeq;
-  try{await setup('ink');}
+  try{
+    try{await setup('ink');}
+    catch(error){
+      if(!(error.memory||memoryFailure(error)))throw error;
+      release();
+      await setup('ink');
+    }
+  }
   catch(error){
-    if(seq!==bootSeq)return;
+    if(seq!==bootSeq||error.name==='AbortError')return;
     state('ink').broken=true;
-    inkError=error?.message||'handwriting could not start.';
+    inkError=readerError(error)?.message||'handwriting could not start.';
     status.title=inkError;
     report('handwriting unavailable, retry.',true,true);
     if(!warned){warned=true;C.toast(inkError);}
@@ -387,13 +417,27 @@ function frameInfo(strokes){
     }
     return false;
   };
+  /* A radical sign has a box corner's outline: a steep rise and a long top
+     bar. Unlike a corner it starts above its lowest point, dips to a tick,
+     rises on the left and ends at the right of the bar, with writing under it. */
+  const radical=st=>{
+    const p=st.pts,b=st.bbox,w=b[2]-b[0],h=b[3]-b[1],n=p.length/3|0;
+    let low=0;for(let i=1;i<n;i++)if(p[i*3+1]>p[low*3+1])low=i;
+    if(p[1]>b[3]-h*.15||p[0]>b[0]+w*.25||p[low*3]>b[0]+w*.35)return false;
+    const endX=p[p.length-3],endY=p[p.length-2];
+    if(endX<b[2]-w*.1||endY>b[1]+h*.25)return false;
+    let top=-1;for(let i=low;i<n;i++)if(p[i*3+1]<=b[1]+h*.25){top=i;break;}
+    if(top<0||p[top*3]>b[0]+w*.4)return false;
+    for(let i=top;i<n;i++)if(p[i*3+1]>b[1]+h*.3)return false;
+    return inside(st,1);
+  };
   const walls=[];
   for(const st of strokes){
     if(!Array.isArray(st.pts)||st.pts.length<6||!st.bbox)continue;
     const s=strokeShape(st);
     if(s.size<Math.max(80,4*H))continue;
     const wall=(s.vert&&s.h>=Math.max(90,5*H))||
-      (!s.straight&&s.vertices<=10&&s.axisShare>=.8&&s.size>=Math.max(100,5*H)&&Math.min(s.w,s.h)>=Math.max(24,1.5*H))||
+      (!s.straight&&s.vertices<=10&&s.axisShare>=.8&&s.size>=Math.max(100,5*H)&&Math.min(s.w,s.h)>=Math.max(24,1.5*H)&&!radical(st))||
       (s.closed&&Math.min(s.w,s.h)>=Math.max(40,2.5*H)&&inside(st,2));
     if(wall){ids.add(st.id);walls.push(st);}
   }
@@ -630,13 +674,22 @@ function mathStrokeGroups(strokes,orderOf){
   if(!strokes.length)return [];
   // Bound the expensive geometry pass even on the first load of a large note.
   // Split near the middle at the widest spatial gap, retaining original order.
+  // A gap is clear paper past everything before it, on either axis: a band
+  // of rows is wider than tall, and cutting it across would halve each line.
   if(strokes.length>240){
     orderOf=orderOf||new Map(strokes.map((st,i)=>[st,i]));
-    const bounds=boxOf(strokes),axis=bounds[3]-bounds[1]>=bounds[2]-bounds[0]?1:0;
-    const sorted=strokes.slice().sort((a,b)=>(a.bbox[axis]+a.bbox[axis+2])-(b.bbox[axis]+b.bbox[axis+2]));
-    let cut=sorted.length>>1,gap=-Infinity;
-    for(let i=Math.floor(sorted.length/3);i<Math.ceil(sorted.length*2/3);i++){const distance=sorted[i].bbox[axis]-sorted[i-1].bbox[axis+2];if(distance>gap){gap=distance;cut=i;}}
-    return [...mathStrokeGroups(sorted.slice(0,cut),orderOf),...mathStrokeGroups(sorted.slice(cut),orderOf)];
+    let best;
+    for(const axis of [1,0]){
+      const sorted=strokes.slice().sort((a,b)=>(a.bbox[axis]+a.bbox[axis+2])-(b.bbox[axis]+b.bbox[axis+2]));
+      const lo=Math.floor(sorted.length/3),hi=Math.ceil(sorted.length*2/3);
+      let reach=-Infinity;for(let i=0;i<lo;i++)reach=Math.max(reach,sorted[i].bbox[axis+2]);
+      for(let i=lo;i<hi;i++){
+        reach=Math.max(reach,sorted[i-1].bbox[axis+2]);
+        const distance=sorted[i].bbox[axis]-reach;
+        if(!best||distance>best.gap)best={gap:distance,cut:i,sorted};
+      }
+    }
+    return [...mathStrokeGroups(best.sorted.slice(0,best.cut),orderOf),...mathStrokeGroups(best.sorted.slice(best.cut),orderOf)];
   }
   const info=strokes.map((st,order)=>{
     const m=boxMetrics(st.bbox),bar=m.w>Math.max(12,m.h*3.2),tiny=!bar&&Math.max(m.w,m.h)<10;
@@ -1207,7 +1260,7 @@ function rebuild(){
 }
 function schedule(){
   clearTimeout(timer);
-  if(!enabled()||document.hidden)return;
+  if(memoryPaused||!enabled()||document.hidden)return;
   timer=setTimeout(async()=>{
     const todo=S.clusters.filter(c=>c.source==='ink'&&!c.latex&&!c.ascii&&!c.pending&&!attempted.has(c.hash));
     for(const cl of todo){if(!enabled()||document.hidden)break;await recognize(cl);}
@@ -1215,8 +1268,8 @@ function schedule(){
 }
 function scheduleText(){
   clearTimeout(textTimer);
-  if(!enabled()||document.hidden)return;
-  if(textState.broken){if(textHealable())healText();else{textTimer=setTimeout(scheduleText,TEXT_RETRY_AFTER);return;}}
+  if(memoryPaused||!enabled()||document.hidden)return;
+  if(textState.broken){if(textHealable())healText();else{if(!textState.memoryBlocked)textTimer=setTimeout(scheduleText,TEXT_RETRY_AFTER);return;}}
   textTimer=setTimeout(async()=>{
     const groups=textGroups();syncTextTranscripts(groups);
     const saved=new Set((S.textTranscripts||[]).map(t=>t.hash));
@@ -1333,10 +1386,21 @@ function textCrop(group,byId){
 }
 function textInfer(canvas,valid){
   const task=textQueue.catch(()=>{}).then(async()=>{
-    await setupText();
-    if(!valid())throw new DOMException('Writing changed','AbortError');
-    const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height);
-    return await textSend({type:'recognize',width:canvas.width,height:canvas.height,buffer:pixels.data.buffer},[pixels.data.buffer],45000);
+      const restart=textRestartSeq;
+      for(let attempt=0;attempt<2;attempt++){
+        if(!valid())throw new DOMException('Writing changed','AbortError');
+        try{
+          await setupText();
+          if(!valid())throw new DOMException('Writing changed','AbortError');
+          const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height);
+          return await textSend({type:'recognize',width:canvas.width,height:canvas.height,buffer:pixels.data.buffer},[pixels.data.buffer],45000);
+        }catch(error){
+          if(error.name==='AbortError'||restart!==textRestartSeq)throw new DOMException('Handwriting search restarted','AbortError');
+          textBroke(error);stopText(readerError(error).message);
+          if(attempt||!(error.memory||memoryFailure(error)))throw readerError(error);
+          release();healText();
+        }
+      }
   });
   textQueue=task;return task;
 }
@@ -1410,7 +1474,7 @@ const INDEX_KEY='notas.textindex';
 let indexTimer=null,indexing=false,indexEpoch=0;
 function scheduleIndex(delay){
   clearTimeout(indexTimer);
-  if(!enabled()||document.hidden||textState.broken||!textSupported())return;
+  if(memoryPaused||!enabled()||document.hidden||textState.broken||!textSupported())return;
   indexTimer=setTimeout(()=>{indexOthers().catch(()=>{});},delay==null?6000:delay);
 }
 function textSupported(){return !!(window.Worker&&window.OffscreenCanvas&&/^https?:$/.test(location.protocol));}
@@ -1490,15 +1554,24 @@ function inferInk(cl,valid){
     const at=restartSeq;
     try{
       // the stroke reader loads on first use; the waiting chip says so at once
+      for(let attempt=0;attempt<2;attempt++){
+      try{
       const loading=setup('ink');
       if(!e.ready&&N.mathcore.refreshWaiting)N.mathcore.refreshWaiting();
       await loading;if(!valid())throw new DOMException('Writing changed','AbortError');
       active=valid;
       try{return {...await send('ink',{type:'recognize',strokes},[],ENGINES.ink.run),engine:'ink'};}
       finally{active=null;}
+      }catch(error){
+        if(attempt||error.name==='AbortError'||!valid()||at!==restartSeq||!(error.memory||memoryFailure(error)))throw error;
+        stop('Restarting handwriting recognition','ink');release();
+        report('restarting handwriting recognition.',false,true);
+      }
+      }
     }catch(error){
       if(error.name==='AbortError'||!valid()||at!==restartSeq)throw new DOMException('Writing changed','AbortError');
       e.broken=true;stop('handwriting unavailable','ink');
+      error=readerError(error);
       inkError=error?.message||'handwriting could not run.';
       status.title=inkError;
       report('handwriting unavailable, retry.',true,true);
@@ -1536,6 +1609,24 @@ function textSupportedInk(out,text){
   // whether it makes an expression solvable or from a personal example lookup.
   return {...out,latex,wordSource:'text-and-ink-alternative',
     alternatives:[out.latex,...(out.alternatives||[])].filter((s,i,a)=>s!==latex&&a.indexOf(s)===i).slice(0,4)};
+}
+// A low-confidence number can be a split letter in a short variable equation.
+// Select only a unique, already-completed ink hypothesis corroborated by the
+// independent text reader. Keep it unconfirmed; this is not an accuracy claim.
+function textSupportedEquation(out,text){
+  if(out?.engine!=='ink'||out.terminated!==true||out.truncated||!(out.confidence>=.70&&out.confidence<.85)||!(text?.confidence>=.80))return out;
+  const compact=s=>N.mathcore.latexToMath(String(s||'')).replace(/\s+/g,'');
+  const primary=compact(out.latex).match(/^(\d{1,3})=([A-Za-z])$/);
+  if(!primary)return out;
+  const reading=compact(text.text);
+  const candidates=[...new Set(out.alternatives||[])].filter(candidate=>{
+    const next=compact(candidate),match=next.match(/^([A-Za-z])=([A-Za-z])$/);
+    return match&&match[2]===primary[2]&&next.toLowerCase()===reading.toLowerCase();
+  });
+  // Case alone is not decided by text OCR. Multiple case variants must abstain.
+  if(candidates.length!==1)return out;
+  const latex=candidates[0];
+  return {...out,latex,wordSource:'text-and-ink-alternative',alternatives:[out.latex,...out.alternatives].filter((s,i,a)=>s!==latex&&a.indexOf(s)===i).slice(0,4)};
 }
 // These are decoder likelihoods, not probabilities that a formula is correct.
 // The acceptance floor is selected on development expressions and evaluated
@@ -1890,6 +1981,10 @@ async function recognize(cl,explicit){
     if(!usableInk(out)&&out?.wordSource!=='text-and-ink-alternative'&&completedInk)out=completedInk;
     if(!valid())return;
     if(!usableInk(out)&&out?.wordSource!=='text-and-ink-alternative'&&(!completedInk||out!==completedInk))throw new Error('could not finish reading this expression. select a smaller expression or correct it manually.');
+    if(out?.confidence>=.70&&out.confidence<.85&&/^\d{1,3}\s*=\s*[A-Za-z]$/.test(N.mathcore.latexToMath(out.latex||'').trim())&&(out.alternatives||[]).length){
+      try{out=textSupportedEquation(out,await textInfer(textCrop(cl),valid));}
+      catch(e){if(e.name==='AbortError'||!valid())throw e;}
+    }
     out=await readWords(out,linear||textCrop(cl),valid,cl);
     out=equalsGeometryRepair(out,cl);
     if(!valid())return;
@@ -1970,8 +2065,9 @@ function release(){
   if(textState.ready&&!textState.requests.size)stopText('Handwriting search paused to free memory');
 }
 function retry(){restart();boot().then(schedule).catch(()=>{});}
-function retryText(){healText();textAttempted.clear();return setupText().then(()=>scheduleText()).catch(()=>{});}
+function retryText(){textRestartSeq++;stopText('Restarting handwriting search');healText();textAttempted.clear();return setupText().then(()=>scheduleText()).catch(()=>{});}
+N.pauseRecognitionForImage=pauseForImage;
 N.ai={enabled,setup:boot,setupText,retry,retryText,toggle,watch,watchText,setupState,textSetupState,get ready(){return state(preferred()).ready;}};
-N.recog={resultVersion:RESULT_VERSION.ink,rebuild,frames:()=>pageFrames,frameInfo,release,selectionUnread,readStrokesText,mathStrokeGroups,equalsGeometryRepair,stackedBarPairs,schedule,scheduleText,scheduleIndex,indexOthers,textGroupsOfDoc,recognize,recognizeText,solveSelection,crop,linearizedCrop,textCrop,textGroups,cache,confirm,reset,refreshModels,engine:preferred,switchEngine,validText,wordReading,wordGeometry,needsConfirmation,inkTextAlternatives,textSupportedInk,
+N.recog={resultVersion:RESULT_VERSION.ink,rebuild,frames:()=>pageFrames,frameInfo,release,selectionUnread,readStrokesText,mathStrokeGroups,equalsGeometryRepair,stackedBarPairs,schedule,scheduleText,scheduleIndex,indexOthers,textGroupsOfDoc,recognize,recognizeText,solveSelection,crop,linearizedCrop,textCrop,textGroups,cache,confirm,reset,refreshModels,engine:preferred,switchEngine,validText,wordReading,wordGeometry,needsConfirmation,inkTextAlternatives,textSupportedInk,textSupportedEquation,
   get inkError(){return inkError;},get textReady(){return textState.ready;},get textVersion(){return TEXT_VERSION;},get textConfidenceMin(){return TEXT_CONFIDENCE_MIN;}};
 })();

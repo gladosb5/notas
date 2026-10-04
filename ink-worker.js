@@ -13,8 +13,8 @@ ort.env.wasm.proxy=false;
 
 const ROOT=new URL('./assets/ink/',self.location.href).href;
 const URLS={
-  encoder:ROOT+'encoder.onnx?v=6450d48d',
-  decoder:ROOT+'decoder_step.onnx?v=f1e83d45',
+  encoder:ROOT+'encoder.onnx?v=53418147',
+  decoder:ROOT+'decoder_step.onnx?v=bf1fc2fd',
   vocab:ROOT+'vocab.json?v=c3983a1c'
 };
 importScripts('./ink-features.js','./model-contract.js','./model-store.js');

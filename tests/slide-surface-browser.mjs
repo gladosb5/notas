@@ -10,7 +10,7 @@ try{
   await page.goto((process.env.NOTAS_BASE_URL||`http://127.0.0.1:${server.address().port}`)+'/notas.html');
   await page.waitForFunction(()=>window.N?.ink?.removeBackground&&N.ui?.insertImages);
   const result=await page.evaluate(async src=>{
-    const blob=await(await fetch(src)).blob();
+    const blob=new Blob([Uint8Array.from(atob(src.slice(src.indexOf(',')+1)),c=>c.charCodeAt(0))],{type:'image/png'});
     await N.ui.insertImages([new File([blob],'projected-slide.png',{type:'image/png'})]);
     const im=N.core.S.images.at(-1),ok=await N.ink.removeBackground(im.id);
     const image=new Image();await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=reject;image.src=im.full;});

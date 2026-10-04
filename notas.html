@@ -3248,8 +3248,9 @@ function deleteImage(id){
   if(S.imageSelection===id)clearSelection();after();return true;
 }
 /* ---- background removal ---- */
-/* bg-worker.js holds a 94 MB model and needs about 2 GB while it runs, so it
-   is let go a minute after the last job rather than kept all session. The
+/* bg-worker.js holds a 107 MB model and needs most of a gigabyte while it
+   runs, so it is let go a minute after the last job rather than kept all
+   session. The
    model itself stays in the model store, so the next use only restarts it.
    One worker answers every job: a picture asked for while the background
    download is still running waits for that download instead of repeating it. */
@@ -3272,28 +3273,29 @@ function canvasBlank(cv){
     return true;
   }catch(e){ return false; }
 }
-let cutoutWorker=null, cutoutIdle=0, cutoutSeq=0, cutoutBusy=false;
+let cutoutWorker=null, cutoutIdle=0, cutoutSeq=0, cutoutBusy=false, cutoutLowMemory=false;
 const cutoutJobs=new Map();
 function cutoutStop(err){
   const w=cutoutWorker; cutoutWorker=null; clearTimeout(cutoutIdle);
   if(w) w.terminate();
-  for(const job of cutoutJobs.values()) job.reject(err||new Error('the background remover stopped.'));
+  for(const job of cutoutJobs.values()){clearTimeout(job.timer);job.reject(err||new Error('the background remover stopped. try again. your original image is unchanged.'));}
   cutoutJobs.clear();
 }
-function cutoutPort(slide=false){
+function cutoutPort(){
   clearTimeout(cutoutIdle);
-  if(cutoutWorker&&cutoutWorker.slide===slide) return cutoutWorker;
-  if(cutoutWorker)cutoutStop();
-  const w=cutoutWorker=new Worker('./bg-worker.js'+(slide?'?slide=1':''));w.slide=slide;
+  if(cutoutWorker) return cutoutWorker;
+  const w=cutoutWorker=new Worker('./bg-worker.js');
   w.onmessage=e=>{
+    if(cutoutWorker!==w)return;
     const d=e.data||{}, job=cutoutJobs.get(d.id);
     if(d.progress){
+      if(job){clearTimeout(job.timer);job.timer=setTimeout(job.expire,120000);}
       if(d.phase==='download') N.downloads&&N.downloads.set('cutout','download','',null,d.loaded,d.total);
       if(job&&job.progress) job.progress(d);
       return;
     }
     if(!job) return;
-    cutoutJobs.delete(d.id);
+    clearTimeout(job.timer);cutoutJobs.delete(d.id);
     if(d.error) job.reject(Object.assign(new Error(d.error),{fatal:!!d.fatal,memory:!!d.memory})); else job.resolve(d);
     /* A runtime that failed to start stays failed in its worker, so asking
        the same worker again, for the minute it was kept, gave the same error
@@ -3304,20 +3306,23 @@ function cutoutPort(slide=false){
   };
   w.onerror=e=>{
     if(e&&e.preventDefault) e.preventDefault();
-    if(cutoutWorker===w) cutoutStop(new Error('the background remover stopped. this device may be short of memory.'));
+    if(cutoutWorker===w) cutoutStop(Object.assign(new Error('Background removal stopped unexpectedly. Try again. Your original image is unchanged.'),{fatal:true}));
   };
   return w;
 }
 function cutoutAsk(msg,transfer,progress){
-  const w=cutoutPort(!!msg.slide), id=++cutoutSeq;
+  const w=cutoutPort(), id=++cutoutSeq;
   return new Promise((resolve,reject)=>{
-    cutoutJobs.set(id,{resolve,reject,progress});
-    w.postMessage({...msg,id},transfer||[]);
+    const expire=()=>{
+      if(cutoutWorker===w)cutoutStop(Object.assign(new Error('Background removal stopped responding. Try again. Your original image is unchanged.'),{fatal:true}));
+    };
+    cutoutJobs.set(id,{resolve,reject,progress,expire,timer:setTimeout(expire,120000)});
+    try{w.postMessage({...msg,id},transfer||[]);}catch(error){cutoutStop(error);}
   });
 }
 /* The model is downloaded in the background once the notebook has started
    and the handwriting readers have finished theirs, so the first "remove
-   background" does not sit behind 94 MB. Only the download: starting the
+   background" does not sit behind 107 MB. Only the download: starting the
    model waits for a picture. A connection that asks to save data is left
    alone, as are automated browsers (the test suite opens hundreds of fresh
    profiles); both still download on first use. */
@@ -3329,7 +3334,7 @@ function prefetchCutout(){
     addEventListener('online',()=>prefetchCutout(),{once:true});
     return Promise.resolve(false);
   }
-  cutoutWarming=cutoutAsk({prefetch:true,slide:true}).then(d=>{
+  cutoutWarming=cutoutAsk({prefetch:true}).then(d=>{
     N.downloads&&N.downloads.set('cutout','ready');
     return d.done;
   },()=>{
@@ -3375,19 +3380,21 @@ function cutoutEncode(el,mask){
    memory to start (the handwriting readers hold theirs beside it, and a
    tablet only has so much), the readers are let go - they start again when
    next needed - and a fresh worker tries once more. */
-async function cutoutMatte(rgba,progress,slide=false){
-  const ask=()=>{ const copy=rgba.slice(); return cutoutAsk({rgba:copy.buffer,lean:CUTOUT_LEAN,slide},[copy.buffer],progress); };
+async function cutoutMatte(rgba,progress){
+  const resume=N.pauseRecognitionForImage?.();
+  const ask=()=>{ const copy=rgba.slice(); return cutoutAsk({rgba:copy.buffer,lean:CUTOUT_LEAN||cutoutLowMemory},[copy.buffer],progress); };
   try{ return await ask(); }
   catch(e){
     if(!e||!e.memory) throw e;
+    cutoutLowMemory=true;
     cutoutStop(); N.recog&&N.recog.release&&N.recog.release();
     await new Promise(r=>setTimeout(r,600));
     try{ return await ask(); }
     catch(e2){
-      if(e2&&e2.memory){ cutoutStop(); throw new Error('this device ran short of memory for the background remover. close other apps or tabs, then try again.'); }
+      if(e2&&e2.memory){ cutoutStop(); throw Object.assign(new Error('Not enough available memory to remove the background. Close a few apps or tabs, then try again. Your original image is unchanged.'),{memory:true}); }
       throw e2;
     }
-  }
+  }finally{cutoutStop();resume?.();}
 }
 function loadPicture(src){
   return new Promise((resolve,reject)=>{
@@ -3435,10 +3442,10 @@ async function removeBackground(id){
      later crop that widens the box does not bring the background back */
   const note=S.id, before=im.src, beforeFull=im.full, crop=im.full&&im.crop?im.crop:null, base=crop?im.full:im.src;
   C.toast('removing the background.', 600000);
-  let told=false;
+  let told=false,small=null;
   try{
     const el=await loadPicture(base);
-    const n=CUTOUT_SIZE, small=document.createElement('canvas'); small.width=small.height=n;
+    const n=CUTOUT_SIZE; small=document.createElement('canvas'); small.width=small.height=n;
     const sx=small.getContext('2d',{willReadFrequently:true});
     sx.imageSmoothingQuality='high'; sx.drawImage(el,0,0,n,n);
     const rgba=sx.getImageData(0,0,n,n).data;
@@ -3450,13 +3457,10 @@ async function removeBackground(id){
       if(d.phase==='download'&&!told){ told=true; C.toast('downloading the background remover. this happens once per model.', 600000); }
       else if(d.phase==='running'){ N.downloads&&N.downloads.set('cutout','ready'); if(told) C.toast('removing the background.', 600000); }
     };
-    // Detect a projected slide first. Keep its entire visible projection,
-    // including text and diagrams; other pictures use the general model.
-    // Only one inference worker is retained at a time on memory-limited devices.
-    let result;
-    try{result=await cutoutMatte(rgba,progress,true);}catch(e){result=null;}
-    if(!result?.slideDetected)result=await cutoutMatte(rgba,progress,false);
-    const {alpha}=result;
+    // One run reads the picture both ways: a projected slide keeps its whole
+    // visible projection, text and diagrams included; anything else gets
+    // the general matte.
+    const {alpha}=await cutoutMatte(rgba,progress);
     /* A matte with nothing in it would leave a blank picture on the page:
        the model found no subject (a page of notes, a flat photo of a
        poster). The picture keeps its background instead, and says why. */
@@ -3499,9 +3503,11 @@ async function removeBackground(id){
     return true;
   }catch(e){
     if(!e||!e.quiet) N.downloads&&N.downloads.set('cutout','error');
-    C.toast((e&&e.message)||'could not remove the background.');
+    const memory=e?.memory||/out of memory|\boom\b|memory access out of bounds|allocat|memory.*(?:grow|limit)/i.test(String(e?.message||e));
+    if(memory){cutoutLowMemory=true;cutoutStop();}
+    C.toast(memory?'Not enough available memory to remove the background. Close a few apps or tabs, then try again. Your original image is unchanged.':(e&&e.message)||'could not remove the background.');
     return false;
-  }finally{ cutoutBusy=false; showSelBar(); }
+  }finally{ dropCanvas(small);cutoutBusy=false; showSelBar(); }
 }
 /* ---- cropping a picture ----
    Two taps on a picture (a double click with a mouse) open its crop: the
@@ -3773,16 +3779,17 @@ function packStrokes(list){
     strokes:list.map(st=>({author:st.author==='ai'?'ai':'user',w:st.w,pts:st.pts.map((v,i)=>i%3===0?v-bb[0]:i%3===1?v-bb[1]:v),
       times:Array.isArray(st.times)&&st.times.length===st.pts.length/3?st.times.slice():undefined,
       /* the pen's colour travels with the ink, or a copy came out graphite */
-      color:penColor(st.color)}))};
+      color:penColor(st.color),quickGroup:st.quickGroup,quickCount:st.quickCount,quickMath:st.quickMath}))};
 }
 function unpackStrokes(clip,x,y){
-  const t=inkNow();
+  const t=inkNow(),quickGroups=new Map();
   return clip.strokes.map((s,i)=>{
     const pts=s.pts.map((v,k)=>k%3===0?v+x:k%3===1?v+y:v);
     const times=Array.isArray(s.times)&&s.times.length===pts.length/3?s.times.map(Number):null;
     const duration=times&&times.length?Math.max(0,times[times.length-1]):0;
     const color=penColor(s.color);
-    return {id:C.uid(),author:s.author==='ai'?'ai':'user',tool:'pen',w:s.w,t0:t+i,t1:t+i+duration,pts,bbox:bboxOf(pts),...(times?{times}:{}),...(color?{color}:{})};
+    if(s.quickGroup&&!quickGroups.has(s.quickGroup))quickGroups.set(s.quickGroup,C.uid());
+    return {id:C.uid(),author:s.author==='ai'?'ai':'user',tool:'pen',w:s.w,t0:t+i,t1:t+i+duration,pts,bbox:bboxOf(pts),...(times?{times}:{}),...(color?{color}:{}),...(s.quickGroup?{quickGroup:quickGroups.get(s.quickGroup),quickCount:s.quickCount,quickMath:s.quickMath}:{})};
   });
 }
 function readClip(){
@@ -6087,6 +6094,9 @@ function paint(nodes){
       N.text.setGhost(n.id, ghost);
       if(ghost || n.stated) continue;
     }
+    /* The graph card is the answer. Leave its old scalar chip unseen so
+       cleanup removes it, rather than labelling a valid reading unreadable. */
+    if(n.plot && N.plot) continue;
     const show = n.pending || n.result || visibleError || n.ref?.review || offer || (n.kind==='cluster' && n.src && asksForAnswer(n));
     if(!show || (n.kind==='cluster' && n.ref?.dismissed) || callInk(n)) continue;
     /* Ink still warm from the pen gets no chip yet. The chip lands right after
@@ -7323,9 +7333,14 @@ quickMenu.addEventListener('click',e=>{
     C.act('insert quick maths',()=>S.lines.push(line),()=>{S.lines=S.lines.filter(l=>l.id!==line.id);});
     N.text.render();N.mathcore.run();N.ink.setTool('select');S.selection=[line.id];S.imageSelection=null;N.ink.render();N.ink.showSelBar();C.growDoc(line.y+120);
   }else{
-    const writer=N.nota.Writer({x:latest?Math.max(8,latest.bbox[0]):8,y:y-12,rowH:32,label:'insert quick maths',color:N.ink.colors.graphite,instant:true});
+    const writer=N.nota.Writer({x:latest?Math.max(8,latest.bbox[0]):8,y:y-12,rowH:32,label:'insert quick maths',tutor:false,color:N.ink.colors.graphite,instant:true});
     writer.feed(source.replace(/=\s*$/,'')+' ');writer.finish();writer.setColor(N.ink.colors.blue);
     writer.feed((answer.includes('=')?'  ':' = ')+answer);writer.finish();
+    // Generated writing keeps its exact meaning without OCR. A complete group
+    // is required so erasing part cannot leave an invisible old answer in context.
+    const ids=new Set(writer.ids),strokes=S.strokes.filter(st=>ids.has(st.id)),group=C.uid();
+    for(const st of strokes){st.quickGroup=group;st.quickCount=strokes.length;st.rev=(st.rev||0)+1;}
+    if(strokes.length)strokes[0].quickMath=source.replace(/=\s*$/,'')+(answer.includes('=')?'  ':' = ')+answer;
     N.ink.setTool('select');S.selection=writer.ids;S.imageSelection=null;N.ink.after();N.ink.showSelBar();
   }
   sc.scrollTop=Math.max(0,y*M.zoom- sc.clientHeight*.45);C.save();
@@ -7523,10 +7538,11 @@ function penNotice(){
 function privacySheet(){
   openSheet(
     '<h2>privacy</h2>' +
-    '<p>your notes stay on this device, in this browser. there is no account and nothing is uploaded on its own.</p>' +
-    '<p>handwriting recognition, maths calculations and hints run on this device. no note content is sent to an ai service. initial setup fetches app files from this website. after setup the notebook works offline. microphone input is disabled.</p>' +
-    '<p>notas never asks for your name, your school, your phone number or any password. please do not write personal details on a page you plan to share.</p>' +
-    '<p>clearing your browser data will delete your notes, so export anything you want to keep.</p>');
+    '<p>your notes are saved in this browser. no account is needed. handwriting recognition, calculations and local maths hints run on this device.</p>' +
+    '<p>asking nota sends your question and nearby note text to cerebras for an ai reply. ink and images are not sent to the tutor.</p>' +
+    '<p>sharing uploads the note to our cloudflare service and syncs it with anyone who has the link. your nickname is saved on this device and shown to collaborators. stopping sharing on this device does not delete their copies.</p>' +
+    '<p>setup downloads app files and ai models. once ready, local features work offline. nota and live sharing need a connection. microphone input is disabled.</p>' +
+    '<p>clearing browser data deletes local notes. export anything you want to keep.</p>');
 }
 
 /* ---- export ---- */
@@ -7953,6 +7969,8 @@ function validateImportedNote(doc){
       if(times.some((v,i)=>!Number.isFinite(v)||v<0||v>3600000||(i&&v<times[i-1])))throw new Error('this note contains invalid ink timing data.');
     }
     return {id:safeId(st.id),author:st.author==='ai'?'ai':'user',w,t0:Number(st.t0)||0,t1:Number(st.t1)||0,pts,bbox:N.ink.bboxOf(pts),...(times?{times}:{}),
+      ...(typeof st.quickGroup==='string'&&st.quickGroup.length<=160&&Number.isInteger(st.quickCount)&&st.quickCount>0&&st.quickCount<=200000
+        ?{quickGroup:st.quickGroup,quickCount:st.quickCount,...(typeof st.quickMath==='string'&&st.quickMath.length<=8192?{quickMath:st.quickMath}:{})}:{}),
       ...(typeof st.color==='string'&&/^#[0-9a-f]{6}$/i.test(st.color)?{color:st.color}:{})};
   });
   const lines=doc.lines.map(l=>{

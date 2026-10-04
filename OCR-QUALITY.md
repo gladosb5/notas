@@ -1,5 +1,47 @@
 # Math OCR quality
 
+## October 4: stroke model v14 (writing order, notebook capture, notebook arithmetic)
+
+The stroke reader was retrained (`recognition-v14`): Hand-to-TeX `base-aug` weights fine-tuned for four epochs on MathWriting train + 30% of its synthetic split + symbols + 157k composed notebook expressions (single-digit sums such as `1+1`, repeated terms, decimals, commas, brackets, powers, stacked fractions, `y=x`-style assignments, a full-height `+`). Every training sample may also be drawn in another writing order (a `+` bar-first or upright-first, straight strokes reversed, a stroke added after the next symbol) and passed through the notebook's own point capture (`pushPoint`: 1.2 px distance filter, 0.62 smoothing, 0.1 px rounding), because that, not raw device points, is what the app sends the model. Training code: `experiments/hand-to-tex/notas_train/v14/`.
+
+Composed arithmetic uses only glyphs from HWRT writers in the hashed writer split; HWRT's own train/test split shares 93 of its 101 test writers with train, so the earlier `arith_valid` 88% was not writer-disjoint. The checkpoint was chosen on selection data only (MathWriting valid, composed arithmetic from separate writers); the sets below were scored once, after freezing. None was trained on; CROHME was never used by any notas model. CROHME has no timestamps (rebuilt at 10 ms per point) and is scored after the notebook point capture. Exact match, project `normalize_latex`, greedy primary reading.
+
+| Held-out set | v13 | v14 | v13 arithmetic | v14 arithmetic |
+| --- | ---: | ---: | ---: | ---: |
+| Composed notebook arithmetic, 2,415, unseen writers | 82.7% | **95.7%** | 85.7% | **96.0%** |
+| MathWriting test, 7,644 | 59.3% | **61.8%** | 69.0% (n=84) | **72.6%** |
+| CROHME 2014 test, 986 | 55.6% | **57.9%** | 78.3% (n=46) | **80.4%** |
+| CROHME 2012 test, 488 | 45.9% | **48.8%** | 39.1% (n=46) | **47.8%** |
+| CROHME 2011 test, 348 | 55.2% | **58.0%** | 66.7% (n=15) | 66.7% |
+
+Per-symbol accuracy (1 - token edit distance / label tokens), the target agreed for this work (90% on data the model never saw). Scored on the same saved predictions with LaTeX-equivalent spelling (`experiments/hand-to-tex/notas_train/v14/canonical.py`): an unbraced command argument is the next single token, as LaTeX reads it, so CROHME's `\frac12` equals the decoder's `\frac{1}{2}`; applied identically to label and prediction. The strict project scorer counted those as errors (CROHME 2012 symbol accuracy 86.7% strict).
+
+| Held-out set | v13 symbol | v14 symbol | v14 expression (equivalent spelling) |
+| --- | ---: | ---: | ---: |
+| Composed notebook arithmetic, unseen writers | 96.2% | **99.3%** | 95.7% |
+| MathWriting test | 93.3% | **93.7%** | 61.8% |
+| CROHME 2014 test | 88.0% | **90.6%** | 58.8% |
+| CROHME 2012 test | 92.4% | **94.3%** | 64.1% |
+| CROHME 2011 test | 90.3% | **92.9%** | 58.9% |
+
+v14 reads at least 90% of symbols correctly on every held-out set; v13 did not on CROHME 2014. CROHME 2014 clears it narrowly. The scorer change was made after the test scoring (the CROHME 2012 error analysis found the brace spelling); no model was changed after that point.
+
+v14 is better on every set. Per whole expression it reaches 90% only on composed notebook arithmetic; real people's expressions stay far below, as for every published recognizer (the best reported CROHME 2014 expression rates are about 60%, from models trained on CROHME). Remaining real-data errors: long nested arithmetic where one digit fails the whole expression, `1`/`4`/`l` confusions, a decimal point read as a comma, and case ambiguity (`c`/`C`, `x`/`X`) that the ink itself does not settle. The reported `1+1` read as `1-11` was not reproduced on held-out writers by either model (`probe_order.py`: 987/1000 v13, 994/1000 v14 across five ways of drawing the plus); the user's own ink is needed for that case.
+
+## October 3: square roots and dense pages kept whole
+
+Two grouping regressions from the September edge-case pass, found when `tests/ink-routing-browser.mjs` and `tests/checklist-fixes.mjs` failed (the latter was not in `test:browser`; it now is).
+
+- Box detection treated a handwritten radical as a box corner (a steep rise and a long top bar), so the `\sqrt` stroke was removed from the maths and `\sqrt{1-\omega^{2}r_{0}^{2}}` read as `1-\omega^{2}r_{0}`. A stroke that starts above its lowest point, dips to a tick, rises on the left and ends at the right of a top bar, with writing under it, is no longer a corner. A `┌` corner of the same size still is.
+- Grouping more than 240 strokes split them along the longer axis, measuring the gap only between neighbours. A band of lines is wider than tall, so it was cut down the middle and each line read as two halves: a synthetic 60-line page gave 109 groups instead of 60. The split now takes the widest clear gap on either axis.
+
+## October 3: uncertain variable equation recovery
+
+A supplied five-stroke `y=x` example was decoded as `41=x` (likelihood 0.7736), with `y=x` already among the completed alternatives. Independent text OCR read `Y=X`. For uncertain short number-equals-variable readings only, an independent text reading can now select a unique existing letter-equals-variable candidate with the same right-hand variable. The original reading is retained, confidence is not increased, and explicit Solve is still required. Confident readings, missing/ambiguous candidates, changed right-hand variables, and weak text evidence abstain.
+
+`node tests/handwritten-variable.mjs` replays the supplied strokes through both production readers. This is a user-reported regression fixture, not an independent accuracy benchmark. The unit tests also cover abstention and preserve uncertainty.
+
+
 The current changes improve the recognition pipeline; they do not replace or retrain the shipped neural-network weights. Apple Notes parity has not been established.
 
 ## Operator bridging for short arithmetic (2026-09-17)

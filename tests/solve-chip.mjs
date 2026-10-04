@@ -47,8 +47,20 @@ try{
     return {id:cl.id,hash:cl.hash};
   },[id,ascii,latex,extra]);
 
+  // A recognised graph replaces an earlier scalar answer chip.
+  await seed('graph-reading','2+2=','2+2=',{asked:true});
+  assert.equal(await page.locator('.chip').count(),1,'Scalar answer starts with a chip');
+  for(const expression of ['y=x','y=x^2']){
+    await seed('graph-reading',expression,expression,{asked:true});
+    assert.equal(await page.locator('.plot').count(),1,'Recognised expression creates a graph');
+    assert.equal(await page.locator('.chip').count(),0,'Graph is the answer, with no stale or unread chip');
+    await page.evaluate(()=>N.mathcore.run());
+    assert.equal(await page.locator('.chip').count(),0,'Repainting the graph stays free of error chips');
+  }
+
   // 6+2 without '=': shows the reading and Solve, no answer yet.
   await seed('s1','6+2','6+2');
+  assert.equal(await page.locator('.plot').count(),0,'Returning to arithmetic removes the graph');
   const offer=page.locator('.chip.offer');
   assert.equal(await offer.count(),1,'A reading without = gets a Solve chip');
   assert.ok((await offer.locator('.reading').textContent()).replace(/\s/g,'').includes('6+2'),'Chip shows the reading');

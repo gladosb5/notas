@@ -23,12 +23,14 @@ const C=N.core,S=C.S,M=C.M;
    one in localStorage. */
 const CONFIG={
   url:'https://api.cerebras.ai/v1/chat/completions',
-  model:'gpt-oss-120b',
+  model:'qwen-3.8-27b',
   key:'csk-PASTE-YOUR-KEY-HERE',
   proxy:'./nota/chat',
-  maxTokens:420,
+  /* the model's thinking counts against this, so it is well over the
+     few dozen words of an answer */
+  maxTokens:1600,
   timeoutMs:45000,
-  /* gpt-oss thinks before it writes; low keeps the pause short, and the
+  /* the model thinks before it writes; low keeps the pause short, and the
      thinking never reaches the page, only the answer does */
   extras:{reasoning_effort:'low'}
 };
@@ -131,6 +133,8 @@ const SYSTEM=[
   'You are nota, the red pen inside a handwritten notebook. The notebook is used for anything: maths and science homework, recipes, shopping and to-do lists, notes from a lesson or a meeting, a diary, plans, drafts of writing, languages.',
   'The person wrote or typed "hey nota," followed by a question on the page, or circled some handwriting and asked about it. The page contents are given as rows in reading order; "this" or "that" or "it" means the nearest thing above or beside the question: a sum, a list, a paragraph, a recipe, whatever is there. Rows between [box] and [end of box] were written inside a box drawn on the page, usually a heading and its notes; boxes side by side are separate topics.',
   'The rows are machine readings of handwriting and can contain misread words or stray symbols. Read them for their meaning and ignore fragments that make no sense, rather than explaining them.',
+  'Drawings on the page are described in words between [diagram] and [end of diagram], or [graph] and [end of graph]: the shapes, the lines and arrows joining them, and the handwriting labelling each part, with places as (across, down) from 0 to 100 over the drawing. An arrow "from A to B" points at B. A graph gives its curves as points in the units written on its axes. Read the description as the drawing the person made (a flowchart, a food chain, a Venn diagram, a triangle, a circuit, a graph) and answer about the drawing itself; never mention the description, the coordinates or the brackets.',
+  'A question may come with a picture of the page around it: the person\'s handwriting and drawings in dark ink, and any photo or picture they put on the page. The machine readings come from that same ink. Use the picture to read what the readings missed or got wrong and to see drawings and photos, and trust it over a reading that disagrees with it. Never mention that you were sent a picture.',
   'Answer whatever is asked: work out or check maths, explain an idea, suggest what to cook with what is listed and how, convert units or currencies, fix spelling or grammar, translate, summarise the notes, plan the steps, define a word, give a fact. Be accurate; if you are not sure, say so briefly.',
   'Answer in plain text only: no markdown, no bullets, no LaTeX, no code fences, no emoji, no headings. Write maths in plain notation such as 2x + 3 = 11, sqrt(16), 3/4, 2^3, 12 x 7. Use only plain letters, digits and punctuation, since the answer is handwritten onto the page.',
   'Be brief: one to three short sentences, at most about 45 words, unless the person asks for the full working, the steps, a list or a recipe, then give short numbered lines, one per line.',
@@ -273,9 +277,29 @@ function spell(text){
   }
   return out.replace(/ {2,}/g,' ');
 }
+// Rare Unicode characters stay ink. Rasterize the system font into short
+// pen runs instead of replacing the entire answer with an editable text line.
+const EXTRA_GLYPHS=new Map();
+function penGlyph(ch){
+  if(GLYPHS.has(ch))return GLYPHS.get(ch);
+  if(EXTRA_GLYPHS.has(ch))return EXTRA_GLYPHS.get(ch);
+  const canvas=document.createElement('canvas');canvas.width=80;canvas.height=64;
+  const ctx=canvas.getContext('2d',{willReadFrequently:true});
+  ctx.font='28px "Segoe UI", sans-serif';ctx.fillStyle='#000';
+  const width=Math.min(76,Math.max(1,Math.ceil(ctx.measureText(ch).width)));
+  ctx.fillText(ch,2,36);
+  const pixels=ctx.getImageData(0,0,80,64).data,strokes=[];
+  for(let y=0;y<64;y++)for(let x=0;x<80;){
+    if(pixels[(y*80+x)*4+3]<96){x++;continue;}
+    const start=x;while(x<80&&pixels[(y*80+x)*4+3]>=96)x++;
+    strokes.push([(start-2)*.75,(y-36)*.75+BASE,(x-2)*.75,(y-36)*.75+BASE]);
+  }
+  const glyph={l:0,w:(width+3)*.75,strokes,raster:true};
+  EXTRA_GLYPHS.set(ch,glyph);return glyph;
+}
 function wordWidth(word,unit){
   let w=0;
-  for(const ch of word){ const g=GLYPHS.get(ch); w+=(g?g.w:SPACE_W)*unit; }
+  for(const ch of word){ const g=penGlyph(ch); w+=(g?g.w:SPACE_W)*unit; }
   return w;
 }
 /* a small, repeatable wobble so the hand is not a plotter */
@@ -337,6 +361,87 @@ function obstacles(skip){
   }
   return out;
 }
+function mathLayout(source){
+  if(source.length>4000)throw Error('equation too long');
+  let at=0;
+  const empty=()=>({w:0,h:21,paths:[]});
+  const put=(box,part,x,y,scale=1)=>{
+    for(const path of part.paths)box.paths.push(path.map((v,i)=>v*scale+(i%2?y:x)));
+  };
+  const letters=text=>{
+    const box=empty();
+    for(const ch of spell(text)){
+      const g=penGlyph(ch);if(!g)continue;
+      for(const path of g.strokes)box.paths.push(path.map((v,i)=>i%2?v-CAP:v-g.l+box.w));
+      box.w+=g.w;
+    }
+    return box;
+  };
+  const skip=()=>{while(/\s/.test(source[at]||'')&&at<source.length)at++;};
+  const argument=depth=>{skip();return atom(depth+1);};
+  function atom(depth){
+    if(depth>24)throw Error('equation nested too deeply');
+    const ch=source[at++];if(!ch)throw Error('missing argument');
+    if(ch==='{'){const box=sequence('}',depth+1);return box;}
+    if(ch==='}'||ch==='^'||ch==='_')throw Error('unexpected TeX token');
+    if(ch!=='\\')return letters(ch);
+    const match=source.slice(at).match(/^[a-zA-Z]+|^./);if(!match)throw Error('unfinished command');
+    const name=match[0];at+=name.length;
+    if(['left','right'].includes(name))return empty();
+    if([',',';',':','!','quad','qquad',' '].includes(name))return {w:name==='!'?0:8,h:21,paths:[]};
+    if(['frac','dfrac','tfrac'].includes(name)){
+      const num=argument(depth),den=argument(depth),scale=.82;
+      const w=Math.max(num.w,den.w)*scale+10,bar=num.h*scale+4;
+      const box={w,h:bar+5+den.h*scale,paths:[[1,bar,w-1,bar]]};
+      put(box,num,(w-num.w*scale)/2,0,scale);put(box,den,(w-den.w*scale)/2,bar+5,scale);return box;
+    }
+    if(name==='sqrt'){
+      skip();let index=null;
+      if(source[at]==='['){at++;index=sequence(']',depth+1);}
+      const body=argument(depth),lead=index?Math.max(18,index.w*.5):18;
+      const box={w:body.w+lead+4,h:body.h+7,paths:[[0,body.h*.55+5,5,body.h*.55+2,10,body.h+5,lead,2,body.w+lead+4,2]]};
+      put(box,body,lead+2,7);if(index)put(box,index,0,0,.5);return box;
+    }
+    if(name==='text'){
+      skip();if(source[at++]!=='{')throw Error('missing text group');
+      const start=at;let nesting=1;
+      while(at<source.length&&nesting){const c=source[at++];if(c==='{')nesting++;else if(c==='}')nesting--;}
+      if(nesting)throw Error('unclosed text group');
+      return letters(source.slice(start,at-1).replace(/[{}]/g,''));
+    }
+    if(['mathrm','mathbf','mathit','operatorname','boxed'].includes(name))return argument(depth);
+    const symbols={pi:{w:24,h:21,paths:[[2,3,22,3],[7,3,6,21],[18,3,17,18,20,21,23,19]]},
+      theta:{w:22,h:21,paths:[[10,0,4,3,2,10,4,18,10,21,16,18,18,10,16,3,10,0],[3,10,18,10]]},
+      sum:{w:25,h:28,paths:[[23,0,2,0,14,14,2,28,23,28]]},
+      int:{w:16,h:32,paths:[[15,1,11,0,8,3,7,27,4,32,0,31]]}};
+    if(symbols[name])return symbols[name];
+    if(name==='times')return letters('x');if(name==='cdot')return letters('*');if(name==='div')return letters('/');
+    if(TEX[name]!==undefined)return letters(TEX[name]);
+    if(/^[%{}$&#_]$/.test(name))return letters(name);
+    throw Error('unsupported command: '+name);
+  }
+  function sequence(end,depth){
+    const parts=[];
+    while(at<source.length&&source[at]!==end){
+      if(/\s/.test(source[at])){at++;continue;}
+      let base=atom(depth),sup=null,sub=null;
+      while(source[at]==='^'||source[at]==='_'){
+        const kind=source[at++],arg=argument(depth);if(kind==='^')sup=arg;else sub=arg;
+      }
+      if(sup||sub){
+        const rise=sup?sup.h*.65+2:0;
+        const box={w:base.w+Math.max(sup?sup.w*.65:0,sub?sub.w*.65:0),h:rise+base.h+(sub?sub.h*.65:0),paths:[]};
+        put(box,base,0,rise);if(sup)put(box,sup,base.w,0,.65);if(sub)put(box,sub,base.w,rise+base.h-3,.65);base=box;
+      }
+      parts.push(base);
+    }
+    if(end){if(source[at]!==end)throw Error('unclosed group');at++;}
+    const box={w:parts.reduce((n,p)=>n+p.w,0),h:Math.max(21,...parts.map(p=>p.h)),paths:[]};
+    let x=0;for(const p of parts){put(box,p,x,(box.h-p.h)/2);x+=p.w;}return box;
+  }
+  return sequence(null,0);
+}
+
 function Writer(anchor){
   /* anchor: {x,y,right,rowH,skip} - the question's left edge, its bottom,
      its right edge, the height of its handwriting and the stroke ids that
@@ -352,7 +457,7 @@ function Writer(anchor){
   const right=Math.max(x0+160,M.contentW-10,(anchor.right!=null?anchor.right:0));
   const minW=Math.max(140,SPACE_W*unit*9);
   const rnd=wobble(Math.round(anchor.x*7+anchor.y*13));
-  const list=[],textList=[];let registered=false,aborted=false,textFallback=false;
+  const list=[],textList=[];let registered=false,aborted=false;
   /* the answer belongs to the note it was asked in: another note opened
      while it is being written stops it, rather than letting the rest land
      on that note */
@@ -396,7 +501,7 @@ function Writer(anchor){
   };
   const startRow=(y)=>{const p=roomAt(y);cursor.y=p.y;cursor.x=p.l;row.l=p.l;row.r=p.r;};
   startRow(anchor.y+gap-CAP*unit);
-  const newRow=()=>startRow(cursor.y+rowPx);
+  const newRow=()=>{startRow(Math.max(cursor.y+rowPx,rowBottom));rowBottom=0;};
   const t=N.ink.now();
   const place=(st)=>{
     /* a save that forked this page into a conflict copy keeps the page as
@@ -416,7 +521,7 @@ function Writer(anchor){
     C.growDoc(st.bbox[3]);C.markDirty();
   };
   const glyph=(ch)=>{
-    const g=GLYPHS.get(ch);if(!g)return;
+    const g=penGlyph(ch);if(!g)return;
     const base=cursor.y+rnd()*0.8*unit;
     for(const s of g.strokes){
       const pts=[];
@@ -425,7 +530,7 @@ function Writer(anchor){
                  Math.round((base+s[i+1]*unit+rnd()*0.5*unit)*10)/10,
                  Math.round((0.5+rnd()*0.16)*100)/100);
       }
-      const st={id:C.uid(),author:'ai',tool:'pen',w:3,pts,t0:t,t1:t,...(anchor.color?{color:anchor.color}:{})};
+      const st={id:C.uid(),author:'ai',tool:'pen',w:g.raster?0.85*unit:3,pts,t0:t,t1:t,...(anchor.color?{color:anchor.color}:{})};
       st.bbox=N.ink.bboxOf(pts);
       place(st);
     }
@@ -446,29 +551,40 @@ function Writer(anchor){
       glyph(ch);
     }
   };
-  const equation=source=>prose(source);
+  let rowBottom=0,afterDisplay=false;
+  const equation=(source,display=false)=>{
+    let box;
+    try{box=mathLayout(source);}catch(e){prose(source);return;}
+    if(!box.paths.length)return;
+    if(display&&cursor.x>row.l)newRow();
+    const scale=Math.min(unit,(right-x0)/Math.max(1,box.w));
+    if(cursor.x>row.l&&cursor.x+box.w*scale>row.r)newRow();
+    const room=roomAt(cursor.y,box.h*scale+6,box.w*scale);
+    if(room.y!==cursor.y||cursor.x<room.l||cursor.x+box.w*scale>room.r)startRow(room.y);
+    const top=cursor.y+CAP*unit;
+    for(const path of box.paths){
+      const pts=[];
+      for(let i=0;i<path.length;i+=2)pts.push(cursor.x+path[i]*scale,top+path[i+1]*scale,.5);
+      const st={id:C.uid(),author:'ai',tool:'pen',w:Math.max(1,3*scale/unit),pts,t0:t,t1:t,...(anchor.color?{color:anchor.color}:{})};
+      st.bbox=N.ink.bboxOf(pts);place(st);
+    }
+    cursor.x+=box.w*scale;
+    rowBottom=Math.max(rowBottom,top+box.h*scale+gap-CAP*unit);
+    if(display){newRow();afterDisplay=true;}
+  };
   const prose=text=>{
     for(const piece of spell(tidy(text)).split(/(\n| )/)){
-      if(piece==='\n')newRow();
+      if(piece==='\n'){if(!afterDisplay)newRow();afterDisplay=false;}
       else if(piece===' '){if(cursor.x>row.l)cursor.x+=SPACE_W*unit;}
-      else word(piece);
+      else if(piece){afterDisplay=false;word(piece);}
     }
   };
   const commit=final=>{
-    // Use editable text when the pen alphabet cannot represent the answer.
-    // Preserve the original Unicode, including CJK and emoji, in one undo step.
-    if(textFallback||[...spell(tidy(raw))].some(ch=>ch!=='\n'&&!GLYPHS.has(ch))){
-      textFallback=true;place(null);if(aborted)return;
-      const ids=new Set(list.map(st=>st.id));S.strokes=S.strokes.filter(st=>!ids.has(st.id));queue=queue.filter(q=>!ids.has(q.st.id));list.length=0;
-      if(!textList.length){const p=roomAt(anchor.y+gap-CAP*unit);const ln={id:C.uid(),x:p.l,y:p.y+CAP*unit,text:'',h:C.LINE_H,tutor:true};textList.push(ln);S.lines.push(ln);}
-      textList[0].text=tidy(raw,true);N.text.render();C.growDoc(textList[0].y+Math.max(C.LINE_H,textList[0].h||0));C.markDirty();N.ink.render();written=raw.length;return;
-    }
-
     while(written<raw.length){
       const rest=raw.slice(written),match=mathMatches(rest)[0];
       if(match){
         if(match.index)prose(rest.slice(0,match.index));
-        equation(match[1]??match[2]??match[3]??match[4]);
+        equation(match[1]??match[2]??match[3]??match[4],match[1]!==undefined||match[4]!==undefined);
         written+=match.index+match[0].length;continue;
       }
       let n=final?rest.length:Math.max(rest.lastIndexOf(' '),rest.lastIndexOf('\n'))+1;
@@ -491,8 +607,8 @@ function Writer(anchor){
   return {
     /* where the first word will land, for the waiting dots */
     get origin(){return {x:cursor.x,y:cursor.y,unit};},
-    feed(text){if(aborted)return;raw+=text;commit(false);},
-    finish(){if(aborted)return;commit(true);},
+    feed(text){if(aborted)return;raw=(raw+text).replace(/\r\n/g,'\n');if(raw.endsWith('\r'))return;raw=raw.replace(/\r/g,'\n');commit(false);},
+    finish(){if(aborted)return;raw=raw.replace(/\r/g,'\n');commit(true);},
     get aborted(){return aborted;},
     get count(){return list.length+textList.length;},
     get ids(){return list.map(st=>st.id);},
@@ -511,6 +627,7 @@ function mathMatches(text){
   return [...String(text).matchAll(/(?<!\\)\$\$([\s\S]*?)\$\$|(?<![\\\w$])\$(?!\s)([^$\n]*?\S)\$(?![\d$])|\\\(([\s\S]*?)\\\)|\\\[([\s\S]*?)\\\]/g)].filter(m=>m[2]===undefined||!/(?:^|\s)[A-Za-z]{2,}(?:\s|$)/.test(m[2]));
 }
 function tidy(text,keepMath=false){
+  text=String(text).replace(/\r\n?/g,'\n');
   const math=mathMatches(text),parts=[];let at=0;
   for(const m of math){parts.push(String(text).slice(at,m.index),m[1]??m[2]??m[3]??m[4]);at=m.index+m[0].length;}
   // Protected math is restored after ordinary prose has been tidied.
@@ -536,12 +653,181 @@ function tidy(text,keepMath=false){
     .replace(/\*\*|__|`+|^#+\s*/gm,'').replace(/^\s*[-*]\s+/gm,'')
     .replace(/[{}]/g,'');
 }
+/* ---- drawings ----
+   What is drawn rather than written (boxes and the arrows between them, a
+   food chain, a Venn diagram, a triangle, a graph) is found by its shape in
+   diagram.js and goes to nota as a few lines of words, in the page's order
+   where the drawing is: never as ink or a picture. The writing that labels
+   a drawing is read label by label, because a row the text reader read
+   whole ("grass -> rabbit -> fox") holds three of them. diagram.js is
+   loaded from here rather than from the page, whose own source is part of
+   the readers' fingerprint: adding it there would make every note's ink be
+   read again. */
+if(!window.NOTAS_DIAGRAM){
+  const s=document.createElement('script');
+  s.src=new URL('./diagram.js',(document.currentScript&&document.currentScript.src)||location.href).href;
+  document.head.appendChild(s);
+}
+const labelReadings=new Map();   /* a label's strokes, as they are -> what it says */
+function labelKey(ids){
+  return ids.map(id=>{const st=C.strokeById(id);return id+':'+(st?st.pts.length+':'+(st.rev||0):'');}).sort().join('|');
+}
+function sameStrokes(a,b){if(a.length!==b.length)return false;const set=new Set(a);return b.every(id=>set.has(id));}
+/* what the page has already read of exactly these strokes as words */
+function knownText(ids){
+  const groups=N.recog&&N.recog.textGroups?N.recog.textGroups():[];
+  for(const g of groups){
+    if(!sameStrokes(g.strokeIds,ids))continue;
+    const t=(S.textTranscripts||[]).find(t=>t.hash===g.hash);
+    if(t&&t.text)return t.text;
+  }
+  return null;
+}
+/* the maths reader's reading of these strokes, when its expressions lie
+   wholly inside them and cover them */
+function knownMaths(ids){
+  const set=new Set(ids),parts=[];let covered=0;
+  for(const cl of S.clusters||[]){
+    if(cl.source!=='ink'||!cl.strokeIds.length||!cl.strokeIds.every(id=>set.has(id)))continue;
+    const node=(S.nodes||[]).find(n=>n.kind==='cluster'&&n.ref===cl);
+    const t=String((node&&!node.error&&node.src)||cl.ascii||'').trim();
+    if(!t)continue;
+    parts.push({x:cl.bbox[0],t});covered+=cl.strokeIds.length;
+  }
+  return covered>=ids.length*0.9?parts.sort((a,b)=>a.x-b.x).map(p=>p.t).join(' '):'';
+}
+const looksMath=t=>N.mathcore&&N.mathcore.looksLikeMath?N.mathcore.looksLikeMath(t):/[0-9=+*\/^-]/.test(t);
+const readsProse=t=>N.mathcore&&N.mathcore.readsAsProse?N.mathcore.readsAsProse(t):/[A-Za-z]{3,}/.test(t);
+/* One label: the text reader's reading of it, unless it is not words and
+   the maths reader has a formula for it. A reading that failed is not
+   kept, so the next question tries again. */
+async function readLabel(ids){
+  const key=labelKey(ids);
+  if(labelReadings.has(key))return labelReadings.get(key);
+  const known=knownText(ids);
+  if(known!=null){labelReadings.set(key,known);return known;}
+  const maths=knownMaths(ids);
+  let read=null;
+  if(N.recog&&N.recog.readStrokesText){try{read=await N.recog.readStrokesText(ids);}catch(e){}}
+  const said=read&&read.text&&read.confidence>=0.5&&/[\p{L}\p{N}]/u.test(read.text)?read.text:'';
+  const text=said&&(readsProse(said)||!maths||!looksMath(maths))?said:maths||(read&&read.confidence>=0.3?read.text||'':'');
+  if(!text&&(!read||read.error))return '';
+  labelReadings.set(key,text);
+  if(labelReadings.size>3000)labelReadings.delete(labelReadings.keys().next().value);
+  return text;
+}
+/* The drawings on the page, each as {bbox, ids, lines}: those among the
+   strokes not skipped, or only among `only` (a lasso's), at the page's
+   size of writing. */
+function findDrawings(skip,only){
+  const D=window.NOTAS_DIAGRAM;if(!D)return null;
+  const mine=S.strokes.filter(st=>st.author==='user'&&Array.isArray(st.pts));
+  const strokes=only?mine.filter(st=>only.has(st.id)):mine.filter(st=>!skip.has(st.id));
+  try{return D.find(strokes,only?{H:D.heightOf(mine)}:{});}catch(e){console.warn('nota: drawings',e);return null;}
+}
+/* a drawing that cannot be put into words is left out, and its writing
+   stays in the page's rows as before: it never stops the question */
+function sayDrawings(found,said){
+  const out=[];
+  for(const d of found.diagrams){
+    try{out.push({bbox:d.bbox,ids:new Set(d.strokeIds),lines:window.NOTAS_DIAGRAM.describe(d,l=>said(l)||'')});}
+    catch(e){console.warn('nota: a drawing could not be described',e);}
+  }
+  return out;
+}
+/* what is already known of a label, without reading it */
+function knownLabel(l){
+  const key=labelKey(l.strokeIds);
+  if(labelReadings.has(key))return labelReadings.get(key);
+  const known=knownText(l.strokeIds);
+  return known!=null?known:knownMaths(l.strokeIds);
+}
+/* Labels the page has not read are read while `wait` milliseconds last;
+   after that what is already known is said and the rest left out. */
+async function readDrawings(skip,wait,only){
+  const found=findDrawings(skip,only);
+  if(!found||!found.diagrams.length)return [];
+  const until=performance.now()+wait,said=new Map();
+  for(const d of found.diagrams)for(const l of d.labels){
+    const key=labelKey(l.strokeIds);
+    said.set(l,labelReadings.has(key)||knownText(l.strokeIds)!=null||performance.now()>=until?knownLabel(l):await readLabel(l.strokeIds));
+  }
+  return sayDrawings(found,l=>said.get(l));
+}
+/* ---- a picture of the page ----
+   The model reads pictures, so the question goes with one: the part of
+   the page around it as the person sees it, so handwriting the readers
+   misread, a drawing, or a photo put on the page is seen as it is. Only
+   the person's own ink and pictures are drawn, as the readers see them:
+   nota's red replies stay out, as they do from the words. A lasso's
+   question sends what was circled; a written question is in its own
+   picture, so a misread question is seen as written. A typed question on
+   a page with no ink or picture near it goes as words alone. */
+const PICTURE_MAX=1280,PICTURE_ABOVE=900,PICTURE_TALL=1700,PICTURE_CHARS=1400*1024;
+function loadPicture(src){
+  return new Promise(resolve=>{
+    const img=new Image(),done=ok=>{clearTimeout(timer);resolve(ok&&img.naturalWidth?img:null);};
+    const timer=setTimeout(()=>done(false),4000);
+    img.onload=()=>done(true);img.onerror=()=>done(false);img.src=src;
+  });
+}
+async function pagePicture(where,drawings){
+  let box;
+  if(where.picture){const b=where.picture,pad=24;box=[b[0]-pad,b[1]-pad,b[2]+pad,b[3]+pad];}
+  else{
+    const bottom=(where.below!=null?where.below:where.y+C.LINE_H)+16;
+    let top=Math.max(0,where.y-PICTURE_ABOVE);
+    /* a drawing the band cuts through is taken whole, within reason */
+    for(const d of drawings||[])if(d.bbox[3]>top&&d.bbox[1]<top)top=Math.max(d.bbox[1]-16,bottom-PICTURE_TALL);
+    box=[0,top,M.contentW,bottom];
+  }
+  const meets=b=>b[2]>=box[0]&&b[0]<=box[2]&&b[3]>=box[1]&&b[1]<=box[3];
+  const ink=S.strokes.filter(st=>st.author==='user'&&st.bbox&&Array.isArray(st.pts)&&meets(st.bbox));
+  const pics=(S.images||[]).filter(im=>meets([im.x,im.y,im.x+im.w,im.y+im.h]));
+  if(!pics.length&&!ink.length)return null;
+  /* the band widens to the writing in it, which can run past the column */
+  if(!where.picture)for(const b of [...ink.map(st=>st.bbox),...pics.map(im=>[im.x,im.y,im.x+im.w,im.y+im.h])]){box[0]=Math.min(box[0],b[0]-8);box[2]=Math.max(box[2],b[2]+8);}
+  const w=box[2]-box[0],h=box[3]-box[1];
+  const loaded=await Promise.all(pics.map(im=>loadPicture(im.src)));
+  for(let scale=Math.min(2,PICTURE_MAX/Math.max(w,h)),quality=0.85,tries=0;tries<4;tries++,scale*=0.75,quality-=0.1){
+    const cv=document.createElement('canvas');
+    cv.width=Math.max(1,Math.round(w*scale));cv.height=Math.max(1,Math.round(h*scale));
+    const ctx=cv.getContext('2d');
+    ctx.fillStyle='#fff';ctx.fillRect(0,0,cv.width,cv.height);
+    ctx.scale(scale,scale);ctx.translate(-box[0],-box[1]);
+    pics.forEach((im,i)=>{
+      const el=loaded[i];if(!el)return;
+      if(im.rot){ctx.save();ctx.translate(im.x+im.w/2,im.y+im.h/2);ctx.rotate(im.rot);ctx.drawImage(el,-im.w/2,-im.h/2,im.w,im.h);ctx.restore();}
+      else ctx.drawImage(el,im.x,im.y,im.w,im.h);
+    });
+    ctx.lineCap='round';ctx.lineJoin='round';
+    for(const st of ink){
+      const p=st.pts;ctx.strokeStyle=ctx.fillStyle=st.color||'#1b1d21';
+      if(p.length<6){ctx.beginPath();ctx.arc(p[0],p[1],Math.max(1,st.w*0.6),0,Math.PI*2);ctx.fill();continue;}
+      for(let i=3;i<p.length;i+=3){ctx.beginPath();ctx.moveTo(p[i-3],p[i-2]);ctx.lineTo(p[i],p[i+1]);ctx.lineWidth=Math.max(1.2/scale,st.w*(0.55+0.9*(p[i+2]||0.5)));ctx.stroke();}
+    }
+    let url;try{url=cv.toDataURL('image/jpeg',quality);}catch(e){return null;}
+    if(url.startsWith('data:image/jpeg;base64,')&&url.length<=PICTURE_CHARS)return {url,w:cv.width,h:cv.height};
+  }
+  return null;
+}
+
+/* the drawings now, from what is already known: for the context panel */
+function knownDrawings(skip){
+  const found=findDrawings(skip||new Set());
+  return found?sayDrawings(found,knownLabel):[];
+}
+
 function pageRows(question){
   /* the notebook as rows in reading order, with a marker where the question
      is. Only what the calculator has read: prose ink joins through its
      search transcript. The tutor's own lines and strokes stay out. */
   const rows=[];
   const skip=question.skip||new Set();
+  /* writing that is part of a drawing is said in the drawing's own lines */
+  const drawings=question.diagrams||[];
+  const drawn=new Set();for(const d of drawings)for(const id of d.ids)drawn.add(id);
+  const inDrawing=ids=>{if(!drawn.size||!ids.length)return false;let n=0;for(const id of ids)if(drawn.has(id))n++;return n>=ids.length*0.6;};
   const groups=N.recog&&N.recog.textGroups?N.recog.textGroups():[];
   const byHash=new Map((S.textTranscripts||[]).map(t=>[t.hash,t.text]));
   /* Ink the text reader read as words is words. The maths reader reads
@@ -564,6 +850,7 @@ function pageRows(question){
     if(n.kind==='cluster'&&n.ref&&n.ref.strokeIds&&n.ref.strokeIds.some(id=>skip.has(id)))continue;
     if(n.kind==='cluster'&&n.ref&&n.ref.review)continue;
     if(n.kind==='cluster'&&n.ref&&n.ref.strokeIds&&wordy(n.ref))continue;
+    if(n.kind==='cluster'&&n.ref&&n.ref.strokeIds&&inDrawing(n.ref.strokeIds))continue;
     let text=String(n.src).trim();
     if(n.result&&!n.stated)text+='   [= '+n.result+']';
     if(n.error&&n.kind==='cluster')continue;
@@ -571,19 +858,38 @@ function pageRows(question){
   }
   for(const g of groups){
     if(g.strokeIds.some(id=>skip.has(id)))continue;
+    if(inDrawing(g.strokeIds))continue;
     const text=byHash.get(g.hash);if(!text)continue;
     rows.push({y:g.bbox[1],x:g.bbox[0],text:'"'+text+'"'});
   }
+  // Quick Maths is generated ink, but it is user-inserted content, not a
+  // tutor reply. Keep exact source text only while all of its ink survives.
+  const quickGroups=new Map();
+  for(const st of S.strokes||[]){
+    if(typeof st.quickGroup!=='string'||!Number.isInteger(st.quickCount)||st.quickCount<1)continue;
+    if(!quickGroups.has(st.quickGroup))quickGroups.set(st.quickGroup,[]);
+    quickGroups.get(st.quickGroup).push(st);
+  }
+  for(const strokes of quickGroups.values()){
+    const count=strokes[0].quickCount;
+    if(strokes.length!==count||strokes.some(st=>st.quickCount!==count||skip.has(st.id)))continue;
+    if(inDrawing(strokes.map(st=>st.id)))continue;
+    const source=strokes.filter(st=>typeof st.quickMath==='string'&&st.quickMath.length<=8192);
+    if(source.length!==1||!source[0].quickMath.trim())continue;
+    rows.push({y:Math.min(...strokes.map(st=>st.bbox[1])),x:Math.min(...strokes.map(st=>st.bbox[0])),text:source[0].quickMath});
+  }
+  for(const d of drawings)rows.push({y:d.bbox[1],x:d.bbox[0],drawing:d.lines});
   rows.push({y:question.y,x:question.x,marker:true});
   const order=(a,b)=>(Math.round(a.y/24)-Math.round(b.y/24))||(a.x-b.x);
   /* Writing inside a drawn box is read as one block, box by box: two boxes
      side by side read row by row made every line half of one box and half
      of the other. A block stands in the page's order at its box's corner. */
-  const boxes=(N.recog&&N.recog.frames&&N.recog.frames().boxes)||[];
+  /* a box that is part of a drawing (a flowchart's) is said by the drawing */
+  const boxes=((N.recog&&N.recog.frames&&N.recog.frames().boxes)||[]).filter(b=>!drawings.some(d=>b[0]>=d.bbox[0]-2&&b[1]>=d.bbox[1]-2&&b[2]<=d.bbox[2]+2&&b[3]<=d.bbox[3]+2));
   const within=(r)=>{let best=-1,area=Infinity;boxes.forEach((b,i)=>{if(r.x>=b[0]-4&&r.x<=b[2]&&r.y>=b[1]-4&&r.y<=b[3]){const a=(b[2]-b[0])*(b[3]-b[1]);if(a<area){area=a;best=i;}}});return best;};
   const blocks=new Map(),flat=[];
   for(const r of rows){
-    const at=r.marker?-1:within(r);
+    const at=r.marker||r.drawing?-1:within(r);
     if(at<0){flat.push(r);continue;}
     if(!blocks.has(at))blocks.set(at,{y:boxes[at][1],x:boxes[at][0],rows:[]});
     blocks.get(at).rows.push(r);
@@ -593,6 +899,7 @@ function pageRows(question){
   const MARK='>>> the question is written here',lines=[];
   for(const r of flat){
     if(r.block){lines.push('[box]');for(const x of r.block)lines.push(x.text);lines.push('[end of box]');}
+    else if(r.drawing)lines.push(...r.drawing);
     else lines.push(r.marker?MARK:r.text);
   }
   const at=lines.indexOf(MARK);
@@ -626,26 +933,32 @@ function liveWhere(){
 }
 function debugLive(){
   if(debugSent)return;
-  debugShow('nota context, live ('+CONFIG.model+' via '+CONFIG.proxy+')',pageRows(liveWhere())||'(empty page)');
+  debugShow('nota context, live ('+CONFIG.model+' via '+CONFIG.proxy+')',pageRows({...liveWhere(),diagrams:knownDrawings()})||'(empty page)');
 }
 if(DEBUG_CONTEXT){
   setInterval(()=>{ try{debugLive();}catch(e){} },1000);
   console.info('nota: ?debug=context is on; N.nota.context() returns the page as nota reads it');
 }
-async function stream(question,context,onDelta,signal){
+async function stream(question,context,onDelta,signal,picture){
+  const text='Page, in reading order:\n'+(context||'(empty page)')+'\n\nQuestion: '+question;
   const body={
     model:CONFIG.model,stream:true,max_tokens:CONFIG.maxTokens,temperature:0.3,
-    messages:[{role:'system',content:SYSTEM},{role:'user',content:'Page, in reading order:\n'+(context||'(empty page)')+'\n\nQuestion: '+question}],
+    messages:[{role:'system',content:SYSTEM},{role:'user',content:picture?[{type:'text',text},{type:'image_url',image_url:{url:picture.url}}]:text}],
     ...CONFIG.extras
   };
   if(DEBUG_CONTEXT){
-    debugSent=body.messages.map(m=>'['+m.role+']\n'+m.content).join('\n\n');
+    const said=c=>typeof c==='string'?c:c.map(p=>p.type==='text'?p.text:'[picture of the page, '+picture.w+' x '+picture.h+', '+Math.round(picture.url.length*0.75/1024)+' KB]').join('\n');
+    debugSent=body.messages.map(m=>'['+m.role+']\n'+said(m.content)).join('\n\n');
     debugShow('nota request, sent '+new Date().toLocaleTimeString()+' ('+body.model+', max_tokens '+body.max_tokens+', temperature '+body.temperature+')',debugSent);
     console.info('nota request',body);
     /* the live view comes back a while after, so the next question's page can be watched */
     clearTimeout(debugHold);debugHold=setTimeout(()=>{debugSent='';},30000);
   }
   const plain={...body};for(const k of Object.keys(CONFIG.extras||{}))delete plain[k];
+  /* a picture the provider or the forward will not take: the question goes
+     again without it, as words only */
+  const words={...plain,messages:[body.messages[0],{role:'user',content:text}]};
+  const tries=picture?[body,plain,words]:[body,plain];
   let response=null,error=null;
   /* the proxy is tried first and the provider when it is unreachable or
      absent (a plain file server has no such route, and a proxy without a
@@ -658,7 +971,7 @@ async function stream(question,context,onDelta,signal){
     let unreachable=false;
     const headers={'Content-Type':'application/json','Accept':'text/event-stream'};
     if(url===CONFIG.url&&hasKey())headers.Authorization='Bearer '+apiKey();
-    for(const payload of [body,plain]){
+    for(const payload of tries){
       try{
         response=await fetch(url,{method:'POST',signal,headers,body:JSON.stringify(payload)});
       }catch(e){ if(e.name==='AbortError')throw e; error=e;response=null;unreachable=true;break; }
@@ -672,7 +985,7 @@ async function stream(question,context,onDelta,signal){
       if(spentAllowance(response.status,whole)){ error=Object.assign(new Error(LOAD_TEXT),{overloaded:true}); response=null; break; }
       if(/^text\/plain/i.test(response.headers.get('content-type')||''))said=whole.trim().slice(0,140);
       error=new Error(said||(response.status===401||response.status===403?'nota\'s key was refused.':'nota could not answer ('+response.status+').'));
-      if(response.status!==400){response=null;break;}
+      if(response.status!==400&&!(response.status===413&&picture)){response=null;break;}
       response=null;
     }
     if(response||!unreachable||error?.overloaded)break;
@@ -825,6 +1138,21 @@ async function askSelection(){
   const skip=new Set(ids);
   N.ink.clearSelection();
   C.status('nota is reading.');
+  /* a circled drawing is asked about as the drawing it is: its shapes,
+     arrows and labels in words, not its strokes read as one line of text */
+  const drawn=await readDrawings(new Set(),LABEL_WAIT,skip);
+  if(S.id!==selectedNote){askingSelection=false;C.status('');return;}
+  let inDrawing=0;for(const id of ids)if(drawn.some(d=>d.ids.has(id)))inDrawing++;
+  if(drawn.length&&inDrawing>=ids.length*0.5){
+    askingSelection=false;
+    const box=selectedBox(ids);if(!box){C.status('');return;}
+    const question='the person circled this drawing on the page and asked about it:\n'+drawn.map(d=>d.lines.join('\n')).join('\n')+
+      '\nsay briefly what it shows, then help with it: answer it if it asks something, check it if it is working, explain the idea if it is a diagram from a lesson.';
+    const rowH=Math.min(60,Math.max(12,window.NOTAS_DIAGRAM.heightOf(S.strokes.filter(st=>st.author==='user'))));
+    const writer=Writer({x:box[0],y:box[3],right:box[2],rowH,skip});
+    await answer(question,{x:box[0],y:box[1],below:box[3],skip,picture:box},writer);
+    return;
+  }
   let reading;
   try{reading=await N.recog.readStrokesText(ids);}
   catch(e){askingSelection=false;C.status('');C.toast(String(e.message||'nota could not read this.').toLowerCase());return;}
@@ -839,24 +1167,28 @@ async function askSelection(){
   const words=text&&N.mathcore&&N.mathcore.readsAsProse?N.mathcore.readsAsProse(text):/[A-Za-z]{3,}/.test(text);
   const looksMaths=s=>N.mathcore&&N.mathcore.looksLikeMath?N.mathcore.looksLikeMath(s):/[0-9=+*\/^-]/.test(s);
   const maths=reading.maths&&(!text||reading.confidence<0.6||!words)&&looksMaths(reading.maths)?reading.maths:'';
-  /* the text reader failing is not the end of it while the maths reader
-     had something; with neither, say which */
-  if(!text&&!maths){C.status('');C.toast(reading.error?String(reading.error).toLowerCase():'nota could not read this either. try writing it larger, or type it.');return;}
-  const bbox=reading.bbox,rowH=Math.min(60,Math.max(12,bbox[3]-bbox[1]));
+  /* neither reader making anything of it is not the end of it: nota is
+     sent a picture of what was circled and reads it there */
+  const bbox=reading.bbox||selectedBox(ids),rowH=Math.min(60,Math.max(12,bbox[3]-bbox[1]));
   /* circled ink that is itself "hey nota, ..." is simply that question */
   const call=text&&parseCall(text);
   let question;
   if(call&&call.question)question=call.question;
   else{
-    question='the person circled some handwriting the notebook could not read well.';
+    question='the person circled some handwriting the notebook could not read well; it is in the picture.';
     if(text)question+=' the text reader makes it: "'+text+'".';
     if(maths&&maths!==text)question+=' the maths reader makes it: "'+maths+'".';
+    if(!text&&!maths)question+=' neither reader could make it out.';
     question+=' say what it most likely says, then deal with it: answer it if it is a question, work it out if it is maths, help with it if it is a list, a recipe, a note or a draft.';
   }
   const questionKey=call&&call.question?noteKey()+normalizeQ(call.question):null;
   if(questionKey)asked.add(questionKey);
   const writer=Writer({x:bbox[0],y:bbox[3],right:bbox[2],rowH,skip});
-  if(!await answer(question,{x:bbox[0],y:bbox[1],below:bbox[3],skip},writer)&&questionKey)asked.delete(questionKey);
+  /* a circled question is about the page round it, as a written one is;
+     circled writing is itself what is asked about, and is what is sent */
+  const where={x:bbox[0],y:bbox[1],below:bbox[3],skip};
+  if(!questionKey)where.picture=bbox;
+  if(!await answer(question,where,writer)&&questionKey)asked.delete(questionKey);
 }
 /* ---- typed: a line that starts with the call, answered as a red ghost ---- */
 function isCallStroke(id){
@@ -973,6 +1305,7 @@ function selectedBox(ids){
   return b;
 }
 
+const LABEL_WAIT=6000;
 async function answer(question,where,writer,control){
   if(!navigator.onLine){C.toast('nota needs a connection.');writer.failed?.();return false;}
   if(holdBack()){writer.failed?.();showOverloaded(messageAt(where));return false;}
@@ -985,12 +1318,18 @@ async function answer(question,where,writer,control){
   if(!where.lineId&&writer.origin)showWaiting(writer.origin);
   let text='',complete=false;
   try{
-    await stream(question,pageRows(where),piece=>{
+    /* the drawings' labels the page has not read yet are read now, for a
+       few seconds at most, while the dots show nota is on it */
+    const drawings=await readDrawings(where.skip||new Set(),LABEL_WAIT);
+    const context=pageRows({...where,diagrams:drawings});
+    let picture=null;try{picture=await pagePicture(where,drawings);}catch(e){console.warn('nota: no picture of the page',e);}
+    if(writer.aborted||control.signal.aborted)throw new DOMException('Question withdrawn','AbortError');
+    await stream(question,context,piece=>{
       if(writer.aborted){control.abort();return;}
       arm();
       if(!text){hideWaiting();if(overloaded())setOverloaded(false);}
       text+=piece;writer.feed(piece);C.status('nota is writing.');receipt.textContent='nota is writing…';
-    },control.signal);
+    },control.signal,picture);
     if(!text.trim())throw Error('nota returned an empty answer. try again.');
     if(!writer.aborted){writer.finish();complete=true;}
   }catch(e){
@@ -1007,7 +1346,24 @@ async function answer(question,where,writer,control){
   return complete;
 }
 
-N.nota={overloaded,isCallStroke,onTranscript,onTyped,askSelection,parseCall,callLength,drawWaiting,mathMatches,tidy,spell,Writer,get busy(){return busy>0;},get writing(){return queue.length;},config:CONFIG,
+/* A circled drawing is offered to nota too. The bar offers "ask nota" for
+   ink the maths reader made nothing of, but it makes something of most
+   arrows and boxes, so that alone would hide the button for a drawing. The
+   answer is kept for the selection, as the bar asks on every change. */
+if(N.recog&&N.recog.selectionUnread){
+  const unread=N.recog.selectionUnread;let last={key:'',drawing:false};
+  N.recog.selectionUnread=ids=>{
+    if(unread(ids))return true;
+    const key=S.id+'|'+labelKey(ids);
+    if(last.key!==key){
+      const found=findDrawings(null,new Set(ids));
+      last={key,drawing:!!(found&&found.diagrams.some(d=>d.strokeIds.length>=ids.length*0.5))};
+    }
+    return last.drawing;
+  };
+}
+
+N.nota={overloaded,isCallStroke,drawings:readDrawings,onTranscript,onTyped,askSelection,parseCall,callLength,drawWaiting,mathMatches,tidy,spell,Writer,get busy(){return busy>0;},get writing(){return queue.length;},config:CONFIG,
   /* the page as nota reads it, for the console: N.nota.context() */
-  context(where){ return pageRows(where||liveWhere()); }};
+  context(where){ where=where||liveWhere(); return pageRows({...where,diagrams:knownDrawings(where.skip)}); }};
 })();

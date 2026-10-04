@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {startServer} from '../scripts/serve.mjs';
 const source=readFileSync(new URL('../../finetunedimages/IMG_2719.png',import.meta.url));
 const blank=readFileSync(new URL('../../finetunedimages/IMG_2880.png',import.meta.url));
+const model=JSON.parse(readFileSync(new URL('../assets/slide/model.json',import.meta.url),'utf8'));
 const server=await startServer(0),browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
 try{
  const page=await browser.newPage({serviceWorkers:'block'}),errors=[],chunks=new Map();page.on('pageerror',e=>errors.push(e.message));
@@ -14,7 +15,7 @@ try{
  await page.evaluate(()=>N.tutorial?.finish(false));
  for(const [bytes,positive] of [[source,true],[blank,false]]){
  const result=await page.evaluate(async({src,positive})=>{
-   const blob=await (await fetch(src)).blob();await N.ui.insertImages([new File([blob],'slide.png',{type:'image/png'})]);
+   const blob=new Blob([Uint8Array.from(atob(src.slice(src.indexOf(',')+1)),c=>c.charCodeAt(0))],{type:'image/png'});await N.ui.insertImages([new File([blob],'slide.png',{type:'image/png'})]);
    const im=N.core.S.images.at(-1),before=im.src;
    N.ink.selectImage(im.id);
    const offered=[...document.querySelectorAll('#selbar button')].some(b=>b.textContent==='remove background')&&!document.querySelector('#selbar').textContent.includes('keep slide');
@@ -30,7 +31,7 @@ try{
  if(positive){assert.ok(result.ok);assert.ok(result.foreground>.4&&result.foreground<.75);assert.ok(result.crop.t>.2&&result.crop.l<.15);console.log({...result,src:'PNG cutout'});}
  else assert.deepEqual(result,{ok:false,offered:true,unchanged:true},'a wall-only crop is preserved');
  }
- assert.equal(chunks.size,5,'all five specialized model chunks were served');
+ assert.equal(chunks.size,model.parts.length,'every model chunk was served');
  assert.ok([...chunks.values()].every(status=>status===200),'all model chunks are available');
  assert.deepEqual(errors,[]);console.log('real browser slide model, chunk verification, autocrop and wall rejection: ok');
 }finally{await browser.close();server.close();}

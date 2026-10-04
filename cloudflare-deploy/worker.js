@@ -2,7 +2,7 @@
 // assets and never reach this script; only what assets cannot serve arrives
 // here: the room's websocket and the "hey nota" forward.
 export { NoteRoom } from './room.js';
-import { notaBody, MAX_BODY } from './nota-body.mjs';
+import { notaBody, bodyTokens, MAX_BODY } from './nota-body.mjs';
 const UPSTREAM='https://api.cerebras.ai/v1/chat/completions';
 // /collab/<note id>: the websocket of the note's room. Ids are what the page
 // makes with uid(): lowercase base 36.
@@ -92,7 +92,7 @@ export default {
         body=JSON.stringify(clean);
         // Origin is not authentication. Reserve the worst case before using
         // the public site's key, across all IP addresses and Worker isolates.
-        const tokens=clean.max_tokens+clean.messages.reduce((n,m)=>n+new TextEncoder().encode(m.content).byteLength+32,0);
+        const tokens=bodyTokens(clean);
         let budget;
         try{budget=await env.ROOMS.get(env.ROOMS.idFromName('site-budget')).fetch(new Request(new URL('/site-budget',url),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tokens})}));}
         catch{return new Response('nota could not check its allowance.',{status:503});}

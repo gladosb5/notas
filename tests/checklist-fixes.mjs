@@ -98,6 +98,23 @@ try{
     });
     assert.equal(fraction,false,'a fraction bar stays maths');
 
+    // a radical sign has a box corner's outline; only the corner is a frame
+    const radical=await page.evaluate(()=>{
+      const C=N.core,S=C.S;let t=1;
+      const st=(pts)=>{const s={id:C.uid(),author:'user',tool:'pen',w:2.4,pts:pts.flatMap(p=>[p[0],p[1],.5]),t0:t,t1:t+100};t+=300;s.bbox=N.ink.bboxOf(s.pts);return s;};
+      const path=corners=>st(corners.flatMap((p,i,a)=>i?Array.from({length:10},(_,k)=>[a[i-1][0]+(p[0]-a[i-1][0])*(k+1)/10,a[i-1][1]+(p[1]-a[i-1][1])*(k+1)/10]):[p]));
+      const letter=(x,y)=>st(Array.from({length:12},(_,i)=>[x+6+6*Math.cos(i/11*6.28),y+9*Math.sin(i/11*6.28)]));
+      const read=corners=>{
+        const sign=path(corners),under=[letter(130,205),letter(160,205),letter(190,205)];
+        S.strokes=[sign,...under];N.recog.rebuild();
+        const r={frame:N.recog.frames().ids.has(sign.id),grouped:S.clusters.some(c=>c.strokeIds.includes(sign.id)&&under.every(u=>c.strokeIds.includes(u.id)))};
+        S.strokes=[];N.recog.rebuild();return r;
+      };
+      return {sqrt:read([[100,215],[108,240],[114,190],[260,188]]),corner:read([[100,240],[100,188],[260,188]])};
+    });
+    assert.deepEqual(radical.sqrt,{frame:false,grouped:true},'a square root sign stays with the writing under it');
+    assert.equal(radical.corner.frame,true,'a box corner of the same size is still a frame');
+
     // ---- the caret moves with its line when the reply lands above it ----
     await page.evaluate(()=>{N.core.S.lines=[];N.text.render();N.ink.setTool('text');N.text.add(120,true);});
     await page.keyboard.type('hey nota, give me a probability example?');

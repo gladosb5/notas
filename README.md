@@ -19,9 +19,13 @@ For tablets, serve the project as a static website over HTTPS. The development s
 
 `cloudflare-deploy/` holds a Worker with only the files the notebook needs: `npm run sync` there copies the current app in, `npm run deploy` publishes it, and the nota key is the Worker secret `CEREBRAS_API_KEY`. Live at https://notas.glados.pro (and https://notas.m-12443042.workers.dev). See `cloudflare-deploy/README.md`.
 
+## Quick Maths and nota
+
+Calculations inserted as writing now keep their exact expression and result for nota's context, without recognising the generated strokes again. This survives saving, export/import, duplication and sharing. Erasing part of the inserted calculation removes that complete expression from context until undo restores it. Earlier writing insertions have no stored source text; reinsert them with Quick Maths to make their context available. Tutor replies remain excluded from the next question's context.
+
 ## Sharing a note
 
-The share button in the top bar (beside undo) makes a link. The first time it asks for your name, kept on this device. Anyone who opens the link is on the same page as you, live: ink, typed lines, images and the title, and the button's count is everyone on the note, named in the share panel's **here now** list. Each person's pen shows as a dot with their name, in their own colour, and so does whatever they are doing: a dashed box around ink or an image they have selected, a band on the line they are typing in with their caret, and the text they have highlighted. Two people typing in the same line both keep their letters. Opening your own link in a second tab of the same browser is fine: a shared note follows the newest revision instead of making a conflict copy. A shared note is still yours: it is saved on your device like any other, works offline, and catches up with the others when you are back. **stop sharing on this device** in the share panel takes your copy out of the room; the others keep theirs.
+The share button in the top bar (beside undo) makes a link. The first time it asks for your nickname, saved on this device and shown to collaborators. Anyone who opens the link is on the same page as you, live: ink, typed lines, images and the title, and the button's count is everyone on the note, named in the share panel's **here now** list. Each person's pen shows as a dot with their nickname, in their own colour, and so does whatever they are doing: a dashed box around ink or an image they have selected, a band on the line they are typing in with their caret, and the text they have highlighted. Two people typing in the same line both keep their letters. Opening your own link in a second tab of the same browser is fine: a shared note follows the newest revision instead of making a conflict copy. A shared note is still yours: it is saved on your device like any other, works offline, and catches up with the others when you are back. **stop sharing on this device** in the share panel takes your copy out of the room; the others keep theirs.
 
 Under the hood each device holds a Yjs document that mirrors the note (`collab.js`); the site's Worker keeps one room per note (`cloudflare-deploy/room.js`, a Durable Object) that relays updates and stores the merged result for whoever arrives next. The merging library is fetched only when a note is first shared (`assets/collab.js`, built by `npm run build:collab`). Sharing needs the notebook served from its Cloudflare site; on `npm start` the button explains that. `npm run test:collab` drives two browsers through the whole flow against a local copy of the Worker, or `COLLAB_BASE=<url>` against the deployed one.
 
@@ -213,17 +217,20 @@ a pasted image.
 it was tapped or taken with a lasso drawn round it. It keeps the subject and
 makes everything else transparent, at the picture's own size, and one undo
 brings the original back. It runs on the device with BiRefNet lite
-(`studioludens/birefnet-lite-512`, MIT, a 512x512 re-export of
-ZhengPeng7/BiRefNet_lite) in `bg-worker.js`. The model is about 94 MB, more
-than the site can serve as one file, so it comes from Hugging Face at a pinned
-revision, is checked against its SHA-256 and is kept in the model store; after
-that it works offline. It is downloaded in the background shortly after the
-notebook starts, once the handwriting readers have finished theirs, and shows
-in the models popover while it arrives. A connection with data saver on skips
-that and downloads on the first use instead. It needs about 2 GB of memory
-while it runs, so the worker is let go a minute after the last picture. A
-picture takes a few seconds with the threads a cross-origin isolated site
-gets, and about 20 on the single thread `npm start` gives.
+(ZhengPeng7/BiRefNet_lite, MIT, at 512x512) in `bg-worker.js`: one model with
+two outputs from a single pass, the general matte and a fine-tuned one that
+keeps a projected slide whole (`training/slide-cutout`). Its deformable
+convolutions are exported as GridSample, and the transformer's matmuls are
+stored as int8. The model is about 107 MB, served from `assets/slide/` in
+chunks under the per-file limit, each checked against its SHA-256, and kept in
+the model store; after that it works offline. It is downloaded in the
+background shortly after the notebook starts, once the handwriting readers
+have finished theirs, and shows in the models popover while it arrives. A
+connection with data saver on skips that and downloads on the first use
+instead. It needs about 0.9 GB of memory while it runs (the two models it
+replaced needed about 2.1 GB each), so the worker is let go a minute after the
+last picture. A picture takes about 9 seconds on the single thread
+`npm start` gives, and less with the threads a cross-origin isolated site gets.
 `node tests/background.mjs` (`npm run test:background`) drives it end to end.
 
 Double-tap a picture (double-click with a mouse) to crop it. A box with a
@@ -271,7 +278,9 @@ Write or type `hey nota,` and a question on the page and the page answers it, in
 
 A typed line that starts with `hey nota,` turns the call the machine's blue the moment it is complete (typing is exact, so `hey not` is not a call yet), and the reply is written into the note as red lines directly under the question: first a single red line of three dots that breathes while the model thinks, then the words as they stream in. Nothing to accept: the reply is part of the note from its first word, so the down arrow reaches it, Enter at its end starts an ordinary graphite line, and Ctrl/⌘ Z takes the whole reply out in one step. Red lines are never calculated. Editing the question leaves its reply alone; rewording it into a different question rewrites the same lines; removing the call while the reply is still arriving stops it. Under handwriting the same three dots pulse where the pen will start.
 
-Replies come from a hosted language model (`gpt-oss-120b` on Cerebras, with reasoning effort set low so the pause before the first word stays short), so this is the one feature that needs the network and sends anything off the device: the question, text readings from up to 48 surrounding rows on either side and nothing else, never ink or images. The page tries the `/nota/chat` forward first: the dev server (`npm start`) and the Cloudflare Worker both carry the key as the `CEREBRAS_API_KEY` environment variable, so the page needs none of its own. Without a forward, Cerebras accepts calls straight from the browser, so any static host still works with a key in `nota.js` or in `localStorage` under `notas.nota.key`. Without a key or a connection nothing happens beyond a short toast. Everything else in the notebook still works offline.
+nota also understands what is drawn, not only what is written. Boxes, circles, diamonds and other shapes, the lines and arrows between them, overlapping circles, triangles and other figures, axes with the curves and points plotted on them, and number lines are found from the shape of the strokes (`diagram.js`), and the handwriting round them is attached to the part it labels: the text in a box, the word an arrow points at, the "yes" beside an arrow, the letter at a triangle's corner, the length along its side, the numbers along an axis. The drawing reaches nota as a few lines of words where it sits on the page, for example `arrow from rectangle 1 "Start" to diamond 2 "x > 5?"`, `"2" is inside circle 1 "A" and circle 2 "B"`, `side AB is labelled "8 cm"` or a graph's curve as points in the units written on its axes, so "hey nota, what does this flowchart do?" or "what is the gradient of this line?" are answered about the drawing itself. Labels the page has not read yet are read one by one when the question is asked (a few seconds at most, then remembered), and a drawing circled with the lasso offers "ask nota" and is asked about as a drawing. A ring round an answer, a box round some notes, an underline or a fraction bar is not a drawing. `npm run check:diagram` measures how often real handwritten maths is mistaken for one (0.7% of 11,881 held-out expressions, each on its own page).
+
+Replies come from a hosted language model that reads pictures as well as text (`qwen-3.8-27b` on Cerebras, with reasoning effort set low so the pause before the first word stays short), so this feature needs the network and sends part of the note off the device: the question, text readings from up to 48 surrounding rows on either side, the drawings among them described in words, and one picture of the page around the question. The picture shows the student's own ink and any photos or pictures put on the page there (up to about 900 points above the question, or just what was circled when asking with the lasso), as a JPEG of at most 1280 pixels a side; nota's own red replies and typed lines are not drawn into it. With the picture the model reads handwriting the page's readers missed, sees drawings and photos as they are, and can answer about a lassoed scrawl neither reader could make out. A typed question on a page with no ink or pictures near it goes as words alone. If the picture is refused, the question is sent again as words only. The page tries the `/nota/chat` forward first: the dev server (`npm start`) and the Cloudflare Worker both carry the key as the `CEREBRAS_API_KEY` environment variable, so the page needs none of its own. Without a forward, Cerebras accepts calls straight from the browser, so any static host still works with a key in `nota.js` or in `localStorage` under `notas.nota.key`. Without a key or a connection nothing happens beyond a short toast. Local notebook features still work offline; live sharing also needs a connection and uploads the shared note to Cloudflare.
 
 ## Math handwriting recognition
 
@@ -295,7 +304,7 @@ Both recognisers run in workers on this device: Hand-to-TeX for pen strokes and 
 
 ## Licensing
 
-The stroke model is Hand-to-TeX's `htt-mini`, **MIT** (`assets/ink/HAND-TO-TEX-LICENSE.txt`; provenance and hashes in `experiments/hand-to-tex/model-metadata.json`). The ONNX Runtime Web build the workers share is MIT (`assets/smart/NOTICE.md`). The former Smart model's AGPL-3.0 and CROHME obligations no longer apply to the shipped app; they remain recorded with the experiment under `experiments/onnx-seq2seq/NOTICE.md`. The background remover is BiRefNet lite, **MIT**, fetched from `huggingface.co/studioludens/birefnet-lite-512` rather than shipped.
+The stroke model is Hand-to-TeX's `htt-mini`, **MIT** (`assets/ink/HAND-TO-TEX-LICENSE.txt`; provenance and hashes in `experiments/hand-to-tex/model-metadata.json`). The ONNX Runtime Web build the workers share is MIT (`assets/smart/NOTICE.md`). The former Smart model's AGPL-3.0 and CROHME obligations no longer apply to the shipped app; they remain recorded with the experiment under `experiments/onnx-seq2seq/NOTICE.md`. The background remover is BiRefNet lite, **MIT** (`assets/slide/LICENSE.txt`), exported and fine-tuned locally (`training/slide-cutout`) and served from `assets/slide/`.
 
 The PP-OCRv6-small handwriting-search model comes from PaddleOCR and is distributed under the Apache-2.0 license. Its provenance is recorded in `assets/text/NOTICE.md`.
 
@@ -344,3 +353,7 @@ When changing cached app files, update the cache version in `sw.js` so existing 
 See [the model card](assets/recognition-MODEL.md) for training, supported symbols, data sources, limitations, and reproducible benchmark commands. [Browser benchmark results](assets/recognition-browser-benchmark.json) compare all three classifiers on the same 2,935 real held-out symbols.
 
 The former single-symbol trainer is archived under `experiments/legacy-fast/`; it does not train the current whole-expression recognizer. The clean whole-expression training workflow is documented in `experiments/clean-online-hmer/TRAINER.md`. The September 15 retraining trial and frozen evaluation protocol are recorded under `experiments/ocr-repair-20260915/`.
+
+### Handwritten nota replies
+
+Handwritten questions keep their replies as pen strokes, including Unicode symbols and non-Latin characters supported by the device font. Inline LaTeX (`$...$` or `\(...\)`) stays beside the surrounding prose; display LaTeX (`$$...$$` or `\[...\]`) uses a separate row. Line endings are normalized, and a newline immediately after display math does not insert a second break. `node tests/nota-writing.mjs` checks these cases.

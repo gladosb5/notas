@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { notaBody } from '../cloudflare-deploy/nota-body.mjs';
+import { notaBody, MAX_BODY } from '../cloudflare-deploy/nota-body.mjs';
 import { cspFor, ASSET_CSP } from '../cloudflare-deploy/csp.mjs';
 const root=path.resolve(import.meta.dirname,'..');
 const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css','.json':'application/json','.webmanifest':'application/manifest+json','.svg':'image/svg+xml','.woff2':'font/woff2','.woff':'font/woff','.ttf':'font/ttf','.f32':'application/octet-stream','.mjs':'text/javascript; charset=utf-8','.wasm':'application/wasm','.onnx':'application/octet-stream','.md':'text/markdown; charset=utf-8'};
@@ -22,7 +22,7 @@ async function notaProxy(req,res){
   const key=siteKey||(req.headers.authorization||'').replace(/^Bearer\s+/i,'');
   if(!key){res.writeHead(501,{'Content-Type':'text/plain'});res.end('nota has no key here.');return;}
   const chunks=[];let size=0;
-  for await(const c of req){size+=c.length;if(size>256*1024){res.writeHead(413,{'Content-Type':'text/plain'});res.end('the question is too long.');return;}chunks.push(c);}
+  for await(const c of req){size+=c.length;if(size>MAX_BODY){res.writeHead(413,{'Content-Type':'text/plain'});res.end('the question is too long.');return;}chunks.push(c);}
   // the environment's key is spent only on nota's own question, as the worker's is
   let body=Buffer.concat(chunks);
   if(siteKey){

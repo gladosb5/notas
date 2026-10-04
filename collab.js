@@ -126,6 +126,7 @@ function cleanStroke(v,id){
   if(!num(v.w,100)||v.w<=0)return null;
   const st={...plainFields(v,['pts','bbox','times','id','author','color']),id,author:v.author==='ai'?'ai':'user',pts:p.slice(),bbox:N.ink.bboxOf(p)};
   if(typeof v.color==='string'&&/^#[0-9a-f]{6}$/i.test(v.color))st.color=v.color;
+  if(typeof v.quickMath==='string'&&v.quickMath.length<=8192)st.quickMath=v.quickMath;
   if(Array.isArray(v.times)&&v.times.length===p.length/3&&v.times.every(t=>num(t,3600000)&&t>=0))st.times=v.times.slice();
   return st;
 }
@@ -1091,9 +1092,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 function askName(){
   return new Promise(resolve=>{
     const box=N.ui.openSheet(
-      '<h2>your name</h2>'+
+      '<h2>your nickname</h2>'+
       '<p>shown to the people you write with, and kept on this device.</p>'+
-      '<label class="mi" for="collab-name"><span>name</span><input class="keyin" id="collab-name" maxlength="24" autocomplete="nickname" spellcheck="false" enterkeyhint="done" value="'+esc(name())+'" style="max-width:220px;margin:0 0 0 auto"></label>'+
+      '<label class="mi" for="collab-name"><span>nickname</span><input class="keyin" id="collab-name" maxlength="24" autocomplete="nickname" spellcheck="false" enterkeyhint="done" value="'+esc(name())+'" style="max-width:220px;margin:0 0 0 auto"></label>'+
       '<div class="sheet-act"><button class="sheet-cta" type="button" id="collab-name-ok">continue</button></div>');
     const input=box.querySelector('#collab-name'),ok=box.querySelector('#collab-name-ok');
     let done=false;
