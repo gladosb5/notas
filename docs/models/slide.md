@@ -4,7 +4,7 @@ The image selection action **remove background** runs one BiRefNet-lite model wi
 
 ## Training data and limits
 
-The supplied `finetunedimages` folder contains 97 images, all 512 × 512 crops. We used 94: 25 crops containing visible projected content and 69 negative crops. Three ambiguous images (2036, 2037 and 2971) were excluded. `labels.json` contains approximate polygons drawn by the agent after visual inspection, not independently reviewed ground truth. The target includes the visible projection and projected application chrome, but excludes walls, projector hardware and occlusions.
+The private training collection contained 97 images, all 512 × 512 crops. We used 94: 25 crops containing visible projected content and 69 negative crops. Three ambiguous images (2036, 2037 and 2971) were excluded. The training labels contained approximate polygons drawn by the agent after visual inspection, not independently reviewed ground truth. The target includes the visible projection and projected application chrome, but excludes walls, projector hardware and occlusions.
 
 Nearby filename ranges were kept together: 55 training images, 26 validation images and 13 test images. This is a proxy for capture sessions; actual capture metadata was unavailable. It does not rule out similar-scene leakage. The test set has six positives and seven negatives. Validation selected epoch 15; the test set did not select the checkpoint.
 
@@ -42,23 +42,5 @@ Against the float graph on 23 photos (10 COCO, 13 slide crops), int8 flips 0.03%
 
 The slide detector, unchanged by this export, also fires on some ordinary close-up photos with a large subject (4 of the 10 COCO photos above: a bear, teddy bears, a person, cats), which then keep most of the picture.
 
-## Reproduce
 
-From the repository root, with Python 3.11, CUDA PyTorch, torchvision, transformers, timm, kornia, einops, numpy, Pillow, onnx, onnxruntime and huggingface_hub installed:
-
-```powershell
-py -3.11 training/slide-cutout/prepare_model.py
-# Review the downloaded custom model code before the next commands.
-py -3.11 training/slide-cutout/train_head.py --images ../finetunedimages
-py -3.11 training/slide-cutout/train_decoder.py --images ../finetunedimages
-py -3.11 training/slide-cutout/export_combined.py --images ../finetunedimages --output assets/slide
-node tests/slide-background.mjs
-```
-
-The head experiment generates the masks and manifest consumed by the decoder experiment. Cached features are local training artifacts, excluded from version control. Input-image hashes and split assignments are in `manifest.json`; source photographs are not copied into the repository. The masks can be regenerated from the polygons.
-
-## Slide surface refinement
-
-The browser refines confident slide masks using long straight brightness boundaries in the original image. At least three supported outer edges, agreement with the model foreground, and limited added area are required. This preserves plain slide margins as a solid surface while excluding wall strips. Irregular partial projections without enough supported edges retain the model matte. Dark or low-contrast borders may also retain the original matte. This is geometric post-processing, not another model training run.
-
-A user-provided full-slide photograph exposed holes in plain margins and retained wall below. The cropped photo (without the selection UI) is a regression fixture at `tests/fixtures/projected-slide.png`, with an approximate hand-reviewed outline in `tests/slide-surface-browser.mjs`. It is a development regression example, not an independent test set or an addition to the reported training metrics.
+Training images, checkpoints, and experimental training scripts are not included in this app repository. The bundled model and its license remain under `assets/slide/`.
