@@ -8,7 +8,7 @@ import {startServer} from '../scripts/serve.mjs';
 const server=await startServer(0);
 let browser;
 try{
-  browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
+  browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
   const page=await (await browser.newContext()).newPage();
   const errors=[];
   page.on('pageerror',e=>errors.push(e.message));

@@ -4,7 +4,7 @@ import {startServer} from '../scripts/serve.mjs';
 
 const server=await startServer(0);
 const base=`http://127.0.0.1:${server.address().port}`;
-const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
+const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
 const context=await browser.newContext({viewport:{width:390,height:844},serviceWorkers:'block'});
 const remote=[];
 context.on('request',r=>{if(!r.url().startsWith(base+'/')&&!r.url().startsWith('data:')&&!r.url().startsWith('blob:'))remote.push(r.url());});

@@ -1,7 +1,7 @@
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import {startServer} from '../scripts/serve.mjs';
-const server=await startServer(0),browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
+const server=await startServer(0),browser=await chromium.launch({channel:'msedge',headless:true});
 try{
  const page=await browser.newPage({serviceWorkers:'block'});
  await page.goto(`http://127.0.0.1:${server.address().port}/manifest.webmanifest`);

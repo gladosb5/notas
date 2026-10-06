@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {startServer} from '../scripts/serve.mjs';
 // a question's words, whether it went as text alone or as text and a picture of the page
 const said=c=>typeof c==='string'?c:c.filter(p=>p.type==='text').map(p=>p.text).join('\n');
-const server=await startServer(0),browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
+const server=await startServer(0),browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
 try{
  for(const width of [320,390,820,1280]){
  const context=await browser.newContext({viewport:{width,height:900},hasTouch:width<1000,serviceWorkers:'block'}),page=await context.newPage();

@@ -9,7 +9,7 @@ import * as sync from 'y-protocols/sync';
 import { WebsocketProvider } from '../collab-provider.mjs';
 
 // Use real Yjs/protocol/SQLite operations; replace only the Cloudflare host.
-const source=(await readFile(new URL('../deploy/cloudflare/room.js',import.meta.url),'utf8'))
+const source=(await readFile(new URL('../cloudflare-deploy/room.js',import.meta.url),'utf8'))
   .replace("import { DurableObject } from 'cloudflare:workers';",
     'class DurableObject { constructor(ctx,env){this.ctx=ctx;this.env=env;} }')
   .replace(/from '([^']+)'/g,(_,specifier)=>`from '${import.meta.resolve(specifier)}'`);

@@ -2,7 +2,7 @@ import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import {startServer} from '../scripts/serve.mjs';
 const server=await startServer(0);
-const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
+const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
 try{
  for(const width of [390,1280]){
   const page=await browser.newPage({viewport:{width,height:900},serviceWorkers:'block'});

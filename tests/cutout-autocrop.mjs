@@ -2,7 +2,7 @@ import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import {startServer} from '../scripts/serve.mjs';
 const server=await startServer(0);
-const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
+const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
 try{
  const page=await browser.newPage({hasTouch:true,serviceWorkers:'block'});
  await page.route('**/bg-worker.js*',route=>route.fulfill({contentType:'text/javascript',body:`self.onmessage=e=>{const {id,prefetch}=e.data;if(prefetch)return self.postMessage({id,done:'stored'});const alpha=new Uint8ClampedArray(512*512);for(let y=128;y<384;y++)for(let x=128;x<384;x++)alpha[y*512+x]=255;self.postMessage({id,alpha});};`}));

@@ -2,7 +2,7 @@
 // assets and never reach this script; only what assets cannot serve arrives
 // here: the room's websocket and the "hey nota" forward.
 export { NoteRoom } from './room.js';
-import { notaBody, bodyTokens, MAX_BODY } from '../../server/nota-body.mjs';
+import { notaBody, bodyTokens, MAX_BODY } from './nota-body.mjs';
 const UPSTREAM='https://api.cerebras.ai/v1/chat/completions';
 // /collab/<note id>: the websocket of the note's room. Ids are what the page
 // makes with uid(): lowercase base 36.
