@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {startServer} from '../scripts/serve.mjs';
 
 const server=await startServer(0),base=`http://127.0.0.1:${server.address().port}`;
-const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
+const browser=await chromium.launch({channel:'msedge',headless:true});
 try{
   const page=await browser.newPage({viewport:{width:900,height:700}});
   await page.goto(base+'/notas.html');

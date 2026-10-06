@@ -5,7 +5,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const deploy=path.join(root,'deploy','cloudflare');
+const deploy=path.join(root,'cloudflare-deploy');
 const port=8799,base=`http://127.0.0.1:${port}`;
 const sync=spawn(process.execPath,['sync.mjs'],{cwd:deploy,stdio:'inherit'});
 assert.equal(await new Promise(resolve=>sync.on('exit',resolve)),0);
@@ -18,7 +18,7 @@ try{
     await new Promise(resolve=>setTimeout(resolve,500));
   }
   assert.ok(ready,'local Cloudflare worker started');
-  browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
+  browser=await chromium.launch({channel:'msedge',headless:true});
   const a=await browser.newContext({viewport:{width:900,height:700}});
   const b=await browser.newContext({viewport:{width:900,height:700}});
   const sender=await a.newPage(),receiver=await b.newPage();

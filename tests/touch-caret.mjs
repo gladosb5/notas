@@ -10,7 +10,7 @@ import {startServer} from '../scripts/serve.mjs';
 
 const server=await startServer(0);
 const base=`http://127.0.0.1:${server.address().port}`;
-const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
+const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
 const state=page=>page.evaluate(()=>{
   const ta=N.text.currentText(),caret=document.getElementById('caret');
   return {coarse:matchMedia('(hover:none),(pointer:coarse)').matches,glide:document.getElementById('lines').classList.contains('glide'),

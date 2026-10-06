@@ -12,7 +12,12 @@ ort.env.wasm.numThreads=self.crossOriginIsolated?Math.max(1,Math.min(4,navigator
 ort.env.wasm.proxy=false;
 
 const HEIGHT=48,BASE_WIDTH=320,MAX_WIDTH=3200,CLASSES=18710;
-const MODEL={url:'./assets/text/ppocrv6-small.onnx?v=5435fd74',sha:'5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634'};
+// Explicit benchmark opt-in only; the notebook always constructs the plain URL.
+// Both candidates use exactly this preprocessing and decoder.
+const experimentalMedium=new URL(self.location.href).searchParams.get('experiment')==='medium';
+const MODEL=experimentalMedium
+  ? {url:'./experiments/ocr-upgrade/medium.onnx?v=9c09abf0',sha:'9c09abf0957f7968c7586464b7397b84ad2387a0497a351af40e9acc71b673ba'}
+  : {url:'./assets/text/ppocrv6-small.onnx?v=5435fd74',sha:'5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634'};
 let session,loading,chars;
 
 // The page counts this download in beside the stroke reader's, so the

@@ -1,22 +1,22 @@
 // Two people on one note. Runs against the Cloudflare worker locally
-// (deploy/cloudflare: sync, then wrangler dev), because the note's room is
+// (cloudflare-deploy: sync, then wrangler dev), because the note's room is
 // a Durable Object there; COLLAB_BASE=<url> points it at a running one
 // instead, the deployed site included.
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import path from 'node:path';
-const root=path.resolve(import.meta.dirname,'..'),deploy=path.join(root,'deploy','cloudflare');
+const root=path.resolve(import.meta.dirname,'..'),deploy=path.join(root,'cloudflare-deploy');
 const PORT=8798;
 let dev=null,base=process.env.COLLAB_BASE;
-const run=(cmd,args,cwd)=>new Promise((res,rej)=>{const p=spawn(cmd,args,{cwd,stdio:'inherit',windowsHide:true});p.on('exit',c=>c?rej(new Error(cmd+' failed')):res());});
+const run=(cmd,args,cwd)=>new Promise((res,rej)=>{const p=spawn(cmd,args,{cwd,shell:true,stdio:'inherit'});p.on('exit',c=>c?rej(new Error(cmd+' failed')):res());});
 if(!base){
-  await run(process.execPath,['sync.mjs'],deploy);
-  dev=spawn(process.execPath,[path.join(deploy,'node_modules/wrangler/bin/wrangler.js'),'dev','--port',String(PORT)],{cwd:deploy,stdio:process.env.COLLAB_DEBUG?'inherit':'ignore',windowsHide:true});
+  await run('node',['sync.mjs'],deploy);
+  dev=spawn('npx',['wrangler','dev','--port',String(PORT)],{cwd:deploy,shell:true,stdio:'ignore'});
   base='http://127.0.0.1:'+PORT;
   for(let i=0;i<60;i++){ try{ if((await fetch(base+'/')).ok)break; }catch(e){} await new Promise(r=>setTimeout(r,1000)); }
 }
-const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
+const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
 const errors=[];
 async function person(name){
   const context=await browser.newContext({viewport:{width:900,height:1000}});
@@ -271,5 +271,5 @@ try{
   throw error;
 }finally{
   await browser.close();
-  if(dev){ try{ if(process.platform==='win32')spawn('taskkill',['/pid',String(dev.pid),'/t','/f'],{stdio:'ignore',windowsHide:true});else dev.kill(); }catch(e){} }
+  if(dev){ try{ spawn('taskkill',['/pid',String(dev.pid),'/t','/f'],{shell:true,stdio:'ignore'}); }catch(e){} }
 }

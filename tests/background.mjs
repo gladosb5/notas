@@ -12,7 +12,7 @@ import {startServer} from '../scripts/serve.mjs';
 const PROFILE=fileURLToPath(new URL('../test-results/background-profile',import.meta.url));
 const server=await startServer(0);
 const base=`http://127.0.0.1:${server.address().port}`;
-const context=await chromium.launchPersistentContext(PROFILE,{channel:process.env.PLAYWRIGHT_CHANNEL,headless:true,viewport:{width:800,height:1100}});
+const context=await chromium.launchPersistentContext(PROFILE,{executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true,viewport:{width:800,height:1100}});
 try{
   const page=await context.newPage();
   const errors=[];page.on('pageerror',e=>errors.push(e.message));

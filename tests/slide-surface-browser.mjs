@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {startServer} from '../scripts/serve.mjs';
 const source=readFileSync(new URL('./fixtures/projected-slide.png',import.meta.url));
-const server=await startServer(0),browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
+const server=await startServer(0),browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
 try{
   const page=await browser.newPage({serviceWorkers:'block'}),errors=[];
   page.on('pageerror',e=>errors.push(e.message));

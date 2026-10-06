@@ -9,7 +9,7 @@ import {startServer} from '../scripts/serve.mjs';
    line puts the caret where the finger was, not at the end of the line. */
 const server=await startServer(0);
 const base=`http://127.0.0.1:${server.address().port}`;
-const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
+const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
 const context=await browser.newContext({...devices['Pixel 7'],serviceWorkers:'block'});
 await context.route(/encoder\.onnx/,route=>route.fulfill({status:200,contentType:'application/octet-stream',body:Buffer.alloc(3*1048576)}));
 const page=await context.newPage();

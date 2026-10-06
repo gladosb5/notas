@@ -6,7 +6,7 @@ import {startServer} from '../scripts/serve.mjs';
    scaled by a corner and turned by the knob above them, with no arrow or
    bigger/smaller buttons in the bar. */
 const server=await startServer(0);
-const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
+const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
 try{
   const page=await browser.newPage({viewport:{width:1280,height:900},serviceWorkers:'block'});
   await page.goto(`http://127.0.0.1:${server.address().port}/notas.html`);

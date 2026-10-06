@@ -1,22 +1,22 @@
 node_modules/
 test-results/
-playwright-report/
 .tmp-*
 __pycache__/
 *.pyc
-*.log
-.impeccable/
-.wrangler/
-.dev.vars
-.env
-.env.*
-!.env.example
-# Development datasets and model checkpoints belong in the workshop.
-dataset/
+
+# training data and checkpoints never belong in this repo
 .dataset/
-experiments/
-training/
+dataset/
+experiments/*
+!experiments/ocr-upgrade/
+experiments/ocr-upgrade/*
+!experiments/ocr-upgrade/router.mjs
 checkpoints/
 outputs/
 *.pt
 *.safetensors
+
+# editor / tool caches
+.impeccable/
+.wrangler/
+.dev.vars

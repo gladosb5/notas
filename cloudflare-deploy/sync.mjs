@@ -11,10 +11,10 @@ import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promi
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
-import {cspFor,ASSET_CSP} from '../../server/csp.mjs';
+import {cspFor,ASSET_CSP} from './csp.mjs';
 
 const here=path.resolve(import.meta.dirname);
-const root=path.resolve(here,'../..');
+const root=path.resolve(here,'..');
 const out=path.join(here,'public');
 
 const SHELL=['notas.html','sw.js','model-contract.js','local-recognition.js','ink-worker.js',

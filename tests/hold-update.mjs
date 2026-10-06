@@ -15,7 +15,7 @@ assert.equal(tidy(Array.from({length:65},(_,i)=>[80*Math.cos(i*Math.PI/32),50*Ma
 assert.equal(tidy([[0,0],[10,20],[20,-10],[30,30],[40,-20],[50,10]]),null);
 
 // Real MessageChannel replies exercise installed and already-waiting updates.
-const server=await startServer(0),browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
+const server=await startServer(0),browser=await chromium.launch({channel:'msedge',headless:true});
 try{
  const page=await browser.newPage({viewport:{width:1280,height:900},serviceWorkers:'block'});
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
