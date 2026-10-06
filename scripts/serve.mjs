@@ -1,8 +1,8 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { notaBody, MAX_BODY } from '../cloudflare-deploy/nota-body.mjs';
-import { cspFor, ASSET_CSP } from '../cloudflare-deploy/csp.mjs';
+import { notaBody, MAX_BODY } from '../server/nota-body.mjs';
+import { cspFor, ASSET_CSP } from '../server/csp.mjs';
 const root=path.resolve(import.meta.dirname,'..');
 const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css','.json':'application/json','.webmanifest':'application/manifest+json','.svg':'image/svg+xml','.woff2':'font/woff2','.woff':'font/woff','.ttf':'font/ttf','.f32':'application/octet-stream','.mjs':'text/javascript; charset=utf-8','.wasm':'application/wasm','.onnx':'application/octet-stream','.md':'text/markdown; charset=utf-8'};
 export function startServer(port=4173){
@@ -10,7 +10,7 @@ export function startServer(port=4173){
 // and the request is forwarded with the stream piped back. The key is
 // CEREBRAS_API_KEY in the environment, or the page's own when it sent one;
 // with neither the answer is 501 and the page falls back to calling the
-// provider directly. cloudflare-deploy/worker.js is the same forward as a
+// provider directly. deploy/cloudflare/worker.js is the same forward as a
 // cloudflare worker.
 const NOTA_UPSTREAM='https://api.cerebras.ai/v1/chat/completions';
 async function notaProxy(req,res){
@@ -51,7 +51,7 @@ const server=http.createServer(async(req,res)=>{
     const file=path.resolve(root,'.'+(pathname==='/'?'/notas.html':pathname));
     if(!file.startsWith(root+path.sep)){res.writeHead(403).end();return;}
     const bytes=await readFile(file);
-    // the deployed site's policy (cloudflare-deploy/sync.mjs), so the tests
+    // the deployed site's policy (deploy/cloudflare/sync.mjs), so the tests
     // run under it too
     const extra={};
     const name=path.relative(root,file).split(path.sep).join('/');

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {startServer} from '../scripts/serve.mjs';
 
 const server=await startServer(0);
-const browser=await chromium.launch({channel:'msedge',headless:true});
+const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
 try{
   const page=await browser.newPage({viewport:{width:820,height:1180},hasTouch:true,deviceScaleFactor:2});
   const errors=[];page.on('pageerror',e=>errors.push(e.message));

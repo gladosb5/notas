@@ -1,12 +1,10 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "notas",
+  "name": "notas-selfhosted",
   "main": "worker.js",
   "compatibility_date": "2026-09-01",
-  // the notebook's address: a custom domain on the glados.pro zone, which
-  // wrangler creates the DNS record and certificate for on deploy. The
-  // workers.dev address keeps working beside it.
-  "routes": [{ "pattern": "notas.glados.pro", "custom_domain": true }],
+  // Deploy to your own workers.dev address; add a custom domain if desired.
+  "workers_dev": true,
   // The app: everything sync.mjs copies into public/ (with its _headers).
   // worker.js runs only for the paths listed in run_worker_first: the
   // room's websocket and its two POSTs, and the nota forward. Every other
