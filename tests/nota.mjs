@@ -7,7 +7,7 @@ import {startServer} from '../scripts/serve.mjs';
 
 const server=await startServer(0);
 const base=`http://127.0.0.1:${server.address().port}`;
-const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
+const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
 const context=await browser.newContext({viewport:{width:1280,height:900},hasTouch:true,serviceWorkers:'block'});
 const page=await context.newPage();
 page.on('pageerror',e=>{throw e;});

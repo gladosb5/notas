@@ -1,7 +1,7 @@
 // Background removal for pictures in a note: BiRefNet lite at 512x512 (MIT),
 // one model with two outputs from a single pass. `general` is the published
 // weights; `slide` is the fine-tuned last decoder stage that keeps a
-// projected slide whole (training/slide-cutout). The deformable convolutions
+// projected slide whole (see docs/models/slide.md). The deformable convolutions
 // are exported as GridSample, which this runtime has, rather than the
 // gathers that took the old export to about 2 GB. Served from this site in
 // chunks under the per-file limit, each checked against its hash, and kept

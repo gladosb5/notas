@@ -2,7 +2,7 @@
 // words and up to two pictures of the page, and nothing a caller adds.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {notaBody,bodyTokens,MODEL,MAX_TOKENS,IMAGE_TOKENS,MAX_BODY} from '../cloudflare-deploy/nota-body.mjs';
+import {notaBody,bodyTokens,MODEL,MAX_TOKENS,IMAGE_TOKENS,MAX_BODY} from '../server/nota-body.mjs';
 
 const jpeg='data:image/jpeg;base64,'+'A'.repeat(4000);
 const ask=(content,extra={})=>({model:MODEL,stream:true,max_tokens:1600,messages:[{role:'system',content:'you are nota'},{role:'user',content}],...extra});

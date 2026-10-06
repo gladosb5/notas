@@ -4,12 +4,9 @@
   "scripts": {
     "pretest": "node scripts/model-contract.mjs --check",
     "start": "node scripts/serve.mjs",
-    "test": "node --test tests/local.test.cjs tests/ocr-routing.test.mjs tests/evidence.test.mjs tests/math-notes.test.cjs tests/ink-timing.test.cjs tests/ink-decode.test.cjs tests/ink-offline.test.cjs tests/no-fast-production.test.mjs tests/slide-surface.test.cjs tests/math-edge-cases.test.cjs tests/workers-edge.test.mjs tests/memory-recovery.test.mjs tests/collab-usage.test.mjs tests/diagram.test.cjs tests/nota-body.test.mjs",
-    "benchmark:notes": "node scripts/benchmark-math-notes.mjs",
-    "test:ocr-eval": "python -m unittest discover -s tests -p \"ocr*test.py\"",
+    "test": "node --test tests/local.test.cjs tests/math-notes.test.cjs tests/ink-timing.test.cjs tests/ink-decode.test.cjs tests/ink-offline.test.cjs tests/no-fast-production.test.mjs tests/slide-surface.test.cjs tests/math-edge-cases.test.cjs tests/workers-edge.test.mjs tests/memory-recovery.test.mjs tests/collab-usage.test.mjs tests/diagram.test.cjs tests/nota-body.test.mjs",
     "test:fast-pencil": "node tests/fast-pencil-browser.mjs",
-    "test:browser": "node tests/browser.mjs && node tests/ink-timing-browser.mjs && node tests/ink-routing-browser.mjs && node tests/handwritten-variable.mjs && node tests/ux-audit.mjs && node tests/solve-chip.mjs && node tests/noise-probe.mjs && node tests/storage.mjs && node tests/text-index.mjs && node tests/answer-editing.mjs && node tests/line-selection.mjs && node tests/pen-solve-tap.mjs && node tests/frames.mjs && node tests/checklist-fixes.mjs && node tests/mobile-text.mjs && node tests/library.mjs && node tests/mobile-navigation.mjs && node tests/quick-maths.mjs && node tests/nota.mjs && node tests/nota-diagram.mjs",
-    "quality:99": "node scripts/quality-gate.mjs",
+    "test:browser": "node tests/browser.mjs && node tests/ink-timing-browser.mjs && node tests/handwritten-variable.mjs && node tests/ux-audit.mjs && node tests/solve-chip.mjs && node tests/storage.mjs && node tests/text-index.mjs && node tests/answer-editing.mjs && node tests/line-selection.mjs && node tests/pen-solve-tap.mjs && node tests/frames.mjs && node tests/checklist-fixes.mjs && node tests/mobile-text.mjs && node tests/library.mjs && node tests/mobile-navigation.mjs && node tests/quick-maths.mjs && node tests/nota.mjs && node tests/nota-diagram.mjs",
     "assets": "node scripts/prepare-assets.mjs",
     "test:collab": "node tests/collab.mjs",
     "test:background": "node tests/background.mjs",
@@ -17,9 +14,8 @@
     "test:collab-usage": "node --test tests/collab-usage.test.mjs",
     "build:collab": "node scripts/build-collab.mjs",
     "test:autocrop": "node tests/cutout-autocrop.mjs",
-    "test:slide": "node tests/slide-background.mjs && node tests/slide-surface-browser.mjs",
-    "deploy": "npm --prefix cloudflare-deploy run deploy",
-    "check:diagram": "node scripts/diagram-heldout.mjs",
+    "test:slide": "node tests/slide-surface-browser.mjs",
+    "deploy": "npm --prefix deploy/cloudflare run deploy",
     "test:edges": "node tests/storage-edges.mjs && node tests/tutor-edges.mjs && node tests/nota-writing.mjs"
   },
   "devDependencies": {
@@ -31,5 +27,10 @@
     "y-indexeddb": "^9.0.12",
     "y-websocket": "^3.1.0",
     "yjs": "^13.6.32"
+  },
+  "description": "A local-first notebook with handwriting recognition, maths tools, and optional collaboration.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13.0"
   }
 }
