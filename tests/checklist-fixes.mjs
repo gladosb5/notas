@@ -10,7 +10,7 @@ import {startServer} from '../scripts/serve.mjs';
 
 const server=await startServer(0);
 const base=`http://127.0.0.1:${server.address().port}`;
-const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
+const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
 const sse=(text)=>text.split(/(?<= )/).map(piece=>`data: ${JSON.stringify({choices:[{delta:{content:piece}}]})}\n\n`).join('')+'data: [DONE]\n\n';
 const REPLY='A bag holds 3 red, 2 blue and 5 green marbles, 10 in all. The chance of red is 3/10, of blue 2/10 and of green 5/10.';
 async function open(ua){

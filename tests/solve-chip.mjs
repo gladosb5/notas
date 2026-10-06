@@ -4,7 +4,7 @@ import {startServer} from '../scripts/serve.mjs';
 
 const server=await startServer(0);
 const base=`http://127.0.0.1:${server.address().port}`;
-const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
+const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
 const context=await browser.newContext({viewport:{width:1280,height:900},hasTouch:true,serviceWorkers:'block'});
 const page=await context.newPage();
 
@@ -157,7 +157,7 @@ try{
   assert.equal(active.s,active.id);assert.equal(active.l,active.id);
 
   // CJK fuzzy search slides over characters even when the transcript has spaces (35).
-  const fuzzy=await page.evaluate(()=>[N.ui.fuzzyHandwriting('数学','今天 学数字 课')?.score, N.ui.fuzzyHandwriting('数学笔记','数学 笔记本')?.score, N.ui.fuzzyHandwriting('数','数学')?.score]);
+  const fuzzy=await page.evaluate(()=>[N.ui.fuzzyHandwriting('æ•°å­¦','ä»Šå¤© å­¦æ•°å­— è¯¾')?.score, N.ui.fuzzyHandwriting('æ•°å­¦ç¬”è®°','æ•°å­¦ ç¬”è®°æœ¬')?.score, N.ui.fuzzyHandwriting('æ•°','æ•°å­¦')?.score]);
   assert.equal(fuzzy[1],0,'Exact CJK phrase across a space is found');
   assert.equal(fuzzy[2],0,'Single-character CJK query matches');
 
