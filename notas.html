@@ -181,7 +181,7 @@ input:focus-visible,textarea:focus-visible{outline:none}
 /* The frost diffuses actual content behind the surface. Reflections stay at the
    curved perimeter instead of painting a moving white hotspot across the face.
    The fine grain is fixed, so it never shimmers while writing or scrolling. */
-.glass,#topbar,#pill,#penpop,#dlpop,#selbar,#toast,#save-alert,#askbar,.sheet .box,.tut,#local-status,#offline-status{
+.glass,#topbar,#pill,#penpop,#textpop,#dlpop,#selbar,#toast,#save-alert,#askbar,.sheet .box,.tut,#local-status,#offline-status{
   background-color:var(--glass);
   background-image:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath fill='%23808b9b' opacity='.025' filter='url(%23n)' d='M0 0h128v128H0z'/%3E%3C/svg%3E"),
@@ -192,7 +192,7 @@ input:focus-visible,textarea:focus-visible{outline:none}
 }
 /* A masked hairline follows the real radius, including the pill ends. It sits
    above the fill without intercepting controls or clipping their focus rings. */
-.glass::after,#topbar::after,#pill::after,#penpop::after,#dlpop::after,#selbar::after,#toast::after,#save-alert::after,#askbar::after,.sheet .box::after,.tut::after,#local-status::after,#offline-status::after{
+.glass::after,#topbar::after,#pill::after,#penpop::after,#textpop::after,#dlpop::after,#selbar::after,#toast::after,#save-alert::after,#askbar::after,.sheet .box::after,.tut::after,#local-status::after,#offline-status::after{
   content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;
   pointer-events:none;
   background:linear-gradient(155deg,var(--glass-rim) 0%,var(--glass-rim-soft) 32%,transparent 50%,var(--glass-bounce) 78%,var(--glass-rim-soft) 100%);
@@ -203,13 +203,13 @@ input:focus-visible,textarea:focus-visible{outline:none}
 }
 .sheet .box{position:relative}
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
-  .glass,#topbar,#pill,#penpop,#dlpop,#selbar,#toast,#save-alert,#askbar,.sheet .box,.tut,#local-status,#offline-status{background:var(--panel)}
+  .glass,#topbar,#pill,#penpop,#textpop,#dlpop,#selbar,#toast,#save-alert,#askbar,.sheet .box,.tut,#local-status,#offline-status{background:var(--panel)}
 }
 @media (prefers-reduced-transparency: reduce){
-  .glass,#topbar,#pill,#penpop,#dlpop,#selbar,#toast,#save-alert,#askbar,.sheet .box,.tut,#local-status,#offline-status{
+  .glass,#topbar,#pill,#penpop,#textpop,#dlpop,#selbar,#toast,#save-alert,#askbar,.sheet .box,.tut,#local-status,#offline-status{
     background:var(--panel) !important;-webkit-backdrop-filter:none;backdrop-filter:none;
   }
-  .glass::after,#topbar::after,#pill::after,#penpop::after,#dlpop::after,#selbar::after,#toast::after,#save-alert::after,#askbar::after,.sheet .box::after,.tut::after,#local-status::after,#offline-status::after{display:none}
+  .glass::after,#topbar::after,#pill::after,#penpop::after,#textpop::after,#dlpop::after,#selbar::after,#toast::after,#save-alert::after,#askbar::after,.sheet .box::after,.tut::after,#local-status::after,#offline-status::after{display:none}
   .sheet{-webkit-backdrop-filter:none !important;backdrop-filter:none !important}
 }
 
@@ -487,7 +487,7 @@ body[data-tool="text"]:not([data-image-sel]) .line{pointer-events:auto}
 #caret-mirror i{display:inline-block;width:0;height:1em;font-style:normal}
 /* focus mode: while you type, the chrome steps back so only the words are
    left; a mouse move, a tap or leaving the line brings it back */
-#topbar,#pill,#penpop,#dlpop,#local-status,#offline-status{transition:opacity .5s var(--spring)}
+#topbar,#pill,#penpop,#textpop,#dlpop,#local-status,#offline-status{transition:opacity .5s var(--spring)}
 body.typing #topbar,body.typing #pill,body.typing #penpop,body.typing #local-status,body.typing #offline-status{opacity:.14;pointer-events:none}
 /* A mouse brings the chrome back as it moves toward it; a finger arrives
    with the tap itself, which was hit-tested before the fade lifted, so the
@@ -601,13 +601,13 @@ body[data-tool="eraser"] #col .chip{pointer-events:none}
 .pill-image:active{transform:scale(.96)}
 body.noicons .pill-image i{display:none}
 /* the pen popover: the same tool buttons, in two rows, floating just above the pill */
-#penpop{
+#penpop,#textpop{
   --tool:42px;--gap:2px;
   position:fixed;z-index:31;display:grid;gap:var(--gap);padding:5px;
   border-radius:var(--r-card);transform-origin:bottom left;
   animation:chipIn .32s var(--pop);
 }
-#penpop[hidden]{display:none}
+#penpop[hidden],#textpop[hidden]{display:none}
 .penpop-row{display:flex;gap:var(--gap)}
 /* a colour of your own: the native picker, behind a rainbow ring */
 .tool.pick{position:relative}
@@ -617,9 +617,7 @@ body.noicons .pill-image i{display:none}
 .tool.pick input,.colors .pick input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;border:0;padding:0}
 .tool.pick[data-on="true"]{box-shadow:inset 0 0 0 2px var(--graphite)}
 body.noicons .tool.pick i{display:block}
-/* the eraser that rubs out only what it passes over carries a dot */
-.tool[data-tool="eraser"]{position:relative}
-body[data-erase="pixel"] .tool[data-tool="eraser"]::after{content:"";position:absolute;right:22%;bottom:22%;width:6px;height:6px;border-radius:50%;background:currentColor}
+
 /* kept in the markup for the tray's aria-expanded state, but not shown: the
    pen button itself opens the tray now */
 #pill-more{display:none;
@@ -962,7 +960,7 @@ body.noicons .tut-ok .fb{display:block}
 }
 @media print{
   body{overflow:visible}
-  #topbar,#pill,#penpop,#dlpop,#ask-dot,#askbar,#toast,#selbar,.tut,.tut-mark,.sheet,
+  #topbar,#pill,#penpop,#textpop,#dlpop,#ask-dot,#askbar,#toast,#selbar,.tut,.tut-mark,.sheet,
   #local-status,#offline-status{display:none !important}
 }
 
@@ -995,7 +993,7 @@ body.noicons .tut-ok .fb{display:block}
   #status{ font-size:12px }
 
   .tool{ font-size:22px }
-  #pill,#penpop{ --tool:50px; --gap:4px; padding:6px }
+  #pill,#penpop,#textpop{ --tool:50px; --gap:4px; padding:6px }
   #pill-more{ width:30px }
   .tool .fb{ font-size:16px }
 
@@ -1048,7 +1046,7 @@ body.noicons .tut-ok .fb{display:block}
   .sheet.enter .box{transform:translateY(18px) scale(.97)}
   .sheet.leave .box{transform:translateY(10px) scale(.985)}
   #pill{ --tool:52px; --gap:4px; padding:6px 7px }
-  #penpop{ --tool:52px; --gap:4px; padding:6px }
+  #penpop,#textpop{ --tool:52px; --gap:4px; padding:6px }
 }
 @media (pointer:coarse) and (min-width:700px) and (min-height:560px){
   #topbar{left:max(18px,var(--safe-l));right:max(18px,var(--safe-r))}
@@ -1425,7 +1423,7 @@ html[data-motion="off"] .prep-trace::before{transform:scaleX(1);opacity:.55}
 <div id="pill" role="toolbar" aria-label="tools" data-open="false">
   <div id="pill-strip">
     <span id="pill-lens" aria-hidden="true"></span>
-    <button class="tool" data-tool="text" aria-label="type text" aria-pressed="true" aria-keyshortcuts="T" title="text (T)"><i class="ph ph-text-t"></i><span class="fb">T</span></button>
+    <button class="tool" data-tool="text" aria-label="type text" aria-pressed="true" aria-keyshortcuts="T" aria-expanded="false" aria-controls="textpop" title="text (T), tap again for colours"><i class="ph ph-text-t"></i><span class="fb">T</span></button>
     <button class="tool" data-tool="pen" aria-label="pen" aria-pressed="false" aria-keyshortcuts="P" aria-expanded="false" aria-controls="penpop" title="pen (P), tap again for colours"><i class="ph ph-pencil-simple"></i><span class="fb">P</span></button>
     <button class="tool" data-tool="eraser" aria-label="eraser" aria-pressed="false" aria-keyshortcuts="E" title="eraser (E)"><i class="ph ph-eraser"></i><span class="fb">E</span></button>
     <button class="tool" data-tool="select" aria-label="select and move" aria-pressed="false" aria-keyshortcuts="V" title="select, then drag to move (V)"><i class="ph ph-selection"></i><span class="fb">V</span></button>
@@ -1454,6 +1452,19 @@ html[data-motion="off"] .prep-trace::before{transform:scaleX(1);opacity:.55}
     <button class="tool width" data-w="1.5" aria-label="thin line" aria-pressed="false" title="thin"><i style="--d:4px"></i></button>
     <button class="tool width" data-w="2.4" aria-label="medium line" aria-pressed="true" title="medium"><i style="--d:7px"></i></button>
     <button class="tool width" data-w="4" aria-label="thick line" aria-pressed="false" title="thick"><i style="--d:11px"></i></button>
+  </div>
+</div>
+
+<!-- The text tool's popover: a second tap on the text tool opens it, as the pen's does. -->
+<div id="textpop" hidden role="group" aria-label="text colour">
+  <div class="penpop-row">
+    <button class="tool swatch" data-color="" aria-label="text, theme ink" aria-pressed="true" title="theme ink"><i style="--c:var(--graphite)"></i></button>
+    <button class="tool swatch" data-color="#2F6FB3" aria-label="text, blue" aria-pressed="false" title="blue"><i style="--c:#2F6FB3"></i></button>
+    <button class="tool swatch" data-color="#D64541" aria-label="text, red" aria-pressed="false" title="red"><i style="--c:#D64541"></i></button>
+    <button class="tool swatch" data-color="#2E8B57" aria-label="text, green" aria-pressed="false" title="green"><i style="--c:#2E8B57"></i></button>
+    <button class="tool swatch" data-color="#E08A1E" aria-label="text, orange" aria-pressed="false" title="orange"><i style="--c:#E08A1E"></i></button>
+    <button class="tool swatch" data-color="#7B4FBF" aria-label="text, purple" aria-pressed="false" title="purple"><i style="--c:#7B4FBF"></i></button>
+    <label class="tool pick" data-on="false" title="any colour"><i></i><input type="color" id="text-pick" aria-label="text, any colour" value="#2F6FB3"></label>
   </div>
 </div>
 
@@ -2768,11 +2779,11 @@ const pen = (()=>{
 function setPen(patch){
   Object.assign(pen, patch);
   try{ localStorage.setItem('notas.pen', JSON.stringify(pen)); }catch(e){}
-  const swatches = [...document.querySelectorAll('.tool.swatch')];
+  const swatches = [...document.querySelectorAll('#penpop .tool.swatch')];
   swatches.forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.color === pen.color)));
   document.querySelectorAll('.tool.width').forEach(b=>b.setAttribute('aria-pressed', String(+b.dataset.w === pen.w)));
   /* a colour none of the swatches has is the picker's */
-  const own = !!pen.color && !swatches.some(b=>b.dataset.color === pen.color), pick = document.querySelector('.tool.pick');
+  const own = !!pen.color && !swatches.some(b=>b.dataset.color === pen.color), pick = document.querySelector('#penpop .tool.pick');
   if(pick){
     pick.dataset.on = String(own);
     if(own){ pick.style.setProperty('--c', pen.color); const input = pick.querySelector('input'); if(/^#[0-9a-f]{6}$/i.test(pen.color)) input.value = pen.color; }
@@ -2788,7 +2799,14 @@ function setEraseMode(mode, announce){
   try{ localStorage.setItem('notas.eraser', eraseMode); }catch(e){}
   document.body.dataset.erase = eraseMode;
   const b = document.querySelector('.tool[data-tool="eraser"]');
-  if(b){ const said = eraseMode === 'pixel' ? 'pixel eraser' : 'stroke eraser'; b.setAttribute('aria-label', said); b.title = said+' (E), tap again to switch'; }
+  if(b){
+    const pixel = eraseMode === 'pixel', said = pixel ? 'pixel eraser' : 'stroke eraser';
+    b.setAttribute('aria-label', said); b.title = said+' (E), tap again to switch';
+    /* a round tip for the pixel eraser, the block for the stroke eraser */
+    const icon = b.querySelector('i'), fb = b.querySelector('.fb');
+    if(icon) icon.className = 'ph '+(pixel ? 'ph-circle-dashed' : 'ph-eraser');
+    if(fb) fb.textContent = pixel ? 'e' : 'E';
+  }
   if(announce) C.toast(eraseMode === 'pixel' ? 'pixel eraser: rubs out only what it passes over.' : 'stroke eraser: takes whole strokes.');
 }
 setEraseMode(eraseMode);
@@ -3101,6 +3119,7 @@ function setTool(t){
   document.querySelectorAll('.tool[data-tool]').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.tool===t)));
   if(t !== 'select') clearSelection();
   if(t !== 'pen') setPenPop(false);
+  if(t !== 'text') setTextPop(false);
   /* picking the text tool does not grab a line: the caret lands where the
      next tap says, or stays wherever it already was */
 }
@@ -3122,6 +3141,36 @@ function setPenPop(open){
   if(open) placePenPop();
 }
 document.addEventListener('pointerdown', e=>{ if(penPopOpen() && !penPop.contains(e.target) && !penBtn.contains(e.target)) setPenPop(false); }, true);
+/* ---- the text popover: the colour of typed text, as the pen's holds the ink's ---- */
+const textPop = $('#textpop'), textBtn = document.querySelector('.tool[data-tool="text"]');
+function textPopOpen(){ return !textPop.hidden; }
+function placeTextPop(){
+  const b = textBtn.getBoundingClientRect(), p = $('#pill').getBoundingClientRect(), w = textPop.offsetWidth;
+  textPop.style.bottom = Math.round(innerHeight - p.top + 10)+'px';
+  textPop.style.left = Math.round(Math.max(p.left, Math.min(innerWidth - w - 8, b.left + b.width/2 - w/2)))+'px';
+}
+function markTextColor(){
+  const v = (S.settings.textColor || '').toLowerCase(), swatches = [...textPop.querySelectorAll('.tool.swatch')];
+  swatches.forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.color.toLowerCase() === v)));
+  const own = !!v && !swatches.some(b=>b.dataset.color.toLowerCase() === v), pick = textPop.querySelector('.tool.pick');
+  pick.dataset.on = String(own);
+  if(own){ pick.style.setProperty('--c', v); pick.querySelector('input').value = v; } else pick.style.removeProperty('--c');
+}
+function setTextPop(open){
+  if(textPopOpen() === open) return;
+  textPop.hidden = !open;
+  textBtn.setAttribute('aria-expanded', String(open));
+  if(open){ markTextColor(); placeTextPop(); }
+}
+/* the same setting the menu's text colour row holds: this device's */
+function setTextColor(v, save){
+  S.settings.textColor = /^#[0-9a-f]{6}$/i.test(v || '') ? v : '';
+  N.ui && N.ui.applyTheme && N.ui.applyTheme();
+  markTextColor();
+  if(save) C.savePrefs();
+}
+document.addEventListener('pointerdown', e=>{ if(textPopOpen() && !textPop.contains(e.target) && !textBtn.contains(e.target)) setTextPop(false); }, true);
+addEventListener('resize', ()=>{ if(textPopOpen()) placeTextPop(); });
 addEventListener('resize', ()=>{ if(penPopOpen()) placePenPop(); });
 
 /* ---- selection ---- */
@@ -4725,16 +4774,20 @@ document.querySelectorAll('.tool[data-tool]').forEach(b=>b.addEventListener('cli
   const t = b.dataset.tool, again = S.tool === t;
   setTool(t);
   if(t === 'eraser' && again) setEraseMode(eraseMode === 'pixel' ? 'stroke' : 'pixel', true);
+  if(t === 'text' && again) setTextPop(true);
   if(t !== 'pen'){ setPillOpen(false); return; }
   if(N.ui && !N.ui.penNotice()) return;
   if(again) setPenPop(true);
 }));
 /* picking a colour or a width means you want to draw with it */
-document.querySelectorAll('.tool.swatch').forEach(b=>b.addEventListener('click', ()=>{ setPen({color:b.dataset.color}); setTool('pen'); N.ui && N.ui.penNotice(); }));
+document.querySelectorAll('#penpop .tool.swatch').forEach(b=>b.addEventListener('click', ()=>{ setPen({color:b.dataset.color}); setTool('pen'); N.ui && N.ui.penNotice(); }));
 document.querySelectorAll('.tool.width').forEach(b=>b.addEventListener('click', ()=>{ setPen({w:+b.dataset.w}); setTool('pen'); N.ui && N.ui.penNotice(); }));
 /* any colour: the picker's own value, chosen live as it is dragged */
 $('#pen-pick').addEventListener('input', e=>{ setPen({color:e.target.value}); setTool('pen'); });
 $('#pen-pick').addEventListener('change', ()=>{ N.ui && N.ui.penNotice(); });
+textPop.querySelectorAll('.tool.swatch').forEach(b=>b.addEventListener('click', ()=>setTextColor(b.dataset.color, true)));
+$('#text-pick').addEventListener('input', e=>setTextColor(e.target.value, false));
+$('#text-pick').addEventListener('change', e=>setTextColor(e.target.value, true));
 setPen({});
 
 /* ---- the pill tray: swipe left or scroll down to open, back to close ----
@@ -4794,7 +4847,7 @@ pill.addEventListener('wheel', ev=>{
 }, { passive:false });
 pill.addEventListener('keydown', ev=>{ if(ev.key === 'Escape' && pillOpen()){ setPillOpen(false); moreBtn.focus(); } });
 
-N.ink = { render, renderAI, pasteCut, resize, finishInput, setTool, setPen, pen, setPillOpen, setPenPop, toWorld, viewOrigin, bboxOf, hitStroke, drawStroke,
+N.ink = { render, renderAI, pasteCut, resize, finishInput, setTool, setPen, pen, setPillOpen, setPenPop, setTextPop, setTextColor, toWorld, viewOrigin, bboxOf, hitStroke, drawStroke,
           clearSelection, showSelBar, inkColor, colors, refreshColors, isTyping, after, flush, selectImage, nudgeImage, resizeImage, deleteImage, straightenImage, removeBackground, undoBackground, prefetchCutout, startCrop, applyCrop, cancelCrop, cropping:()=>cropping&&{...cropping}, frameOf, frameHandles,
           copySelection, duplicateSelection, deleteSelection, pasteInk, readClip, clipMarker, selectAll, imageAt, pickImage,
           now:inkNow, drawing:()=>!!cur, peerShift, drag:()=>moving?{dx:moving.dx,dy:moving.dy}:null,
@@ -7060,7 +7113,7 @@ const sc = $('#scroller');
 /* ---- overlays ---- */
 let sheet = null;
 let sheetReturnFocus = null;
-const inertTargets=['#topbar','#scroller','#pill','#penpop','#askbar','#ask-dot','#offline-status','#local-status','#selbar','#library'];
+const inertTargets=['#topbar','#scroller','#pill','#penpop','#textpop','#askbar','#ask-dot','#offline-status','#local-status','#selbar','#library'];
 function setMainInert(on){
   /* a panel closing over the notes page or drawer leaves the page behind
      them as it found it: still out of reach */
@@ -7479,8 +7532,6 @@ quickMenu.addEventListener('click',e=>{
   }
   sc.scrollTop=Math.max(0,y*M.zoom- sc.clientHeight*.45);C.save();
 });
-/* colours offered for typed text, as the pen offers them for ink */
-const INK_CHOICES=[['#2F6FB3','blue','#2F6FB3'],['#D64541','red','#D64541'],['#2E8B57','green','#2E8B57'],['#E08A1E','orange','#E08A1E'],['#7B4FBF','purple','#7B4FBF']];
 /* a settings row of colours: the theme's own first, a picker for any other last */
 function colorRow(label, id, value, choices){
   const known = choices.some(c=>c[0].toLowerCase() === (value||'').toLowerCase());
@@ -7521,7 +7572,6 @@ function menuSheet(){
     '<div class="mi"><span>paper</span><span style="margin-left:auto"><span class="seg" id="seg-paper" role="group" aria-label="paper">' +
       '<button data-v="default" aria-pressed="'+(S.settings.paper!=='white')+'">theme</button>' +
       '<button data-v="white" aria-pressed="'+(S.settings.paper==='white')+'">white</button></span></span></div>' +
-    colorRow('text colour', 'text-colour', S.settings.textColor, [['','theme ink','var(--graphite)'],...INK_CHOICES]) +
     colorRow('nota\'s handwriting', 'nota-colour', S.settings.notaColor, [['','nota red','var(--red)'],['#2F6FB3','blue','#2F6FB3'],['#2E8B57','green','#2E8B57'],['#7B4FBF','purple','#7B4FBF'],['#E08A1E','orange','#E08A1E'],['#1C1C1E','black','#1C1C1E']]) +
     '<div class="mi"><span>read handwriting</span><span style="margin-left:auto"><span class="seg" id="seg-ai" role="group" aria-label="read handwriting">' +
       '<button data-v="1" aria-pressed="'+(S.settings.aiOn)+'">on</button>' +
@@ -7531,7 +7581,7 @@ function menuSheet(){
       '<button data-v="0" aria-pressed="'+(S.settings.touchDraw===false)+'">pen only</button></span></span></div>' +
     '<button class="mi" id="refresh-reading"><i class="ph ph-arrows-clockwise"></i>refresh handwriting models<span class="k">re-read the page</span></button>' +
     '<button class="mi" id="refresh-site"><i class="ph ph-arrow-circle-up"></i>update<span class="k">fetch the latest app</span></button>' +
-    '<div class="sheet-notes"><p>white paper keeps the light theme\'s ink, so the page reads the same printed or on screen. text colour is how typed notes look on this device; nota writes its answers in its own colour.</p><p>draw with decides what a single finger does. with pen only, a finger scrolls and a resting hand cannot mark the page. it only takes effect once a pen has been used on this device, so it can never leave you unable to draw.</p>' +
+    '<div class="sheet-notes"><p>white paper keeps the light theme\'s ink, so the page reads the same printed or on screen. the text tool, tapped twice, picks the colour of typed text; nota writes its answers in its own colour.</p><p>draw with decides what a single finger does. with pen only, a finger scrolls and a resting hand cannot mark the page. it only takes effect once a pen has been used on this device, so it can never leave you unable to draw.</p>' +
       '<p>handwriting is read on this device. end an expression with an equals sign for an automatic answer, written beside it. the model downloads once and works offline after that.</p>' +
       '<p>a local text recogniser powers handwriting search and helps keep variable names. it never changes your ink.</p>' +
       '<p>maths hints use local rules for arithmetic and linear equations.</p></div>' +
@@ -7568,7 +7618,6 @@ function menuSheet(){
     input.addEventListener('input', ()=>set(input.value));
     input.addEventListener('change', ()=>{ set(input.value); C.savePrefs(); });
   };
-  colours('text-colour', 'textColor');
   colours('nota-colour', 'notaColor');
   seg('seg-ai',    v=>{ S.settings.aiOn = v==='1'; C.markDirty(); N.ai.toggle(); dlSyncReaders(); });
   /* the choice is its own confirmation: the pressed segment says what is
@@ -8335,7 +8384,7 @@ window.addEventListener('keydown', e=>{
     if(e.key === 'Enter'){ e.preventDefault(); N.ink.applyCrop(); return; }
     if(e.key === 'Escape'){ e.preventDefault(); N.ink.cancelCrop(); return; }
   }
-  if(e.key === 'Escape'){ closeSheet(); showAsk(false); N.ink.setPenPop(false); N.ink.clearSelection(); return; }
+  if(e.key === 'Escape'){ closeSheet(); showAsk(false); N.ink.setPenPop(false); N.ink.setTextPop(false); N.ink.clearSelection(); return; }
   /* a sheet or the library over the page has the keys: Delete on a note in
      the list trashed it and deleted the ink selected behind it as well */
   if(document.querySelector('.sheet:not(.leave)') || (N.library && N.library.modal) || (e.target && e.target.closest && e.target.closest('.sheet'))) return;
@@ -8889,7 +8938,7 @@ new MutationObserver(()=>{ if(L.open) list.querySelectorAll('.lib-thumb img').fo
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', ()=>{ if(L.open) paint(L.hits || undefined); });
 
 /* ---- open, close, dock ---- */
-const MAIN = ['#topbar','#scroller','#pill','#penpop','#askbar','#offline-status','#local-status','#selbar'];
+const MAIN = ['#topbar','#scroller','#pill','#penpop','#textpop','#askbar','#offline-status','#local-status','#selbar'];
 function setMainInert(on){ for(const sel of MAIN){ const m = document.querySelector(sel); if(m) m.inert = !!on; } }
 let returnFocus = null;
 async function open(opts={}){

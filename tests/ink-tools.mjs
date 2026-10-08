@@ -40,6 +40,8 @@ try{
  if(await mode()!=='pixel')await eraserButton.click();
  assert.equal(await mode(),'pixel');
  assert.equal(await page.evaluate(()=>localStorage.getItem('notas.eraser')),'pixel','the choice is remembered');
+ const icon=()=>eraserButton.locator('i').getAttribute('class');
+ assert.match(await icon(),/ph-circle-dashed/,'the pixel eraser has its own icon');
 
  /* the pixel eraser cuts the stroke in two where it crossed it */
  const before=await page.evaluate(()=>N.core.S.strokes[0].id);
@@ -55,6 +57,7 @@ try{
  /* the stroke eraser still takes a whole stroke */
  await eraserButton.click();
  assert.equal(await mode(),'stroke');
+ assert.match(await icon(),/ph-eraser/,'and the stroke eraser its own');
  const left=await page.evaluate(()=>N.core.S.strokes.length);
  const [l0]=await page.evaluate(()=>N.core.S.strokes.map(s=>(s.bbox[0]+s.bbox[2])/2));
  await drag(line(l0,280,l0,320,8));
@@ -80,20 +83,46 @@ try{
  await page.evaluate(()=>{const S=N.core.S;S.settings.paper='default';S.settings.textColor='';S.settings.notaColor='';N.ui.applyTheme();});
  assert.equal(await page.evaluate(()=>document.documentElement.style.getPropertyValue('--nota')),'','back to the theme colour');
 
- /* the menu has the rows, and the picker sets any colour */
- await page.evaluate(()=>N.ui.menuSheet?N.ui.menuSheet():document.getElementById('menu')?.click());
- await page.waitForSelector('#text-colour');
+ /* the menu has nota's colour and the paper; text colour is the text tool's */
+ await page.evaluate(()=>N.ui.menuSheet());
+ await page.waitForSelector('#nota-colour');
+ assert.equal(await page.locator('#text-colour').count(),0,'text colour is not in the menu');
  await page.locator('#seg-paper button[data-v="white"]').click();
  assert.equal(await page.evaluate(()=>document.documentElement.dataset.paper),'white');
  await page.locator('#nota-colour button[data-v="#2E8B57"]').click();
  assert.equal(await page.evaluate(()=>N.ink.colors.red.toLowerCase()),'#2e8b57');
- await page.locator('#text-colour .pick input').evaluate(el=>{el.value='#123456';el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));});
- assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('notas.prefs')).textColor),'#123456','the picked colour is saved');
- assert.equal(await page.locator('#text-colour .pick').getAttribute('aria-pressed'),'true');
+ await page.locator('#nota-colour .pick input').evaluate(el=>{el.value='#123456';el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));});
+ assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('notas.prefs')).notaColor),'#123456','the picked colour is saved');
+ assert.equal(await page.locator('#nota-colour .pick').getAttribute('aria-pressed'),'true');
+
+ /* the text tool, tapped again, opens its colours as the pen does */
+ await page.evaluate(()=>{N.ui.closeSheet();N.ink.setTool('pen');});await page.waitForFunction(()=>!document.querySelector('.sheet')&&!document.getElementById('pill').inert);
+ const textButton=page.locator('#pill .tool[data-tool="text"]');
+ await textButton.click();
+ assert.equal(await page.locator('#textpop').isVisible(),false,'the first tap only picks the text tool');
+ await textButton.click();
+ assert.equal(await page.locator('#textpop').isVisible(),true,'the second tap opens the text colours');
+ assert.equal(await textButton.getAttribute('aria-expanded'),'true');
+ await page.locator('#textpop .tool.swatch[data-color="#D64541"]').click();
+ assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--text-ink').trim()),'#D64541');
+ assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('notas.prefs')).textColor),'#D64541','the colour is saved');
+ assert.equal(await page.locator('#textpop .tool.swatch[data-color="#D64541"]').getAttribute('aria-pressed'),'true');
+ await page.locator('#text-pick').evaluate(el=>{el.value='#0a7f6f';el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));});
+ assert.equal(await page.evaluate(()=>N.core.S.settings.textColor),'#0a7f6f');
+ assert.equal(await page.locator('#textpop .tool.pick').getAttribute('data-on'),'true');
+ await textButton.dblclick();
+ assert.equal(await page.locator('#textpop').isVisible(),true,'a double tap leaves it open');
+ await page.keyboard.press('Escape');
+ assert.equal(await page.locator('#textpop').isVisible(),false,'esc closes it');
+ await page.evaluate(()=>N.ink.setTool('pen'));
+ await textButton.dblclick();
+ assert.equal(await page.locator('#textpop').isVisible(),true,'a double tap from another tool opens it');
+ await page.evaluate(()=>N.ink.setTool('pen'));
+ assert.equal(await page.locator('#textpop').isVisible(),false,'another tool closes it');
 
  /* the pen's own picker */
  await page.locator('#pen-pick').evaluate(el=>{el.value='#abcdef';el.dispatchEvent(new Event('input',{bubbles:true}));});
  assert.equal(await page.evaluate(()=>N.ink.pen.color),'#abcdef');
  assert.equal(await page.evaluate(()=>N.core.S.tool),'pen');
- console.log('Ink tools passed: eraser double tap switches stroke/pixel, pixel cut and undo, looser shape tidy, white paper, text/nota colours, colour pickers.');
+ console.log('Ink tools passed: eraser double tap switches stroke/pixel, pixel cut and undo, looser shape tidy, white paper, text/nota colours, colour pickers, text button colours, eraser icons.');
 }finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}
