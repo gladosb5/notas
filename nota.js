@@ -608,8 +608,18 @@ function Writer(anchor){
     }
   };
   return {
-    /* where the first word will land, for the waiting dots */
+    /* where the first word will land, for the waiting animation */
     get origin(){return {x:cursor.x,y:cursor.y,unit};},
+    /* the answer's left edge and the bottom of what the hand has drawn so
+       far; the waiting animation stands under it until the answer is done */
+    get tail(){
+      let bottom=-Infinity;
+      for(const st of list)if(st._show!==0&&st.bbox)bottom=Math.max(bottom,st.bbox[3]);
+      for(const ln of textList)bottom=Math.max(bottom,ln.y+Math.max(C.LINE_H,ln.h||C.LINE_H));
+      return isFinite(bottom)?{x:x0,y:bottom,unit}:null;
+    },
+    /* strokes placed but not yet drawn out by the hand */
+    get drawing(){return !aborted&&list.some(st=>st._show!==undefined);},
     feed(text){if(aborted)return;raw=(raw+text).replace(/\r\n/g,'\n');if(raw.endsWith('\r'))return;raw=raw.replace(/\r/g,'\n');commit(false);},
     finish(){if(aborted)return;raw=raw.replace(/\r/g,'\n');commit(true);},
     get aborted(){return aborted;},
@@ -1203,8 +1213,9 @@ function onTranscript(item,group){
   if(!item||!group)return;
   readings.set(item.hash,{text:item.text,confidence:item.confidence,group});
   const call=parseCall(item.text);
-  /* the call turns blue, and the maths reader's chip on it goes */
-  if(call&&item.confidence>=0.5){N.ink.render();N.mathcore&&N.mathcore.run();}
+  /* the maths reader's chip on the call goes; the call turns blue only once
+     the whole question is taken, never while it is still being written */
+  if(call&&item.confidence>=0.5)N.mathcore&&N.mathcore.run();
   if(item.asked)return;
   /* a row written under a call still waiting to be asked carries the
      question on, so the wait starts over from this row */
@@ -1217,9 +1228,12 @@ function onTranscript(item,group){
   }
   armInk(item.hash,item.text);
 }
+/* the reading itself already waited for the pen to rest, so a question
+   ending in "?" is taken almost at once; without one the hand gets a
+   moment more to carry on */
 function armInk(hash,text){
   if(pendingInk.has(hash))clearTimeout(pendingInk.get(hash));
-  const delay=/\?\s*$/.test(text)?1200:3500;
+  const delay=/\?\s*$/.test(text)?400:2200;
   pendingInk.set(hash,setTimeout(()=>fireInk(hash,0),delay));
 }
 /* whether a text group sits within a few rows below another, aligned with
@@ -1239,7 +1253,7 @@ function fireInk(hash,tries){
   const groups=N.recog.textGroups();
   const mine=groups.find(g=>g.hash===hash);if(!mine)return;
   if(N.ink.drawing()||N.ink.now()-lastPenLift()<1500){
-    if(tries<20)pendingInk.set(hash,setTimeout(()=>fireInk(hash,tries+1),1200));
+    if(tries<40)pendingInk.set(hash,setTimeout(()=>fireInk(hash,tries+1),600));
     return;
   }
   /* the rest of the question can wrap onto the rows below */
@@ -1250,7 +1264,7 @@ function fireInk(hash,tries){
     if(g.bbox[1]-bottom>rowH*1.6)break;
     if(Math.abs(g.bbox[0]-mine.bbox[0])>M.contentW*0.45)break;
     const rr=readings.get(g.hash);
-    if(!rr){ if(tries<6){pendingInk.set(hash,setTimeout(()=>fireInk(hash,tries+1),1500));return;} break; }
+    if(!rr){ if(tries<12){pendingInk.set(hash,setTimeout(()=>fireInk(hash,tries+1),700));return;} break; }
     if(parseCall(rr.text))break;
     parts.push(rr.text);g.strokeIds.forEach(id=>ids.add(id));hashes.push(g.hash);
     bbox=[Math.min(bbox[0],g.bbox[0]),Math.min(bbox[1],g.bbox[1]),Math.max(bbox[2],g.bbox[2]),Math.max(bbox[3],g.bbox[3])];
@@ -1264,10 +1278,13 @@ function fireInk(hash,tries){
      this page was reopened: the answer is on the paper, not in memory */
   if(hashes.some(h=>(S.textTranscripts||[]).some(t=>t.hash===h&&t.asked)))return;
   asked.add(key);
+  /* taken: every stroke of the question, its wrapped rows too, turns blue */
+  for(const id of ids)sentInk.add(id);
+  N.ink.render();
   const noteId=S.id;
   const writer=Writer({x:bbox[0],y:bbox[3],right:bbox[2],rowH,skip:ids});
   answer(call.question,{x:bbox[0],y:bbox[1],below:bbox[3],skip:ids},writer).then(ok=>{
-    if(!ok){asked.delete(key);return;}
+    if(!ok){asked.delete(key);for(const id of ids)sentInk.delete(id);N.ink.render();return;}
     if(S.id!==noteId)return;
     for(const h of hashes){const t=(S.textTranscripts||[]).find(t=>t.hash===h);if(t)t.asked=true;}
     C.markDirty();
@@ -1293,11 +1310,11 @@ async function askSelection(){
   const selectedNote=S.id;
   const skip=new Set(ids);
   N.ink.clearSelection();
-  C.status('nota is reading.');
+  C.status('nota is reading.');say('nota is reading…',true);
   /* a circled drawing is asked about as the drawing it is: its shapes,
      arrows and labels in words, not its strokes read as one line of text */
   const drawn=await readDrawings(new Set(),LABEL_WAIT,skip);
-  if(S.id!==selectedNote){askingSelection=false;C.status('');return;}
+  if(S.id!==selectedNote){askingSelection=false;C.status('');unsay();return;}
   let inDrawing=0;for(const id of ids)if(drawn.some(d=>d.ids.has(id)))inDrawing++;
   if(drawn.length&&inDrawing>=ids.length*0.5){
     askingSelection=false;
@@ -1311,9 +1328,9 @@ async function askSelection(){
   }
   let reading;
   try{reading=await N.recog.readStrokesText(ids);}
-  catch(e){askingSelection=false;C.status('');C.toast(String(e.message||'nota could not read this.').toLowerCase());return;}
+  catch(e){askingSelection=false;C.status('');unsay();C.toast(String(e.message||'nota could not read this.').toLowerCase());return;}
   askingSelection=false;
-  if(S.id!==selectedNote){C.status('');return;}
+  if(S.id!==selectedNote){C.status('');unsay();return;}
   const text=reading.text&&reading.confidence>=0.2?reading.text:'';
   /* The maths reader reads everything as a formula, so words come out of it
      as nonsense ("hey nota" as =2y*y*y*y=), and that nonsense, handed to
@@ -1347,10 +1364,14 @@ async function askSelection(){
   if(!await answer(question,where,writer)&&questionKey)asked.delete(questionKey);
 }
 /* ---- typed: a line that starts with the call, answered as a red ghost ---- */
+/* ink read as a call, finished or not: the maths reader leaves it alone */
 function isCallStroke(id){
   if(overloaded())return false;
   return [...readings.values()].some(t=>t.confidence>=0.5&&parseCall(t.text)&&t.group.strokeIds.includes(id));
 }
+/* ink of a question nota has taken: painted the machine's blue */
+const sentInk=new Set();
+function isAskedStroke(id){ return sentInk.has(id)&&!overloaded(); }
 const typedTimers=new Map(),typedRuns=new Map();
 /* questions told once that they wait for the shared note's room */
 const waitingRoom=new Set();
@@ -1410,10 +1431,11 @@ async function fireTyped(id){
   typedRuns.set(id,run);
   const completed=await answer(call.question,{x:0,y:ln.y,lineId:id},{
     feed(piece){ if(control.signal.aborted)return; run.answer+=piece; if(!reply.update(tidy(run.answer).trim()))control.abort(); },
-    finish(){ run.done=true; },
+    /* the paper under the reply goes once the last word is in */
+    finish(){ run.done=true; reply.done(); },
     /* nothing arrived, or the reply was cut short: the lines go too, unless a
        newer question has already taken them over */
-    failed(){ run.failed=true;if(!run.superseded&&!run.answer.trim())reply.remove(); },
+    failed(){ run.failed=true;if(run.superseded)return;if(!run.answer.trim())reply.remove();else reply.done(); },
     get aborted(){return control.signal.aborted;}
   },control);
   run.done=completed;
@@ -1421,31 +1443,83 @@ async function fireTyped(id){
   if(!run.done)asked.delete(key);
 }
 
-/* ---- waiting: three dots where the pen will start, until the first word ---- */
+/* ---- waiting: a sheet of paper, drawn by hand, tips over, curls and comes
+   back where the pen will start, while nota reads the page, recalls notes,
+   thinks, and until its last word. The frames are one strip of white ink
+   (assets/nota-thinking.png), painted in nota's red. The receipt and a typed
+   reply's waiting line play the same strip as a CSS mask. ---- */
+const THINK={src:'./assets/nota-thinking.png',frames:41,fps:12,w:104,h:81};
+const thinkImg=new Image();
+thinkImg.onload=()=>{ if(waiting)N.ink.renderAI(); };
+thinkImg.src=THINK.src;
+const thinkTint=new Map();
+function thinkSheet(color){
+  if(!thinkImg.complete||!thinkImg.naturalWidth)return null;
+  let cv=thinkTint.get(color);
+  if(!cv){
+    cv=document.createElement('canvas');cv.width=thinkImg.naturalWidth;cv.height=thinkImg.naturalHeight;
+    const c=cv.getContext('2d');c.drawImage(thinkImg,0,0);
+    c.globalCompositeOperation='source-in';c.fillStyle=color;c.fillRect(0,0,cv.width,cv.height);
+    thinkTint.set(color,cv);
+  }
+  return cv;
+}
+function thinkFrame(t0){ return C.reducedMotion()?0:Math.floor((performance.now()-t0)*THINK.fps/1000)%THINK.frames; }
+(function(){
+  /* the strip's own rules (.nota-think, the typed reply's waiting line) are
+     in notas.html beside the reply's red */
+  const s=document.createElement('style');
+  s.textContent='#nota-receipt{display:flex;align-items:center;gap:8px}#nota-receipt[hidden]{display:none}';
+  document.head.appendChild(s);
+})();
 const receipt=document.createElement('div');
 receipt.id='nota-receipt'; receipt.setAttribute('role','status'); receipt.setAttribute('aria-live','polite');
-receipt.style.cssText='position:fixed;bottom:100px;left:50%;transform:translateX(-50%);padding:10px 16px;border-radius:20px;background:var(--paper);color:var(--blue);box-shadow:0 2px 12px #0002;font:500 14px var(--ui);z-index:40;pointer-events:none';
+receipt.style.cssText='position:fixed;bottom:100px;left:50%;transform:translateX(-50%);padding:8px 16px 8px 12px;border-radius:20px;background:var(--paper);color:var(--blue);box-shadow:0 2px 12px #0002;font:500 14px var(--ui);z-index:40;pointer-events:none';
+const receiptMark=document.createElement('span'),receiptText=document.createElement('span');
+receiptMark.className='nota-think';receiptMark.setAttribute('aria-hidden','true');
+receipt.append(receiptMark,receiptText);
 receipt.hidden=true; document.body.appendChild(receipt);
+/* the mark plays while nota is reading or thinking, and stops once it writes */
+function say(text,thinking){ receiptText.textContent=text; receiptMark.hidden=!thinking; receipt.hidden=false; }
+function unsay(){ if(!busy)receipt.hidden=true; }
+/* Written answers: the paper stands where the first word will go, then
+   under the bottom left of the answer as the hand writes it, and goes when
+   the last stroke is drawn. */
 let waiting=null,waitFrame=0;
-function showWaiting(origin){
-  waiting={...origin,t0:performance.now()};
-  const tick=()=>{ if(!waiting)return; N.ink.renderAI(); waitFrame=C.reducedMotion()?0:requestAnimationFrame(tick); };
+function showWaiting(writer){
+  waiting={writer,origin:writer.origin,t0:performance.now(),done:false};
+  /* the AI layer is redrawn only when the frame changes, not every display
+     frame; while the hand writes, its own redraws move the paper along */
+  let shown=-1;
+  const tick=()=>{
+    if(!waiting)return;
+    if(waiting.done&&!waiting.writer.drawing){hideWaiting();return;}
+    const f=thinkFrame(waiting.t0);
+    if(f!==shown){shown=f;N.ink.renderAI();}
+    waitFrame=C.reducedMotion()?0:requestAnimationFrame(tick);
+  };
   tick();
 }
 function hideWaiting(){
   if(!waiting)return;
   waiting=null;cancelAnimationFrame(waitFrame);N.ink.renderAI();
 }
+/* the answer is in: the paper stays until the hand has written it all out,
+   or goes now when nothing was written */
+function endWaiting(wrote){
+  if(!waiting)return;
+  if(!wrote||C.reducedMotion()||!waiting.writer.drawing)hideWaiting();
+  else waiting.done=true;
+}
 function drawWaiting(ctx){
   if(!waiting)return;
-  const r=Math.max(1.6,waiting.unit*2),gap=r*3.2,y=waiting.y+BASE*waiting.unit-r*1.2;
-  const phase=C.reducedMotion()?0:(performance.now()-waiting.t0)/900;
-  ctx.save();ctx.fillStyle=N.ink.colors.red;
-  for(let i=0;i<3;i++){
-    const a=C.reducedMotion()?0.55:0.3+0.5*(0.5+0.5*Math.sin((phase-i*0.18)*Math.PI*2));
-    ctx.globalAlpha=a;ctx.beginPath();ctx.arc(waiting.x+r+i*gap,y,r,0,Math.PI*2);ctx.fill();
-  }
-  ctx.restore();
+  const sheet=thinkSheet(N.ink.colors.red);if(!sheet)return;
+  /* the sheet (inside its frame's margin) about a capital's height: on the
+     line the first word will sit on, then
+     just under the lowest row written so far, at the answer's left edge */
+  const tail=waiting.writer.tail,o=waiting.origin,u=o.unit,h=Math.max(20,32*u),w=h*THINK.w/THINK.h;
+  const x=tail?tail.x-3*u:o.x-3*u,top=tail?tail.y+2*u:o.y+(BASE+6)*u-h;
+  ctx.drawImage(sheet,thinkFrame(waiting.t0)*THINK.w,0,THINK.w,THINK.h,x,top,w,h);
 }
 
 /* ---- one answer, wherever it goes ---- */
@@ -1461,7 +1535,7 @@ function selectedBox(ids){
   return b;
 }
 
-const LABEL_WAIT=6000;
+const LABEL_WAIT=2500;
 async function answer(question,where,writer,control){
   if(!navigator.onLine){C.toast('nota needs a connection.');writer.failed?.();return false;}
   if(holdBack()){writer.failed?.();showOverloaded(messageAt(where));return false;}
@@ -1470,25 +1544,30 @@ async function answer(question,where,writer,control){
   const arm=()=>{clearTimeout(timer);timer=setTimeout(()=>{timedOut=true;control.abort();},CONFIG.timeoutMs);};
   arm();
   busy++;C.status('nota is thinking.');
-  receipt.textContent='got it — nota is thinking…';receipt.hidden=false;
-  if(!where.lineId&&writer.origin)showWaiting(writer.origin);
+  say('got it — nota is thinking…',true);
+  if(!where.lineId&&writer.origin)showWaiting(writer);
   let text='',complete=false;
   try{
+    /* notes elsewhere in the notebook, when the question is about them:
+       pictures for the vision model, words when it is a text model. Looked
+       up while the page itself is read. */
+    const recalled=recall(question,!TEXT_ONLY.test(CONFIG.model)).catch(e=>{console.warn('nota: could not recall the notes',e);return null;});
     /* the drawings' labels the page has not read yet are read now, for a
-       few seconds at most, while the dots show nota is on it */
+       couple of seconds at most, while the paper turns over */
     const drawings=await readDrawings(where.skip||new Set(),LABEL_WAIT);
     const context=pageRows({...where,diagrams:drawings});
     let picture=null;try{picture=await pagePicture(where,drawings);}catch(e){console.warn('nota: no picture of the page',e);}
-    /* notes elsewhere in the notebook, when the question is about them:
-       pictures for the vision model, words when it is a text model */
-    let memory=null;try{memory=await recall(question,!TEXT_ONLY.test(CONFIG.model));}catch(e){console.warn('nota: could not recall the notes',e);}
-    if(memory)C.status('nota is reading '+(memory.notes.length===1?'"'+memory.notes[0].title+'"':memory.notes.length+' notes')+'.');
+    const memory=await recalled;
+    if(memory){
+      const reading='nota is reading '+(memory.notes.length===1?'"'+memory.notes[0].title+'"':memory.notes.length+' notes');
+      C.status(reading+'.');say(reading+'…',true);
+    }
     if(writer.aborted||control.signal.aborted)throw new DOMException('Question withdrawn','AbortError');
     await stream(question,context,piece=>{
       if(writer.aborted){control.abort();return;}
       arm();
-      if(!text){hideWaiting();if(overloaded())setOverloaded(false);}
-      text+=piece;writer.feed(piece);C.status('nota is writing.');receipt.textContent='nota is writing…';
+      if(!text&&overloaded())setOverloaded(false);
+      text+=piece;writer.feed(piece);C.status('nota is writing.');say('nota is writing…',false);
     },control.signal,picture,memory);
     if(!text.trim())throw Error('nota returned an empty answer. try again.');
     if(!writer.aborted){writer.finish();complete=true;}
@@ -1499,8 +1578,8 @@ async function answer(question,where,writer,control){
     else if(timedOut)C.toast('nota timed out. try again.');
     else if(e.name!=='AbortError')C.toast(String(e.message||'nota could not answer.').toLowerCase());
   }finally{
-    clearTimeout(timer);busy--;hideWaiting();C.status('');
-    if(!busy)receipt.hidden=true;
+    clearTimeout(timer);busy--;endWaiting(!!text.trim()&&!writer.aborted);C.status('');
+    unsay();
     if(!complete)writer.failed?.();
   }
   return complete;
@@ -1523,7 +1602,7 @@ if(N.recog&&N.recog.selectionUnread){
   };
 }
 
-N.nota={overloaded,isCallStroke,recall,drawings:readDrawings,onTranscript,onTyped,askSelection,parseCall,callLength,drawWaiting,mathMatches,tidy,spell,Writer,get busy(){return busy>0;},get writing(){return queue.length;},config:CONFIG,
+N.nota={overloaded,isCallStroke,isAskedStroke,recall,drawings:readDrawings,onTranscript,onTyped,askSelection,parseCall,callLength,drawWaiting,mathMatches,tidy,spell,Writer,get busy(){return busy>0;},get writing(){return queue.length;},config:CONFIG,
   /* the page as nota reads it, for the console: N.nota.context() */
   context(where){ where=where||liveWhere(); return pageRows({...where,diagrams:knownDrawings(where.skip)}); }};
 })();

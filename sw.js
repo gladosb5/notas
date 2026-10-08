@@ -1,5 +1,5 @@
 'use strict';
-const CACHE='notas-local-v121';
+const CACHE='notas-local-v122';
 self.addEventListener('message',event=>{
   if(event.data?.type==='GET_VERSION')event.ports[0]?.postMessage({version:CACHE.replace('notas-local-','')});
 });
@@ -19,7 +19,9 @@ const SHELL=['./notas.html','./model-contract.js','./local-recognition.js','./in
   './assets/icon-16.png','./assets/icon-32.png','./assets/icon-192.png','./assets/icon-512.png',
   './assets/icon-maskable-512.png','./assets/apple-touch-icon.png',
   // the wordmark is drawn through a CSS mask on the launch screen and top bar
-  './assets/logo.png'];
+  './assets/logo.png',
+  // nota's waiting animation, a CSS mask on the reply and drawn on the page
+  './assets/nota-thinking.png'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{
   const response=await fetch('./asset-manifest.json',{cache:'no-store'});
   if(!response.ok)throw new Error('Offline asset list unavailable');

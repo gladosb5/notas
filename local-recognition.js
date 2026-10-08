@@ -242,6 +242,9 @@ function textSend(payload,transfer=[],timeout=45000){
 // arriving, a connection that was not there), and at once when the page
 // asks for it outright (ask nota) or the connection returns.
 const TEXT_RETRY_AFTER=45000;
+// the text reader reads a line this long after the last change, and only
+// once the pen has been up this long (see readText)
+const TEXT_SETTLE=2000,TEXT_REST=900;
 function textBroke(error){textState.broken=true;textState.brokeAt=Date.now();textState.memoryBlocked=!!(error?.memory||memoryFailure(error));}
 function textHealable(){return textState.broken&&!textState.memoryBlocked&&Date.now()-(textState.brokeAt||0)>=TEXT_RETRY_AFTER;}
 function healText(){textState.broken=false;textState.brokeAt=0;textState.memoryBlocked=false;}
@@ -1270,16 +1273,33 @@ function scheduleText(){
   clearTimeout(textTimer);
   if(memoryPaused||!enabled()||document.hidden)return;
   if(textState.broken){if(textHealable())healText();else{if(!textState.memoryBlocked)textTimer=setTimeout(scheduleText,TEXT_RETRY_AFTER);return;}}
-  textTimer=setTimeout(async()=>{
-    const groups=textGroups();syncTextTranscripts(groups);
-    const saved=new Set((S.textTranscripts||[]).map(t=>t.hash));
-    const todo=groups.filter(g=>!saved.has(g.hash)&&!textAttempted.has(g.hash));
-    for(const group of todo){
-      if(!enabled()||document.hidden||textState.broken)break;
-      await recognizeText(group);
-    }
-    scheduleIndex();
-  },3200);
+  textTimer=setTimeout(readText,TEXT_SETTLE);
+}
+// The grouping after a stroke waits for the hand to rest, so writing on
+// without a rest never restarted the timer above: it ran mid-sentence, read
+// half a question, and "hey nota, what is" was taken as asked. Nothing is
+// read while the pen is down or has only just lifted.
+function penResting(){
+  if(!N.ink)return true;
+  if(N.ink.drawing&&N.ink.drawing())return false;
+  if(!N.ink.now)return true;
+  let last=0;for(const st of S.strokes)if(st.author==='user'&&st.t1>last)last=st.t1;
+  return N.ink.now()-last>=TEXT_REST;
+}
+async function readText(){
+  if(!penResting()){textTimer=setTimeout(readText,400);return;}
+  const groups=textGroups();syncTextTranscripts(groups);
+  const saved=new Set((S.textTranscripts||[]).map(t=>t.hash));
+  // the line just written first: a "hey nota," there should not wait
+  // behind the rest of the page
+  const latest=g=>{let t=0;for(const id of g.strokeIds){const st=C.strokeById(id);if(st&&st.t1>t)t=st.t1;}return t;};
+  const todo=groups.filter(g=>!saved.has(g.hash)&&!textAttempted.has(g.hash)).sort((a,b)=>latest(b)-latest(a));
+  for(const group of todo){
+    if(!enabled()||document.hidden||textState.broken)break;
+    if(!penResting()){textTimer=setTimeout(readText,400);return;}
+    await recognizeText(group);
+  }
+  scheduleIndex();
 }
 function crop(cl){
   if(!Array.isArray(cl?.bbox)||cl.bbox.length!==4||!cl.bbox.every(Number.isFinite)||cl.bbox[2]<cl.bbox[0]||cl.bbox[3]<cl.bbox[1])throw new Error('invalid stroke bounds');
