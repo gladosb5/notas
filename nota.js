@@ -142,7 +142,7 @@ const SYSTEM=[
   'Write so a grade 7 student (about 12 years old) understands, above all when explaining: short sentences, everyday words, one idea at a time, and a simple example when it helps. When you must use a subject word, such as denominator or photosynthesis, say what it means in a few plain words. Stay correct; make it simple, not wrong.',
   'Do not repeat the question. Do not greet. Do not say "hey nota". Give the answer first, then a short reason if it helps.',
   'If the question is not about anything on the page, answer it anyway, briefly. If the page does not contain what "this" refers to, say what you would need.',
-  'Other notes from the notebook may be given after the page, each between [note "its title"] and [end of note], as their words or as a picture of that note sent after the picture of the page. They are the person\'s own notes: use them when the question is about their notes. To test or quiz them, write three to five short numbered questions drawn from those notes, without the answers, unless they ask for the answers. Never mention the brackets.'
+  'Notes read with the tools are the person\'s own notes: use them when the question is about their notes. To test or quiz them, write three to five short numbered questions drawn from those notes, without the answers, unless they ask for the answers.'
 ].join('\n');
 
 /* ---- a single stroke hand: the upright Hershey Sans 1-stroke face, one polyline per stroke ---- */
@@ -820,22 +820,15 @@ async function pagePicture(where,drawings){
   return null;
 }
 
-/* ---- memory: the notebook's other notes, recalled when a question is about them ----
-   "hey nota, test me on my notes" is about notes that are not on this page.
-   They are looked up by the question's words and this page's title: a note
-   the question names first, then notes that share its words, and when the
-   question only says "my notes", the latest ones. What the model is given
-   depends on what it reads: the text model (gpt-oss) has each note as its
-   words, typed lines and the handwriting readings; the vision model (qwen)
-   has each note as a picture of the page, so ink no reader made sense of is
-   still seen. A request carries two pictures at most, the page's own
-   included; a note that does not fit as a picture goes as words. */
-const RECALL_MAX=3,RECALL_SCAN=60,RECALL_CHARS=2400,RECALL_TOTAL=7000,RECALL_PICTURES=2,RECALL_TALL=2600;
+/* ---- the notebook's other notes, in words, for the tools below ----
+   A note is its typed lines top to bottom and what was read of its ink;
+   list_notes matches a query against titles, first words and, for the
+   latest few dozen notes, the words inside. */
+const RECALL_SCAN=60;
 const RECALL_STOP=new Set(('the and for are but not you your yours with what this that these those from have has had was were will would can could should '+
   'about into onto over under some any all one two how why when where who which they them their there then than its on in of to is be me my mine our ours '+
   'we us do does did please hey nota note notes notebook notebooks page pages test tests quiz ask tell give make show help write wrote written stuff thing things '+
   'remember recall know learn learned learnt revise revision review recap summarise summarize summary questions question answer answers').split(' '));
-const NOTES_ASKED=/\b(?:my|our|the|these|those|all|other|previous|last|earlier|old|recent|yesterday'?s?)\s+(?:[\p{L}\p{N}-]+\s+){0,2}?(?:notes?|notebooks?|pages?|lessons?|lectures?|classes?|homework)\b|\b(?:test|quiz|revise|revision|flash ?cards?)\b(?:\s+me)?\s+(?:on|from|about|with|using)\b|\b(?:test|quiz)\s+me\b/iu;
 function recallWords(s){
   return String(s||'').toLowerCase().normalize('NFKD').replace(/\p{M}+/gu,'').split(/[^\p{L}\p{N}]+/u).filter(w=>w.length>=3&&!RECALL_STOP.has(w));
 }
@@ -851,108 +844,6 @@ function noteTitle(doc,row){
   const t=(row&&row.title)||doc.title;
   if(t&&t!=='untitled')return String(t).slice(0,120);
   return (row&&row.preview)||C.firstLine(doc.lines||[])||'untitled';
-}
-async function recall(question,wantPictures){
-  if(!C.Store||!C.Store.index)return null;
-  const asked=NOTES_ASKED.test(question);
-  const qWords=new Set(recallWords(question));
-  const here=new Set(recallWords(S.title!=='untitled'?S.title:''));
-  if(!asked&&!qWords.size)return null;
-  let rows;try{rows=await C.Store.index();}catch(e){return null;}
-  rows=rows.filter(r=>r&&r.id&&r.id!==S.id&&!r.trashed).sort((a,b)=>(b.updated||0)-(a.updated||0));
-  if(!rows.length)return null;
-  /* a note the question names by its title is read first, wherever it is
-     in the list; the rest are the latest few dozen */
-  const titled=r=>{const w=recallWords(r.title&&r.title!=='untitled'?r.title:'');return w.length&&w.every(x=>qWords.has(x));};
-  const shares=r=>recallWords(r.title&&r.title!=='untitled'?r.title:'').some(x=>qWords.has(x));
-  const scan=asked?[...rows.filter(titled),...rows.filter(r=>!titled(r)).slice(0,RECALL_SCAN)]:rows.filter(shares).slice(0,RECALL_SCAN);
-  const found=[];
-  for(const row of scan){
-    let doc=null;try{doc=await C.Store.get('notas.note.'+row.id);}catch(e){}
-    if(!doc)continue;
-    const title=noteTitle(doc,row),text=noteText(doc);
-    const tWords=new Set(recallWords(title)),cWords=new Set(recallWords(text));
-    let score=0;
-    for(const w of qWords){ if(tWords.has(w))score+=4; else if(cWords.has(w))score+=1; }
-    for(const w of here){ if(tWords.has(w))score+=1; else if(cWords.has(w))score+=0.5; }
-    const named=titled(row);
-    if(named)score+=10;
-    if(!text&&!(doc.strokes||[]).length&&!(doc.images||[]).length)continue;
-    found.push({row,doc,title,text,score,named});
-  }
-  /* without "my notes" or a test, only a note the question names is recalled:
-     a word in common is not enough to bring another note into an answer */
-  let notes=found.filter(n=>asked?n.score>0:n.named||n.score>=8).sort((a,b)=>b.score-a.score||(b.row.updated||0)-(a.row.updated||0));
-  if(!notes.length&&asked)notes=found.slice(0,RECALL_MAX);
-  notes=notes.slice(0,RECALL_MAX);
-  if(!notes.length)return null;
-  if(wantPictures)for(const n of notes.slice(0,RECALL_PICTURES)){
-    try{n.picture=await notePicture(n.doc);}catch(e){console.warn('nota: no picture of a note',e);}
-  }
-  return {notes:notes.map(n=>({id:n.row.id,title:n.title,text:n.text,updated:n.row.updated||n.doc.updated||0,picture:n.picture||null}))};
-}
-/* the notes as words, those also sent as pictures named only */
-function recallText(memory,pictured){
-  if(!memory||!memory.notes.length)return '';
-  const out=['Other notes in the notebook, recalled for this question:'];
-  let left=RECALL_TOTAL,n=0;
-  for(const note of memory.notes){
-    const when=note.updated?new Date(note.updated).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}):'';
-    const head='[note "'+note.title.replace(/"/g,"'")+'"'+(when?', last edited '+when:'')+']';
-    if(pictured&&pictured.has(note)){out.push(head,'(shown in picture '+(++n)+' after the page)','[end of note]');continue;}
-    const body=(note.text||'(handwriting the notebook could not read)').slice(0,Math.max(0,Math.min(RECALL_CHARS,left)));
-    left-=body.length;
-    out.push(head,body,'[end of note]');
-  }
-  return out.join('\n');
-}
-/* a whole note as a picture: its ink, typed lines and pictures on white,
-   from the top of what is on it, down to a tall page's worth */
-async function notePicture(doc){
-  const strokes=(Array.isArray(doc.strokes)?doc.strokes:[]).filter(st=>st&&(st.author==='user'||st.author==='ai')&&Array.isArray(st.pts)&&st.pts.length>=3);
-  const lines=(Array.isArray(doc.lines)?doc.lines:[]).filter(l=>l&&typeof l.text==='string'&&l.text.trim()&&Number.isFinite(+l.y));
-  const pics=(Array.isArray(doc.images)?doc.images:[]).filter(im=>im&&typeof im.src==='string'&&[im.x,im.y,im.w,im.h].every(Number.isFinite));
-  const boxOf=st=>{if(Array.isArray(st.bbox)&&st.bbox.length===4)return st.bbox;let b=[Infinity,Infinity,-Infinity,-Infinity];for(let i=0;i<st.pts.length;i+=3)b=[Math.min(b[0],st.pts[i]),Math.min(b[1],st.pts[i+1]),Math.max(b[2],st.pts[i]),Math.max(b[3],st.pts[i+1])];return b;};
-  const boxes=[...strokes.map(boxOf),...lines.map(l=>[+l.x||0,+l.y,Math.min(M.contentW,(+l.x||0)+16+9.7*Math.max(...l.text.split('\n').map(t=>t.length))),+l.y+Math.max(C.LINE_H,+l.h||C.LINE_H)]),...pics.map(im=>[im.x,im.y,im.x+im.w,im.y+im.h])];
-  if(!boxes.length)return null;
-  const box=[Math.min(...boxes.map(b=>b[0]))-16,Math.min(...boxes.map(b=>b[1]))-16,Math.max(...boxes.map(b=>b[2]))+16,0];
-  box[3]=Math.min(Math.max(...boxes.map(b=>b[3]))+16,box[1]+RECALL_TALL);
-  const w=box[2]-box[0],h=box[3]-box[1];
-  if(!(w>0&&h>0))return null;
-  const meets=b=>b[2]>=box[0]&&b[0]<=box[2]&&b[3]>=box[1]&&b[1]<=box[3];
-  const shown=pics.filter(im=>meets([im.x,im.y,im.x+im.w,im.y+im.h]));
-  const loaded=await Promise.all(shown.map(im=>loadPicture(im.src)));
-  const type=(getComputedStyle(document.documentElement).getPropertyValue('--type')||'').trim()||'ui-monospace, monospace';
-  for(let scale=Math.min(1.5,PICTURE_MAX/Math.max(w,h)),quality=0.85,tries=0;tries<4;tries++,scale*=0.75,quality-=0.1){
-    const cv=document.createElement('canvas');
-    cv.width=Math.max(1,Math.round(w*scale));cv.height=Math.max(1,Math.round(h*scale));
-    const ctx=cv.getContext('2d');
-    ctx.fillStyle='#fff';ctx.fillRect(0,0,cv.width,cv.height);
-    ctx.scale(scale,scale);ctx.translate(-box[0],-box[1]);
-    shown.forEach((im,i)=>{
-      const el=loaded[i];if(!el)return;
-      if(im.rot){ctx.save();ctx.translate(im.x+im.w/2,im.y+im.h/2);ctx.rotate(im.rot);ctx.drawImage(el,-im.w/2,-im.h/2,im.w,im.h);ctx.restore();}
-      else ctx.drawImage(el,im.x,im.y,im.w,im.h);
-    });
-    paintInk(ctx,strokes.filter(st=>meets(boxOf(st))),scale);
-    ctx.font='400 16px '+type;ctx.textBaseline='top';
-    for(const l of lines){
-      if(+l.y>box[3])continue;
-      ctx.fillStyle=l.tutor?'#c0392b':'#1b1d21';
-      let y=+l.y+3;
-      for(const para of l.text.split('\n')){
-        let row='';
-        for(const word of para.split(/(\s+)/)){
-          if(row&&ctx.measureText(row+word).width>M.contentW-(+l.x||0)-4){ctx.fillText(row,(+l.x||0)+2,y);y+=22.4;row=word.trimStart();}
-          else row+=word;
-        }
-        ctx.fillText(row,(+l.x||0)+2,y);y+=22.4;
-      }
-    }
-    let url;try{url=cv.toDataURL('image/jpeg',quality);}catch(e){return null;}
-    if(url.startsWith('data:image/jpeg;base64,')&&url.length<=PICTURE_CHARS)return {url,w:cv.width,h:cv.height};
-  }
-  return null;
 }
 /* ink as the model sees it: dark on white, whatever the theme */
 function paintInk(ctx,strokes,scale){
@@ -1092,73 +983,159 @@ if(DEBUG_CONTEXT){
   setInterval(()=>{ try{debugLive();}catch(e){} },1000);
   console.info('nota: ?debug=context is on; N.nota.context() returns the page as nota reads it');
 }
-/* the recalled notes go to the text model as words and to the vision model
-   as pictures, as many as the request has room for */
-const TEXT_ONLY=/gpt-oss/i;
-function memoryFor(model,memory,picture){
-  if(!memory||!memory.notes.length)return {words:'',all:'',pictures:[]};
-  const room=TEXT_ONLY.test(model)?0:Math.max(0,RECALL_PICTURES-(picture?1:0));
-  const shown=memory.notes.filter(n=>n.picture).slice(0,room);
-  return {words:recallText(memory,new Set(shown)),all:recallText(memory,null),pictures:shown.map(n=>n.picture)};
+/* ---- tools: nota looks up the notebook's other notes itself ----
+   The model is offered two tools and asks for what it needs: list_notes for
+   the notebook's notes (those matching a few words first), read_note for one
+   note's words. The calls are answered here, in the browser, from the
+   notebook this page keeps, so no note leaves it unless the model asked for
+   it. A call the provider did not parse comes back in the answer's text as
+   <tool_call>{...}</tool_call> and is read here the same way; neither kind
+   is ever written on the page. When the calls fail (the notebook cannot
+   be read, calls that make no sense, more rounds than allowed, nothing
+   answered after them), the question ends there, quietly: nothing is
+   written and no error is shown. The forward (nota-body.mjs) sends its own
+   copy of these definitions upstream. */
+const NOTE_TOOLS=[
+  {type:'function',function:{name:'list_notes',
+    description:'Lists the other notes in the person\'s notebook, newest first: each note\'s id, title, when it was last edited and its first words. With a query, the notes matching its words come first.',
+    parameters:{type:'object',properties:{query:{type:'string',description:'A few words of a topic or title to look for. Leave it out for the latest notes.'}}}}},
+  {type:'function',function:{name:'read_note',
+    description:'Reads one note: its typed lines and what was read of its handwriting.',
+    parameters:{type:'object',properties:{id:{type:'string',description:'The note\'s id, from list_notes.'}},required:['id']}}}
+];
+const TOOL_SYSTEM='You can look at the person\'s other notes in this notebook with two tools: list_notes lists them (with a query, those matching its words first) and read_note reads one by its id. Use them when the question is about their notes (a test, a quiz, a summary, what they wrote about something) or names a topic or note that is not on this page: list, read the one to three notes that fit, then answer from them. Do not use them when the page or general knowledge answers the question. Never mention the tools, the ids or looking anything up in the answer.';
+const TOOL_ROUNDS=3,TOOL_CALLS=4,TOOL_ERRORS=3,TOOL_CHARS=32000,LIST_MAX=30,READ_CHARS=5000,TOOL_TAG='<tool_call>';
+const GRAB_TEXT='nota is grabbing your notes for its reference.';
+const toolsFailed=(why,cause)=>Object.assign(new Error('nota could not look at the notes: '+why),{toolsFailed:true,cause});
+const CALL_ID=/^[\w.:-]{1,128}$/;
+async function notebookRows(){
+  if(!C.Store||!C.Store.index)throw new Error('the notebook has no store');
+  const rows=await C.Store.index();
+  return (Array.isArray(rows)?rows:[]).filter(r=>r&&r.id&&r.id!==S.id&&!r.trashed).sort((a,b)=>(b.updated||0)-(a.updated||0));
 }
-async function stream(question,context,onDelta,signal,picture,memory=null){
-  const model=CONFIG.model,recalled=memoryFor(model,memory,picture);
-  const ask=notes=>'Page, in reading order:\n'+(context||'(empty page)')+(notes?'\n\n'+notes:'')+'\n\nQuestion: '+question;
-  const text=ask(recalled.words);
-  const pictures=[...(picture?[{...picture,what:'the page'}]:[]),...recalled.pictures.map((p,i)=>({...p,what:'note '+(i+1)}))];
-  const body={
-    model,stream:true,max_tokens:CONFIG.maxTokens,temperature:0.3,
-    messages:[{role:'system',content:SYSTEM},{role:'user',content:pictures.length?[{type:'text',text},...pictures.map(p=>({type:'image_url',image_url:{url:p.url}}))]:text}],
-    ...CONFIG.extras
-  };
-  if(DEBUG_CONTEXT){
-    let at=0;
-    const said=c=>typeof c==='string'?c:c.map(p=>{if(p.type==='text')return p.text;const q=pictures[at++];return '[picture of '+q.what+', '+q.w+' x '+q.h+', '+Math.round(q.url.length*0.75/1024)+' KB]';}).join('\n');
-    debugSent=body.messages.map(m=>'['+m.role+']\n'+said(m.content)).join('\n\n');
-    debugShow('nota request, sent '+new Date().toLocaleTimeString()+' ('+body.model+', max_tokens '+body.max_tokens+', temperature '+body.temperature+')',debugSent);
-    console.info('nota request',body);
-    /* the live view comes back a while after, so the next question's page can be watched */
-    clearTimeout(debugHold);debugHold=setTimeout(()=>{debugSent='';},30000);
+function rowTitle(r){ return String(r.title&&r.title!=='untitled'?r.title:(r.preview||'untitled')).replace(/\s+/g,' ').trim().slice(0,120); }
+function editedOn(t){ return t?new Date(t).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}):''; }
+async function listNotes(args){
+  const rows=await notebookRows();
+  if(!rows.length)return {notes:[],note:'the notebook has no other notes'};
+  const words=new Set(recallWords(args.query));
+  let list=rows,matched=0;
+  if(words.size){
+    /* the title counts most, then the first words, then (for the latest
+       few dozen notes) the words inside */
+    const scored=[];
+    for(let i=0;i<rows.length;i++){
+      const r=rows[i],tWords=new Set(recallWords(rowTitle(r))),pWords=new Set(recallWords(r.preview));
+      let cWords=null;
+      if(i<RECALL_SCAN){ let doc=null;try{doc=await C.Store.get('notas.note.'+r.id);}catch(e){} if(doc)cWords=new Set(recallWords(noteText(doc))); }
+      let score=0;
+      for(const w of words){ if(tWords.has(w))score+=4; else if(pWords.has(w)||cWords&&cWords.has(w))score+=1; }
+      scored.push({r,score});
+    }
+    matched=scored.filter(s=>s.score>0).length;
+    list=scored.sort((a,b)=>b.score-a.score).map(s=>s.r);
   }
-  const plain={...body};for(const k of Object.keys(CONFIG.extras||{}))delete plain[k];
-  /* a picture the provider or the forward will not take: the question goes
-     again without it, as words only */
-  const words={...plain,messages:[body.messages[0],{role:'user',content:ask(recalled.all)}]};
-  const tries=pictures.length?[body,plain,words]:[body,plain];
-  let response=null,error=null;
-  /* the proxy is tried first and the provider when it is unreachable or
-     absent (a plain file server has no such route, and a proxy without a
-     key answers 501); an answer with a status, such as a refused key, is
-     final. A 400 is retried once without the extras some servers reject.
-     The page's own key travels only when it has one, so the proxy's key is
-     never overridden by the placeholder. */
+  const out={notes:list.slice(0,LIST_MAX).map(r=>({id:r.id,title:rowTitle(r),edited:editedOn(r.updated),start:String(r.preview||'').replace(/\s+/g,' ').trim().slice(0,80)}))};
+  if(words.size&&!matched)out.note='no note matched those words; these are the latest notes';
+  if(rows.length>LIST_MAX)out.more=rows.length-LIST_MAX;
+  return out;
+}
+async function readNote(args){
+  const id=String(args.id==null?'':args.id).trim();
+  if(id&&id===S.id)return {id,note:'that is the page the question is on, given above'};
+  const row=(await notebookRows()).find(r=>r.id===id);
+  if(!row)return {error:'no note has the id "'+id.slice(0,40)+'"; list_notes gives the ids'};
+  const doc=await C.Store.get('notas.note.'+row.id);
+  if(!doc)return {error:'that note could not be opened'};
+  const text=noteText(doc);
+  return {id:row.id,title:noteTitle(doc,row),edited:editedOn(row.updated||doc.updated),
+    text:text?text.slice(0,READ_CHARS):(doc.strokes||[]).length||(doc.images||[]).length?'(handwriting or pictures the notebook could not read)':'(an empty note)'};
+}
+/* one call answered, as the words the model reads. A call that makes no
+   sense is told so, for the model to put right; a notebook that cannot be
+   read ends the tools. What the calls bring back is bounded per question. */
+async function runTool(name,argText,budget){
+  const said=(result,error)=>({error,text:JSON.stringify(result)});
+  let args;
+  try{ args=argText&&String(argText).trim()?JSON.parse(argText):{}; }catch(e){ return said({error:'the arguments were not JSON'},true); }
+  if(!args||typeof args!=='object'||Array.isArray(args))args={};
+  if(name!=='list_notes'&&name!=='read_note')return said({error:'there is no tool called "'+String(name||'').slice(0,40)+'"'},true);
+  if(budget.left<=0)return said({note:'enough notes have been read for this question; answer with what you have'},false);
+  let result;
+  try{ result=name==='list_notes'?await listNotes(args):await readNote(args); }
+  catch(e){ throw toolsFailed('the notebook could not be read',e); }
+  let text=JSON.stringify(result);
+  if(text.length>budget.left&&result.text){ result.text=result.text.slice(0,Math.max(0,result.text.length-(text.length-budget.left)))+'...'; text=JSON.stringify(result); }
+  budget.left-=text.length;
+  return {error:!!result.error,text};
+}
+/* calls written out as text: <tool_call>{"name":..,"arguments":{..}}</tool_call> */
+function textCalls(said){
+  const out=[];
+  for(const m of String(said).matchAll(/<tool_call>\s*([\s\S]*?)\s*(?:<\/tool_call>|$)/g)){
+    let j=null;try{j=JSON.parse(m[1]);}catch(e){}
+    const args=j&&j.arguments!==undefined?j.arguments:j&&j.parameters;
+    out.push({id:'',name:j&&typeof j.name==='string'?j.name:'',args:typeof args==='string'?args:JSON.stringify(args||{})});
+  }
+  return out;
+}
+
+function ask(context,question,notes){ return 'Page, in reading order:\n'+(context||'(empty page)')+(notes?'\n\n'+notes:'')+'\n\nQuestion: '+question; }
+function debugRequest(body,pictures){
+  if(!DEBUG_CONTEXT)return;
+  let at=0;
+  const said=m=>{
+    const c=m.content;
+    const words=c==null?'':typeof c==='string'?c:c.map(p=>{if(p.type==='text')return p.text;const q=pictures[at++]||{what:'a picture',w:0,h:0,url:''};return '[picture of '+q.what+', '+q.w+' x '+q.h+', '+Math.round(q.url.length*0.75/1024)+' KB]';}).join('\n');
+    return [words,...(m.tool_calls||[]).map(t=>'[asks '+t.function.name+' '+t.function.arguments+']')].filter(Boolean).join('\n');
+  };
+  debugSent=body.messages.map(m=>'['+m.role+(m.tool_call_id?' '+m.tool_call_id:'')+']\n'+said(m)).join('\n\n');
+  debugShow('nota request, sent '+new Date().toLocaleTimeString()+' ('+body.model+', max_tokens '+body.max_tokens+', temperature '+body.temperature+(body.tools?', tools':'')+')',debugSent);
+  console.info('nota request',body);
+  /* the live view comes back a while after, so the next question's page can be watched */
+  clearTimeout(debugHold);debugHold=setTimeout(()=>{debugSent='';},30000);
+}
+/* A request sent, and the response it got with the payload that got it.
+   The proxy is tried first and the provider when it is unreachable or
+   absent (a plain file server has no such route, and a proxy without a
+   key answers 501); an answer with a status, such as a refused key, is
+   final. Each payload in `tries` is the one before it made plainer, tried
+   on a 400 (or a 413, when pictures are why). The page's own key travels
+   only when it has one, so the proxy's key is never overridden by the
+   placeholder. */
+async function post(tries,signal,pictured){
+  let error=null;
   for(const url of [CONFIG.proxy,CONFIG.url]){
     if(url===CONFIG.url&&!hasKey()){error=new Error('nota needs a key. add it in nota.js.');break;}
     let unreachable=false;
     const headers={'Content-Type':'application/json','Accept':'text/event-stream'};
     if(url===CONFIG.url&&hasKey())headers.Authorization='Bearer '+apiKey();
     for(const payload of tries){
+      let response;
       try{
         response=await fetch(url,{method:'POST',signal,headers,body:JSON.stringify(payload)});
-      }catch(e){ if(e.name==='AbortError')throw e; error=e;response=null;unreachable=true;break; }
-      if(response.ok)break;
-      if(url===CONFIG.proxy&&[404,405,501].includes(response.status)){response=null;unreachable=true;break;}
+      }catch(e){ if(e.name==='AbortError')throw e; error=e;unreachable=true;break; }
+      if(response.ok)return {response,payload};
+      if(url===CONFIG.proxy&&[404,405,501].includes(response.status)){unreachable=true;break;}
       /* the forward explains itself in a line of plain text (a call from
          another site, no key, the model out of reach); that is shown as it
          is, rather than guessed from the status */
       let said='',whole='';
       try{ whole=await response.text(); }catch(e){}
-      if(spentAllowance(response.status,whole)){ error=Object.assign(new Error(LOAD_TEXT),{overloaded:true}); response=null; break; }
+      if(spentAllowance(response.status,whole)){ error=Object.assign(new Error(LOAD_TEXT),{overloaded:true}); break; }
       if(/^text\/plain/i.test(response.headers.get('content-type')||''))said=whole.trim().slice(0,140);
       error=new Error(said||(response.status===401||response.status===403?'nota\'s key was refused.':'nota could not answer ('+response.status+').'));
-      if(response.status!==400&&!(response.status===413&&pictures.length)){response=null;break;}
-      response=null;
+      error.status=response.status;
+      if(response.status!==400&&!(response.status===413&&pictured))break;
     }
-    if(response||!unreachable||error?.overloaded)break;
+    if(!unreachable||error?.overloaded)break;
   }
-  if(!response)throw error||new Error('nota could not reach the model.');
+  throw error||new Error('nota could not reach the model.');
+}
+/* the answer's stream: each delta the model sends, until it is done */
+async function readSSE(response,onDelta){
   const reader=response.body.getReader(),decoder=new TextDecoder();
-  let buffer='',total='';
+  let buffer='';
   for(;;){
     const {value,done}=await reader.read();
     buffer+=done?decoder.decode()+'\n':decoder.decode(value,{stream:true});
@@ -1167,14 +1144,105 @@ async function stream(question,context,onDelta,signal,picture,memory=null){
       const line=buffer.slice(0,nl).trim();buffer=buffer.slice(nl+1);
       if(!line.startsWith('data:'))continue;
       const data=line.slice(5).trim();
-      if(data==='[DONE]'){await reader.cancel();return total;}
+      if(data==='[DONE]'){await reader.cancel();return;}
       let json;try{json=JSON.parse(data);}catch(e){continue;}
+      if(json.error)throw Object.assign(new Error('nota model stream failed.'),{status:502});
       const delta=json.choices&&json.choices[0]&&json.choices[0].delta;
-      const piece=delta&&typeof delta.content==='string'?delta.content:'';
-      if(piece){total+=piece;onDelta(piece,total);}
+      if(delta)onDelta(delta);
     }
     if(done)break;
   }
+}
+/* A question the model may answer after looking at notes: up to
+   TOOL_ROUNDS rounds of calls, each answered here and sent back, then an
+   answer streamed as any other. Words before the first call are held, as
+   they may be the call itself written out; a round that turns out to be
+   calls never reaches the page. onGrab is told when notes are fetched. */
+async function streamTools(question,context,onDelta,signal,picture,model,{onGrab}={}){
+  const text=ask(context,question,'');
+  const pictures=picture?[{...picture,what:'the page'}]:[];
+  const messages=[{role:'system',content:SYSTEM+'\n'+TOOL_SYSTEM},{role:'user',content:pictures.length?[{type:'text',text},{type:'image_url',image_url:{url:picture.url}}]:text}];
+  const budget={left:TOOL_CHARS};
+  let total='',errors=0,extras=true;
+  for(let round=0;;round++){
+    const last=round>=TOOL_ROUNDS;
+    const plain={model,stream:true,max_tokens:CONFIG.maxTokens,temperature:0.3,messages,tools:NOTE_TOOLS,tool_choice:last?'none':'auto'};
+    const body=extras?{...plain,...CONFIG.extras}:plain;
+    debugRequest(body,pictures);
+    /* the page's picture refused: the question goes as words, from then on */
+    const words={...plain,messages:[messages[0],{role:'user',content:text},...messages.slice(2)]};
+    const tries=[...(extras?[body]:[]),plain,...(typeof messages[1].content==='string'?[]:[words])];
+    const sent=await post(tries,signal,pictures.length>0);
+    if(sent.payload!==body)extras=false;
+    if(sent.payload===words)messages[1]={role:'user',content:text};
+    const calls=[];let said='',held='',live=false;
+    await readSSE(sent.response,delta=>{
+      if(Array.isArray(delta.tool_calls))for(const t of delta.tool_calls){
+        if(!t)continue;
+        const i=Number.isInteger(t.index)?t.index:t.id||!calls.length?calls.length:calls.length-1;
+        const c=calls[i]||(calls[i]={id:'',name:'',args:''});
+        if(t.id)c.id=String(t.id);
+        const f=t.function||{};
+        if(typeof f.name==='string'&&f.name!==c.name)c.name+=f.name;
+        if(typeof f.arguments==='string')c.args+=f.arguments;
+        else if(f.arguments&&typeof f.arguments==='object')c.args+=JSON.stringify(f.arguments);
+      }
+      const piece=typeof delta.content==='string'?delta.content:'';
+      if(!piece)return;
+      said+=piece;
+      if(live){total+=piece;onDelta(piece,total);return;}
+      held+=piece;
+      const lead=held.trimStart();
+      if(!lead||calls.length||lead.startsWith(TOOL_TAG)||TOOL_TAG.startsWith(lead))return;
+      live=true;total+=held;onDelta(held,total);held='';
+    });
+    const asked=calls.filter(c=>c&&(c.name||c.args));
+    const textual=!asked.length&&!live&&held.trimStart().startsWith(TOOL_TAG);
+    const found=(textual?textCalls(held):asked).slice(0,TOOL_CALLS);
+    if(!found.length){
+      if(held.trim()){total+=held;onDelta(held,total);}
+      if(!total.trim()&&round)throw toolsFailed('nothing was answered after them');
+      return total;
+    }
+    if(last)throw toolsFailed('it kept asking for notes');
+    onGrab?.();
+    found.forEach((c,i)=>{ if(!CALL_ID.test(c.id))c.id='call_'+round+'_'+i; });
+    const results=[];
+    for(const c of found){
+      if(signal.aborted)throw new DOMException('Question withdrawn','AbortError');
+      const r=await runTool(c.name,c.args,budget);
+      if(r.error)errors++;
+      results.push(r.text);
+    }
+    if(errors>=TOOL_ERRORS)throw toolsFailed('its calls made no sense');
+    if(textual)messages.push({role:'assistant',content:said},{role:'user',content:results.map(r=>'<tool_response>\n'+r+'\n</tool_response>').join('\n')});
+    else{
+      messages.push({role:'assistant',content:said.trim()||null,tool_calls:found.map(c=>({id:c.id,type:'function',function:{name:c.name,arguments:c.args||'{}'}}))});
+      found.forEach((c,i)=>messages.push({role:'tool',tool_call_id:c.id,content:results[i]}));
+    }
+  }
+}
+async function stream(question,context,onDelta,signal,picture,tools=null){
+  const model=CONFIG.model;
+  if(tools)return streamTools(question,context,onDelta,signal,picture,model,tools);
+  const text=ask(context,question,'');
+  const pictures=picture?[{...picture,what:'the page'}]:[];
+  const body={
+    model,stream:true,max_tokens:CONFIG.maxTokens,temperature:0.3,
+    messages:[{role:'system',content:SYSTEM},{role:'user',content:pictures.length?[{type:'text',text},...pictures.map(p=>({type:'image_url',image_url:{url:p.url}}))]:text}],
+    ...CONFIG.extras
+  };
+  debugRequest(body,pictures);
+  const plain={...body};for(const k of Object.keys(CONFIG.extras||{}))delete plain[k];
+  /* a picture the provider or the forward will not take: the question goes
+     again without it, as words only */
+  const words={...plain,messages:[body.messages[0],{role:'user',content:text}]};
+  const {response}=await post(pictures.length?[body,plain,words]:[body,plain],signal,pictures.length>0);
+  let total='';
+  await readSSE(response,delta=>{
+    const piece=typeof delta.content==='string'?delta.content:'';
+    if(piece){total+=piece;onDelta(piece,total);}
+  });
   return total;
 }
 
@@ -1444,7 +1512,7 @@ async function fireTyped(id){
 }
 
 /* ---- waiting: a sheet of paper, drawn by hand, tips over, curls and comes
-   back where the pen will start, while nota reads the page, recalls notes,
+   back where the pen will start, while nota reads the page, fetches notes,
    thinks, and until its last word. The frames are one strip of white ink
    (assets/nota-thinking.png), painted in nota's red. The receipt and a typed
    reply's waiting line play the same strip as a CSS mask. ---- */
@@ -1486,29 +1554,45 @@ function unsay(){ if(!busy)receipt.hidden=true; }
    under the bottom left of the answer as the hand writes it, and goes when
    the last stroke is drawn. */
 let waiting=null,waitFrame=0;
+const WAIT_FADE_MS=450;
 function showWaiting(writer){
-  waiting={writer,origin:writer.origin,t0:performance.now(),done:false};
+  cancelAnimationFrame(waitFrame);
+  waiting={writer,origin:writer.origin,t0:performance.now(),done:false,fade:0};
   /* the AI layer is redrawn only when the frame changes, not every display
-     frame; while the hand writes, its own redraws move the paper along */
+     frame; while the hand writes, its own redraws move the paper along.
+     While it fades out, every frame. */
   let shown=-1;
   const tick=()=>{
     if(!waiting)return;
-    if(waiting.done&&!waiting.writer.drawing){hideWaiting();return;}
-    const f=thinkFrame(waiting.t0);
-    if(f!==shown){shown=f;N.ink.renderAI();}
+    if(waiting.done&&!waiting.writer.drawing&&!waiting.fade)waiting.fade=performance.now();
+    if(waiting.fade){
+      if(performance.now()-waiting.fade>=WAIT_FADE_MS){hideWaiting();return;}
+      N.ink.renderAI();
+    }else{
+      const f=thinkFrame(waiting.t0);
+      if(f!==shown){shown=f;N.ink.renderAI();}
+    }
     waitFrame=C.reducedMotion()?0:requestAnimationFrame(tick);
   };
   tick();
+}
+/* the answer is written: the paper fades out, still turning, rather than
+   vanishing */
+function fadeWaiting(){
+  if(!waiting)return;
+  if(C.reducedMotion()){hideWaiting();return;}
+  if(!waiting.fade)waiting.fade=performance.now();
 }
 function hideWaiting(){
   if(!waiting)return;
   waiting=null;cancelAnimationFrame(waitFrame);N.ink.renderAI();
 }
-/* the answer is in: the paper stays until the hand has written it all out,
-   or goes now when nothing was written */
+/* the answer is in: the paper stays until the hand has written it all out
+   and then fades, or goes now when nothing was written */
 function endWaiting(wrote){
   if(!waiting)return;
-  if(!wrote||C.reducedMotion()||!waiting.writer.drawing)hideWaiting();
+  if(!wrote)hideWaiting();
+  else if(!waiting.writer.drawing)fadeWaiting();
   else waiting.done=true;
 }
 function drawWaiting(ctx){
@@ -1519,7 +1603,11 @@ function drawWaiting(ctx){
      just under the lowest row written so far, at the answer's left edge */
   const tail=waiting.writer.tail,o=waiting.origin,u=o.unit,h=Math.max(20,32*u),w=h*THINK.w/THINK.h;
   const x=tail?tail.x-3*u:o.x-3*u,top=tail?tail.y+2*u:o.y+(BASE+6)*u-h;
+  const t=waiting.fade?Math.min(1,(performance.now()-waiting.fade)/WAIT_FADE_MS):0;
+  if(t>=1)return;
+  ctx.save();ctx.globalAlpha*=1-t*t*(3-2*t);
   ctx.drawImage(sheet,thinkFrame(waiting.t0)*THINK.w,0,THINK.w,THINK.h,x,top,w,h);
+  ctx.restore();
 }
 
 /* ---- one answer, wherever it goes ---- */
@@ -1548,33 +1636,30 @@ async function answer(question,where,writer,control){
   if(!where.lineId&&writer.origin)showWaiting(writer);
   let text='',complete=false;
   try{
-    /* notes elsewhere in the notebook, when the question is about them:
-       pictures for the vision model, words when it is a text model. Looked
-       up while the page itself is read. */
-    const recalled=recall(question,!TEXT_ONLY.test(CONFIG.model)).catch(e=>{console.warn('nota: could not recall the notes',e);return null;});
     /* the drawings' labels the page has not read yet are read now, for a
        couple of seconds at most, while the paper turns over */
     const drawings=await readDrawings(where.skip||new Set(),LABEL_WAIT);
     const context=pageRows({...where,diagrams:drawings});
     let picture=null;try{picture=await pagePicture(where,drawings);}catch(e){console.warn('nota: no picture of the page',e);}
-    const memory=await recalled;
-    if(memory){
-      const reading='nota is reading '+(memory.notes.length===1?'"'+memory.notes[0].title+'"':memory.notes.length+' notes');
-      C.status(reading+'.');say(reading+'…',true);
-    }
     if(writer.aborted||control.signal.aborted)throw new DOMException('Question withdrawn','AbortError');
-    await stream(question,context,piece=>{
+    const feed=piece=>{
       if(writer.aborted){control.abort();return;}
       arm();
       if(!text&&overloaded())setOverloaded(false);
       text+=piece;writer.feed(piece);C.status('nota is writing.');say('nota is writing…',false);
-    },control.signal,picture,memory);
+    };
+    /* while notes are fetched, the paper keeps turning and the words say so */
+    const grab=()=>{arm();C.status(GRAB_TEXT);say(GRAB_TEXT,true);};
+    /* the model asks for the notes it needs (see NOTE_TOOLS) */
+    await stream(question,context,feed,control.signal,picture,{onGrab:grab});
     if(!text.trim())throw Error('nota returned an empty answer. try again.');
     if(!writer.aborted){writer.finish();complete=true;}
   }catch(e){
     // Flush buffered words before reporting a stalled or broken stream.
     if(text.trim()&&(!writer.aborted||timedOut))writer.finish();
     if(e.overloaded){setOverloaded(true);showOverloaded(messageAt(where));}
+    /* calls of the notes tools that failed end the question quietly */
+    else if(e.toolsFailed)console.warn(e.message,e.cause||'');
     else if(timedOut)C.toast('nota timed out. try again.');
     else if(e.name!=='AbortError')C.toast(String(e.message||'nota could not answer.').toLowerCase());
   }finally{
@@ -1602,7 +1687,7 @@ if(N.recog&&N.recog.selectionUnread){
   };
 }
 
-N.nota={overloaded,isCallStroke,isAskedStroke,recall,drawings:readDrawings,onTranscript,onTyped,askSelection,parseCall,callLength,drawWaiting,mathMatches,tidy,spell,Writer,get busy(){return busy>0;},get writing(){return queue.length;},config:CONFIG,
+N.nota={overloaded,tools:NOTE_TOOLS,isCallStroke,isAskedStroke,drawings:readDrawings,onTranscript,onTyped,askSelection,parseCall,callLength,drawWaiting,mathMatches,tidy,spell,Writer,get busy(){return busy>0;},get writing(){return queue.length;},config:CONFIG,
   /* the page as nota reads it, for the console: N.nota.context() */
   context(where){ where=where||liveWhere(); return pageRows({...where,diagrams:knownDrawings(where.skip)}); }};
 })();

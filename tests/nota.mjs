@@ -155,7 +155,9 @@ try{
   assert.ok(await aiRed()>10,'the paper keeps turning under the answer while the pen writes it');
   await page.waitForFunction(()=>!N.core.S.strokes.some(s=>s._show!==undefined),null,{timeout:60000});
   await page.waitForTimeout(150);
-  assert.equal(await aiRed(),0,'the paper is gone once the last stroke is written');
+  assert.ok(await aiRed()>0,'the paper fades out after the last stroke rather than vanishing');
+  await page.waitForTimeout(600);
+  assert.equal(await aiRed(),0,'the paper is gone once it has faded');
   const red=await page.evaluate(()=>{
     const S=N.core.S,ai=S.strokes.filter(s=>s.author==='ai');
     const top=Math.min(...ai.map(s=>s.bbox[1])),left=Math.min(...ai.map(s=>s.bbox[0])),right=Math.max(...ai.map(s=>s.bbox[2]));
