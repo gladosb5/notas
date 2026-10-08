@@ -139,7 +139,8 @@ const SYSTEM=[
   'Answer in plain text only: no markdown, no bullets, no LaTeX, no code fences, no emoji, no headings. Write maths in plain notation such as 2x + 3 = 11, sqrt(16), 3/4, 2^3, 12 x 7. Use only plain letters, digits and punctuation, since the answer is handwritten onto the page.',
   'Be brief: one to three short sentences, at most about 45 words, unless the person asks for the full working, the steps, a list or a recipe, then give short numbered lines, one per line.',
   'Do not repeat the question. Do not greet. Do not say "hey nota". Give the answer first, then a short reason if it helps.',
-  'If the question is not about anything on the page, answer it anyway, briefly. If the page does not contain what "this" refers to, say what you would need.'
+  'If the question is not about anything on the page, answer it anyway, briefly. If the page does not contain what "this" refers to, say what you would need.',
+  'Other notes from the notebook may be given after the page, each between [note "its title"] and [end of note], as their words or as a picture of that note sent after the picture of the page. They are the person\'s own notes: use them when the question is about their notes. To test or quiz them, write three to five short numbered questions drawn from those notes, without the answers, unless they ask for the answers. Never mention the brackets.'
 ].join('\n');
 
 /* ---- a single stroke hand: the upright Hershey Sans 1-stroke face, one polyline per stroke ---- */
@@ -800,16 +801,156 @@ async function pagePicture(where,drawings){
       if(im.rot){ctx.save();ctx.translate(im.x+im.w/2,im.y+im.h/2);ctx.rotate(im.rot);ctx.drawImage(el,-im.w/2,-im.h/2,im.w,im.h);ctx.restore();}
       else ctx.drawImage(el,im.x,im.y,im.w,im.h);
     });
-    ctx.lineCap='round';ctx.lineJoin='round';
-    for(const st of ink){
-      const p=st.pts;ctx.strokeStyle=ctx.fillStyle=st.color||'#1b1d21';
-      if(p.length<6){ctx.beginPath();ctx.arc(p[0],p[1],Math.max(1,st.w*0.6),0,Math.PI*2);ctx.fill();continue;}
-      for(let i=3;i<p.length;i+=3){ctx.beginPath();ctx.moveTo(p[i-3],p[i-2]);ctx.lineTo(p[i],p[i+1]);ctx.lineWidth=Math.max(1.2/scale,st.w*(0.55+0.9*(p[i+2]||0.5)));ctx.stroke();}
+    paintInk(ctx,ink,scale);
+    let url;try{url=cv.toDataURL('image/jpeg',quality);}catch(e){return null;}
+    if(url.startsWith('data:image/jpeg;base64,')&&url.length<=PICTURE_CHARS)return {url,w:cv.width,h:cv.height};
+  }
+  return null;
+}
+
+/* ---- memory: the notebook's other notes, recalled when a question is about them ----
+   "hey nota, test me on my notes" is about notes that are not on this page.
+   They are looked up by the question's words and this page's title: a note
+   the question names first, then notes that share its words, and when the
+   question only says "my notes", the latest ones. What the model is given
+   depends on what it reads: the text model (gpt-oss) has each note as its
+   words, typed lines and the handwriting readings; the vision model (qwen)
+   has each note as a picture of the page, so ink no reader made sense of is
+   still seen. A request carries two pictures at most, the page's own
+   included; a note that does not fit as a picture goes as words. */
+const RECALL_MAX=3,RECALL_SCAN=60,RECALL_CHARS=2400,RECALL_TOTAL=7000,RECALL_PICTURES=2,RECALL_TALL=2600;
+const RECALL_STOP=new Set(('the and for are but not you your yours with what this that these those from have has had was were will would can could should '+
+  'about into onto over under some any all one two how why when where who which they them their there then than its on in of to is be me my mine our ours '+
+  'we us do does did please hey nota note notes notebook notebooks page pages test tests quiz ask tell give make show help write wrote written stuff thing things '+
+  'remember recall know learn learned learnt revise revision review recap summarise summarize summary questions question answer answers').split(' '));
+const NOTES_ASKED=/\b(?:my|our|the|these|those|all|other|previous|last|earlier|old|recent|yesterday'?s?)\s+(?:[\p{L}\p{N}-]+\s+){0,2}?(?:notes?|notebooks?|pages?|lessons?|lectures?|classes?|homework)\b|\b(?:test|quiz|revise|revision|flash ?cards?)\b(?:\s+me)?\s+(?:on|from|about|with|using)\b|\b(?:test|quiz)\s+me\b/iu;
+function recallWords(s){
+  return String(s||'').toLowerCase().normalize('NFKD').replace(/\p{M}+/gu,'').split(/[^\p{L}\p{N}]+/u).filter(w=>w.length>=3&&!RECALL_STOP.has(w));
+}
+/* a note in words: its typed lines top to bottom, then what was read of its ink */
+function noteText(doc){
+  const out=[],seen=new Set(),add=s=>{const t=String(s||'').replace(/\s+/g,' ').trim();if(t&&!seen.has(t)){seen.add(t);out.push(t);}};
+  for(const l of (Array.isArray(doc.lines)?doc.lines:[]).filter(l=>l&&typeof l.text==='string'&&!l.tutor&&!l.wait).sort((a,b)=>(+a.y||0)-(+b.y||0)))add(l.text);
+  for(const t of Array.isArray(doc.textTranscripts)?doc.textTranscripts:[])if(t&&typeof t.text==='string'&&(t.confidence||0)>=0.3)add(t.text);
+  for(const t of Array.isArray(doc.transcripts)?doc.transcripts:[])if(t&&!t.dismissed&&typeof t.ascii==='string')add(t.ascii);
+  return out.join('\n');
+}
+function noteTitle(doc,row){
+  const t=(row&&row.title)||doc.title;
+  if(t&&t!=='untitled')return String(t).slice(0,120);
+  return (row&&row.preview)||C.firstLine(doc.lines||[])||'untitled';
+}
+async function recall(question,wantPictures){
+  if(!C.Store||!C.Store.index)return null;
+  const asked=NOTES_ASKED.test(question);
+  const qWords=new Set(recallWords(question));
+  const here=new Set(recallWords(S.title!=='untitled'?S.title:''));
+  if(!asked&&!qWords.size)return null;
+  let rows;try{rows=await C.Store.index();}catch(e){return null;}
+  rows=rows.filter(r=>r&&r.id&&r.id!==S.id&&!r.trashed).sort((a,b)=>(b.updated||0)-(a.updated||0));
+  if(!rows.length)return null;
+  /* a note the question names by its title is read first, wherever it is
+     in the list; the rest are the latest few dozen */
+  const titled=r=>{const w=recallWords(r.title&&r.title!=='untitled'?r.title:'');return w.length&&w.every(x=>qWords.has(x));};
+  const shares=r=>recallWords(r.title&&r.title!=='untitled'?r.title:'').some(x=>qWords.has(x));
+  const scan=asked?[...rows.filter(titled),...rows.filter(r=>!titled(r)).slice(0,RECALL_SCAN)]:rows.filter(shares).slice(0,RECALL_SCAN);
+  const found=[];
+  for(const row of scan){
+    let doc=null;try{doc=await C.Store.get('notas.note.'+row.id);}catch(e){}
+    if(!doc)continue;
+    const title=noteTitle(doc,row),text=noteText(doc);
+    const tWords=new Set(recallWords(title)),cWords=new Set(recallWords(text));
+    let score=0;
+    for(const w of qWords){ if(tWords.has(w))score+=4; else if(cWords.has(w))score+=1; }
+    for(const w of here){ if(tWords.has(w))score+=1; else if(cWords.has(w))score+=0.5; }
+    const named=titled(row);
+    if(named)score+=10;
+    if(!text&&!(doc.strokes||[]).length&&!(doc.images||[]).length)continue;
+    found.push({row,doc,title,text,score,named});
+  }
+  /* without "my notes" or a test, only a note the question names is recalled:
+     a word in common is not enough to bring another note into an answer */
+  let notes=found.filter(n=>asked?n.score>0:n.named||n.score>=8).sort((a,b)=>b.score-a.score||(b.row.updated||0)-(a.row.updated||0));
+  if(!notes.length&&asked)notes=found.slice(0,RECALL_MAX);
+  notes=notes.slice(0,RECALL_MAX);
+  if(!notes.length)return null;
+  if(wantPictures)for(const n of notes.slice(0,RECALL_PICTURES)){
+    try{n.picture=await notePicture(n.doc);}catch(e){console.warn('nota: no picture of a note',e);}
+  }
+  return {notes:notes.map(n=>({id:n.row.id,title:n.title,text:n.text,updated:n.row.updated||n.doc.updated||0,picture:n.picture||null}))};
+}
+/* the notes as words, those also sent as pictures named only */
+function recallText(memory,pictured){
+  if(!memory||!memory.notes.length)return '';
+  const out=['Other notes in the notebook, recalled for this question:'];
+  let left=RECALL_TOTAL,n=0;
+  for(const note of memory.notes){
+    const when=note.updated?new Date(note.updated).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}):'';
+    const head='[note "'+note.title.replace(/"/g,"'")+'"'+(when?', last edited '+when:'')+']';
+    if(pictured&&pictured.has(note)){out.push(head,'(shown in picture '+(++n)+' after the page)','[end of note]');continue;}
+    const body=(note.text||'(handwriting the notebook could not read)').slice(0,Math.max(0,Math.min(RECALL_CHARS,left)));
+    left-=body.length;
+    out.push(head,body,'[end of note]');
+  }
+  return out.join('\n');
+}
+/* a whole note as a picture: its ink, typed lines and pictures on white,
+   from the top of what is on it, down to a tall page's worth */
+async function notePicture(doc){
+  const strokes=(Array.isArray(doc.strokes)?doc.strokes:[]).filter(st=>st&&(st.author==='user'||st.author==='ai')&&Array.isArray(st.pts)&&st.pts.length>=3);
+  const lines=(Array.isArray(doc.lines)?doc.lines:[]).filter(l=>l&&typeof l.text==='string'&&l.text.trim()&&Number.isFinite(+l.y));
+  const pics=(Array.isArray(doc.images)?doc.images:[]).filter(im=>im&&typeof im.src==='string'&&[im.x,im.y,im.w,im.h].every(Number.isFinite));
+  const boxOf=st=>{if(Array.isArray(st.bbox)&&st.bbox.length===4)return st.bbox;let b=[Infinity,Infinity,-Infinity,-Infinity];for(let i=0;i<st.pts.length;i+=3)b=[Math.min(b[0],st.pts[i]),Math.min(b[1],st.pts[i+1]),Math.max(b[2],st.pts[i]),Math.max(b[3],st.pts[i+1])];return b;};
+  const boxes=[...strokes.map(boxOf),...lines.map(l=>[+l.x||0,+l.y,Math.min(M.contentW,(+l.x||0)+16+9.7*Math.max(...l.text.split('\n').map(t=>t.length))),+l.y+Math.max(C.LINE_H,+l.h||C.LINE_H)]),...pics.map(im=>[im.x,im.y,im.x+im.w,im.y+im.h])];
+  if(!boxes.length)return null;
+  const box=[Math.min(...boxes.map(b=>b[0]))-16,Math.min(...boxes.map(b=>b[1]))-16,Math.max(...boxes.map(b=>b[2]))+16,0];
+  box[3]=Math.min(Math.max(...boxes.map(b=>b[3]))+16,box[1]+RECALL_TALL);
+  const w=box[2]-box[0],h=box[3]-box[1];
+  if(!(w>0&&h>0))return null;
+  const meets=b=>b[2]>=box[0]&&b[0]<=box[2]&&b[3]>=box[1]&&b[1]<=box[3];
+  const shown=pics.filter(im=>meets([im.x,im.y,im.x+im.w,im.y+im.h]));
+  const loaded=await Promise.all(shown.map(im=>loadPicture(im.src)));
+  const type=(getComputedStyle(document.documentElement).getPropertyValue('--type')||'').trim()||'ui-monospace, monospace';
+  for(let scale=Math.min(1.5,PICTURE_MAX/Math.max(w,h)),quality=0.85,tries=0;tries<4;tries++,scale*=0.75,quality-=0.1){
+    const cv=document.createElement('canvas');
+    cv.width=Math.max(1,Math.round(w*scale));cv.height=Math.max(1,Math.round(h*scale));
+    const ctx=cv.getContext('2d');
+    ctx.fillStyle='#fff';ctx.fillRect(0,0,cv.width,cv.height);
+    ctx.scale(scale,scale);ctx.translate(-box[0],-box[1]);
+    shown.forEach((im,i)=>{
+      const el=loaded[i];if(!el)return;
+      if(im.rot){ctx.save();ctx.translate(im.x+im.w/2,im.y+im.h/2);ctx.rotate(im.rot);ctx.drawImage(el,-im.w/2,-im.h/2,im.w,im.h);ctx.restore();}
+      else ctx.drawImage(el,im.x,im.y,im.w,im.h);
+    });
+    paintInk(ctx,strokes.filter(st=>meets(boxOf(st))),scale);
+    ctx.font='400 16px '+type;ctx.textBaseline='top';
+    for(const l of lines){
+      if(+l.y>box[3])continue;
+      ctx.fillStyle=l.tutor?'#c0392b':'#1b1d21';
+      let y=+l.y+3;
+      for(const para of l.text.split('\n')){
+        let row='';
+        for(const word of para.split(/(\s+)/)){
+          if(row&&ctx.measureText(row+word).width>M.contentW-(+l.x||0)-4){ctx.fillText(row,(+l.x||0)+2,y);y+=22.4;row=word.trimStart();}
+          else row+=word;
+        }
+        ctx.fillText(row,(+l.x||0)+2,y);y+=22.4;
+      }
     }
     let url;try{url=cv.toDataURL('image/jpeg',quality);}catch(e){return null;}
     if(url.startsWith('data:image/jpeg;base64,')&&url.length<=PICTURE_CHARS)return {url,w:cv.width,h:cv.height};
   }
   return null;
+}
+/* ink as the model sees it: dark on white, whatever the theme */
+function paintInk(ctx,strokes,scale){
+  ctx.lineCap='round';ctx.lineJoin='round';
+  for(const st of strokes){
+    const p=st.pts;ctx.strokeStyle=ctx.fillStyle=st.color||(st.author==='ai'?'#c0392b':'#1b1d21');
+    const w=+st.w||2.4;
+    if(p.length<6){ctx.beginPath();ctx.arc(p[0],p[1],Math.max(1,w*0.6),0,Math.PI*2);ctx.fill();continue;}
+    for(let i=3;i<p.length;i+=3){ctx.beginPath();ctx.moveTo(p[i-3],p[i-2]);ctx.lineTo(p[i],p[i+1]);ctx.lineWidth=Math.max(1.2/scale,w*(0.55+0.9*(p[i+2]||0.5)));ctx.stroke();}
+  }
 }
 
 /* the drawings now, from what is already known: for the context panel */
@@ -939,15 +1080,28 @@ if(DEBUG_CONTEXT){
   setInterval(()=>{ try{debugLive();}catch(e){} },1000);
   console.info('nota: ?debug=context is on; N.nota.context() returns the page as nota reads it');
 }
-async function stream(question,context,onDelta,signal,picture){
-  const text='Page, in reading order:\n'+(context||'(empty page)')+'\n\nQuestion: '+question;
+/* the recalled notes go to the text model as words and to the vision model
+   as pictures, as many as the request has room for */
+const TEXT_ONLY=/gpt-oss/i;
+function memoryFor(model,memory,picture){
+  if(!memory||!memory.notes.length)return {words:'',all:'',pictures:[]};
+  const room=TEXT_ONLY.test(model)?0:Math.max(0,RECALL_PICTURES-(picture?1:0));
+  const shown=memory.notes.filter(n=>n.picture).slice(0,room);
+  return {words:recallText(memory,new Set(shown)),all:recallText(memory,null),pictures:shown.map(n=>n.picture)};
+}
+async function stream(question,context,onDelta,signal,picture,memory=null){
+  const model=CONFIG.model,recalled=memoryFor(model,memory,picture);
+  const ask=notes=>'Page, in reading order:\n'+(context||'(empty page)')+(notes?'\n\n'+notes:'')+'\n\nQuestion: '+question;
+  const text=ask(recalled.words);
+  const pictures=[...(picture?[{...picture,what:'the page'}]:[]),...recalled.pictures.map((p,i)=>({...p,what:'note '+(i+1)}))];
   const body={
-    model:CONFIG.model,stream:true,max_tokens:CONFIG.maxTokens,temperature:0.3,
-    messages:[{role:'system',content:SYSTEM},{role:'user',content:picture?[{type:'text',text},{type:'image_url',image_url:{url:picture.url}}]:text}],
+    model,stream:true,max_tokens:CONFIG.maxTokens,temperature:0.3,
+    messages:[{role:'system',content:SYSTEM},{role:'user',content:pictures.length?[{type:'text',text},...pictures.map(p=>({type:'image_url',image_url:{url:p.url}}))]:text}],
     ...CONFIG.extras
   };
   if(DEBUG_CONTEXT){
-    const said=c=>typeof c==='string'?c:c.map(p=>p.type==='text'?p.text:'[picture of the page, '+picture.w+' x '+picture.h+', '+Math.round(picture.url.length*0.75/1024)+' KB]').join('\n');
+    let at=0;
+    const said=c=>typeof c==='string'?c:c.map(p=>{if(p.type==='text')return p.text;const q=pictures[at++];return '[picture of '+q.what+', '+q.w+' x '+q.h+', '+Math.round(q.url.length*0.75/1024)+' KB]';}).join('\n');
     debugSent=body.messages.map(m=>'['+m.role+']\n'+said(m.content)).join('\n\n');
     debugShow('nota request, sent '+new Date().toLocaleTimeString()+' ('+body.model+', max_tokens '+body.max_tokens+', temperature '+body.temperature+')',debugSent);
     console.info('nota request',body);
@@ -957,8 +1111,8 @@ async function stream(question,context,onDelta,signal,picture){
   const plain={...body};for(const k of Object.keys(CONFIG.extras||{}))delete plain[k];
   /* a picture the provider or the forward will not take: the question goes
      again without it, as words only */
-  const words={...plain,messages:[body.messages[0],{role:'user',content:text}]};
-  const tries=picture?[body,plain,words]:[body,plain];
+  const words={...plain,messages:[body.messages[0],{role:'user',content:ask(recalled.all)}]};
+  const tries=pictures.length?[body,plain,words]:[body,plain];
   let response=null,error=null;
   /* the proxy is tried first and the provider when it is unreachable or
      absent (a plain file server has no such route, and a proxy without a
@@ -985,7 +1139,7 @@ async function stream(question,context,onDelta,signal,picture){
       if(spentAllowance(response.status,whole)){ error=Object.assign(new Error(LOAD_TEXT),{overloaded:true}); response=null; break; }
       if(/^text\/plain/i.test(response.headers.get('content-type')||''))said=whole.trim().slice(0,140);
       error=new Error(said||(response.status===401||response.status===403?'nota\'s key was refused.':'nota could not answer ('+response.status+').'));
-      if(response.status!==400&&!(response.status===413&&picture)){response=null;break;}
+      if(response.status!==400&&!(response.status===413&&pictures.length)){response=null;break;}
       response=null;
     }
     if(response||!unreachable||error?.overloaded)break;
@@ -1323,13 +1477,17 @@ async function answer(question,where,writer,control){
     const drawings=await readDrawings(where.skip||new Set(),LABEL_WAIT);
     const context=pageRows({...where,diagrams:drawings});
     let picture=null;try{picture=await pagePicture(where,drawings);}catch(e){console.warn('nota: no picture of the page',e);}
+    /* notes elsewhere in the notebook, when the question is about them:
+       pictures for the vision model, words when it is a text model */
+    let memory=null;try{memory=await recall(question,!TEXT_ONLY.test(CONFIG.model));}catch(e){console.warn('nota: could not recall the notes',e);}
+    if(memory)C.status('nota is reading '+(memory.notes.length===1?'"'+memory.notes[0].title+'"':memory.notes.length+' notes')+'.');
     if(writer.aborted||control.signal.aborted)throw new DOMException('Question withdrawn','AbortError');
     await stream(question,context,piece=>{
       if(writer.aborted){control.abort();return;}
       arm();
       if(!text){hideWaiting();if(overloaded())setOverloaded(false);}
       text+=piece;writer.feed(piece);C.status('nota is writing.');receipt.textContent='nota is writing…';
-    },control.signal,picture);
+    },control.signal,picture,memory);
     if(!text.trim())throw Error('nota returned an empty answer. try again.');
     if(!writer.aborted){writer.finish();complete=true;}
   }catch(e){
@@ -1363,7 +1521,7 @@ if(N.recog&&N.recog.selectionUnread){
   };
 }
 
-N.nota={overloaded,isCallStroke,drawings:readDrawings,onTranscript,onTyped,askSelection,parseCall,callLength,drawWaiting,mathMatches,tidy,spell,Writer,get busy(){return busy>0;},get writing(){return queue.length;},config:CONFIG,
+N.nota={overloaded,isCallStroke,recall,drawings:readDrawings,onTranscript,onTyped,askSelection,parseCall,callLength,drawWaiting,mathMatches,tidy,spell,Writer,get busy(){return busy>0;},get writing(){return queue.length;},config:CONFIG,
   /* the page as nota reads it, for the console: N.nota.context() */
   context(where){ where=where||liveWhere(); return pageRows({...where,diagrams:knownDrawings(where.skip)}); }};
 })();
