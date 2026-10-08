@@ -16,7 +16,7 @@
     "test:autocrop": "node tests/cutout-autocrop.mjs",
     "test:slide": "node tests/slide-surface-browser.mjs",
     "deploy": "npm --prefix deploy/cloudflare run deploy",
-    "test:edges": "node tests/storage-edges.mjs && node tests/tutor-edges.mjs && node tests/nota-writing.mjs"
+    "test:edges": "node tests/storage-edges.mjs && node tests/tutor-edges.mjs && node tests/nota-writing.mjs && node tests/nota-tools.mjs && node tests/nota-format.mjs && node tests/ink-tools.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",

@@ -49,6 +49,8 @@
   --red-soft:rgba(208,70,59,.08);
   --red-edge:rgba(208,70,59,.40);
   --red-glow:rgba(208,70,59,.16);
+  /* nota's hand; a colour chosen in settings is set on the root over this */
+  --nota:var(--red);
   --rule:rgba(60,60,67,.16);
   --rule-2:rgba(60,60,67,.08);
   --panel:#FFFFFF;
@@ -122,6 +124,8 @@
   --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 32px -10px rgba(0,0,0,.6);
   --shadow-2:0 2px 6px rgba(0,0,0,.35),0 30px 70px -20px rgba(0,0,0,.7);
 }
+/* white paper: the light palette on a plain white page, whatever the theme */
+:root[data-paper="white"]{--paper:#FFFFFF}
 
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
@@ -177,7 +181,7 @@ input:focus-visible,textarea:focus-visible{outline:none}
 /* The frost diffuses actual content behind the surface. Reflections stay at the
    curved perimeter instead of painting a moving white hotspot across the face.
    The fine grain is fixed, so it never shimmers while writing or scrolling. */
-.glass,#topbar,#pill,#penpop,#dlpop,#selbar,#toast,#save-alert,#askbar,.sheet .box,.tut,#local-status,#offline-status{
+.glass,#topbar,#pill,#penpop,#textpop,#dlpop,#selbar,#toast,#save-alert,#askbar,.sheet .box,.tut,#local-status,#offline-status{
   background-color:var(--glass);
   background-image:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath fill='%23808b9b' opacity='.025' filter='url(%23n)' d='M0 0h128v128H0z'/%3E%3C/svg%3E"),
@@ -188,7 +192,7 @@ input:focus-visible,textarea:focus-visible{outline:none}
 }
 /* A masked hairline follows the real radius, including the pill ends. It sits
    above the fill without intercepting controls or clipping their focus rings. */
-.glass::after,#topbar::after,#pill::after,#penpop::after,#dlpop::after,#selbar::after,#toast::after,#save-alert::after,#askbar::after,.sheet .box::after,.tut::after,#local-status::after,#offline-status::after{
+.glass::after,#topbar::after,#pill::after,#penpop::after,#textpop::after,#dlpop::after,#selbar::after,#toast::after,#save-alert::after,#askbar::after,.sheet .box::after,.tut::after,#local-status::after,#offline-status::after{
   content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;
   pointer-events:none;
   background:linear-gradient(155deg,var(--glass-rim) 0%,var(--glass-rim-soft) 32%,transparent 50%,var(--glass-bounce) 78%,var(--glass-rim-soft) 100%);
@@ -199,13 +203,13 @@ input:focus-visible,textarea:focus-visible{outline:none}
 }
 .sheet .box{position:relative}
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
-  .glass,#topbar,#pill,#penpop,#dlpop,#selbar,#toast,#save-alert,#askbar,.sheet .box,.tut,#local-status,#offline-status{background:var(--panel)}
+  .glass,#topbar,#pill,#penpop,#textpop,#dlpop,#selbar,#toast,#save-alert,#askbar,.sheet .box,.tut,#local-status,#offline-status{background:var(--panel)}
 }
 @media (prefers-reduced-transparency: reduce){
-  .glass,#topbar,#pill,#penpop,#dlpop,#selbar,#toast,#save-alert,#askbar,.sheet .box,.tut,#local-status,#offline-status{
+  .glass,#topbar,#pill,#penpop,#textpop,#dlpop,#selbar,#toast,#save-alert,#askbar,.sheet .box,.tut,#local-status,#offline-status{
     background:var(--panel) !important;-webkit-backdrop-filter:none;backdrop-filter:none;
   }
-  .glass::after,#topbar::after,#pill::after,#penpop::after,#dlpop::after,#selbar::after,#toast::after,#save-alert::after,#askbar::after,.sheet .box::after,.tut::after,#local-status::after,#offline-status::after{display:none}
+  .glass::after,#topbar::after,#pill::after,#penpop::after,#textpop::after,#dlpop::after,#selbar::after,#toast::after,#save-alert::after,#askbar::after,.sheet .box::after,.tut::after,#local-status::after,#offline-status::after{display:none}
   .sheet{-webkit-backdrop-filter:none !important;backdrop-filter:none !important}
 }
 
@@ -418,7 +422,7 @@ body[data-tool="text"]:not([data-image-sel]) .line{pointer-events:auto}
 .line .txt{
   width:100%;min-height:30px;box-sizing:border-box;border:0;background:transparent;padding:3px 2px 2px;
   font:400 16px/1.4 var(--type);letter-spacing:0;overflow:hidden;display:block;white-space:pre-wrap;overflow-wrap:anywhere;min-width:0;
-  border-radius:0;outline:none;cursor:text;
+  border-radius:0;outline:none;cursor:text;color:var(--text-ink,inherit);
 }
 .line .txt:empty::before{content:attr(data-placeholder);color:var(--ink-3);pointer-events:none}
 /* the native caret is hidden and #caret below glides in its place. With a
@@ -452,16 +456,28 @@ body[data-tool="text"]:not([data-image-sel]) .line{pointer-events:auto}
   animation:ghostIn .24s var(--spring);
 }
 .ghost-layer .ghost.accept{animation:ghostSettle .38s var(--spring) forwards}
-/* nota's reply is the tutor's red; while it waits for the first word the
-   line holds three dots that breathe */
-.line.tutor .txt{color:var(--red)}
-.line.tutor.wait .txt{animation:notaWait 1.1s ease-in-out infinite}
-@keyframes notaWait{0%,100%{opacity:.35}50%{opacity:.85}}
+/* nota's reply is the tutor's red. While nota reads, recalls and thinks,
+   and under the reply until its last word, a sheet of paper drawn by hand
+   tips over, curls and comes back: the 41 frames of
+   assets/nota-thinking.png side by side, a mask stepped one frame at a time
+   at 12 a second (the last stop is 41/40 of the way along). nota.js draws
+   the same strip on the page under a written answer. */
+.line.tutor .txt{color:var(--nota)}
+.nota-think,.line.tutor.wait::before{
+  background:var(--nota);
+  -webkit-mask:url(assets/nota-thinking.png) 0 0/4100% 100% no-repeat;mask:url(assets/nota-thinking.png) 0 0/4100% 100% no-repeat;
+  animation:notaThink 3.4167s steps(41) infinite;
+}
+.nota-think{display:inline-block;flex:none;height:1.6em;aspect-ratio:104/81}
+.nota-think[hidden]{display:none}
+.line.tutor.wait .txt{color:transparent}
+.line.tutor.wait::before{content:"";position:absolute;left:-2px;top:1px;height:28px;aspect-ratio:104/81;pointer-events:none}
+@keyframes notaThink{to{-webkit-mask-position:102.5% 0;mask-position:102.5% 0}}
 /* a completed "hey nota," is the machine's blue; the mirror paints the line */
 .line.call .txt{color:transparent}
-.line.call .ghost-layer{color:inherit}
+.line.call .ghost-layer{color:var(--text-ink,inherit)}
 .line.call .ghost-layer .call{color:var(--blue)}
-@media (prefers-reduced-motion:reduce){.line.tutor.wait .txt{animation:none;opacity:.55}}
+@media (prefers-reduced-motion:reduce){.nota-think,.line.tutor.wait::before{animation:none}}
 @keyframes ghostIn{from{opacity:0;transform:translateX(3px)}to{opacity:.72;transform:none}}
 @keyframes ghostSettle{from{opacity:.72}to{opacity:0}}
 /* the caret: one bar for the whole page that slides to wherever you are
@@ -483,7 +499,7 @@ body[data-tool="text"]:not([data-image-sel]) .line{pointer-events:auto}
 #caret-mirror i{display:inline-block;width:0;height:1em;font-style:normal}
 /* focus mode: while you type, the chrome steps back so only the words are
    left; a mouse move, a tap or leaving the line brings it back */
-#topbar,#pill,#penpop,#dlpop,#local-status,#offline-status{transition:opacity .5s var(--spring)}
+#topbar,#pill,#penpop,#textpop,#dlpop,#local-status,#offline-status{transition:opacity .5s var(--spring)}
 body.typing #topbar,body.typing #pill,body.typing #penpop,body.typing #local-status,body.typing #offline-status{opacity:.14;pointer-events:none}
 /* A mouse brings the chrome back as it moves toward it; a finger arrives
    with the tap itself, which was hit-tested before the fade lifted, so the
@@ -597,14 +613,23 @@ body[data-tool="eraser"] #col .chip{pointer-events:none}
 .pill-image:active{transform:scale(.96)}
 body.noicons .pill-image i{display:none}
 /* the pen popover: the same tool buttons, in two rows, floating just above the pill */
-#penpop{
+#penpop,#textpop{
   --tool:42px;--gap:2px;
   position:fixed;z-index:31;display:grid;gap:var(--gap);padding:5px;
   border-radius:var(--r-card);transform-origin:bottom left;
   animation:chipIn .32s var(--pop);
 }
-#penpop[hidden]{display:none}
+#penpop[hidden],#textpop[hidden]{display:none}
 .penpop-row{display:flex;gap:var(--gap)}
+/* a colour of your own: the native picker, behind a rainbow ring */
+.tool.pick{position:relative}
+.tool.pick i{display:block;width:calc(var(--tool) * .46);height:calc(var(--tool) * .46);border-radius:50%;
+  background:conic-gradient(#e5484d,#f5a623,#f2d94e,#46a758,#3e8ed0,#8e4ec6,#e5484d);box-shadow:inset 0 0 0 1px rgba(0,0,0,.1)}
+.tool.pick i::after{content:"";position:absolute;inset:0;margin:auto;width:calc(var(--tool) * .22);height:calc(var(--tool) * .22);border-radius:50%;background:var(--c,var(--panel));box-shadow:0 0 0 1px rgba(0,0,0,.12)}
+.tool.pick input,.colors .pick input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;border:0;padding:0}
+.tool.pick[data-on="true"]{box-shadow:inset 0 0 0 2px var(--graphite)}
+body.noicons .tool.pick i{display:block}
+
 /* kept in the markup for the tray's aria-expanded state, but not shown: the
    pen button itself opens the tray now */
 #pill-more{display:none;
@@ -763,6 +788,15 @@ button.mi:active{transform:scale(.99);background:var(--tint-2)}
 .mi .k{margin-left:auto;font:400 12px var(--ui);color:var(--ink-3);letter-spacing:0;white-space:nowrap}
 /* a segmented control: a sliding graphite thumb inside a tinted track */
 .seg{display:inline-flex;background:var(--tint);border-radius:var(--r-pill);padding:2px;gap:0}
+/* a row of colours in settings: the theme's own first, a picker last */
+.colors{display:inline-flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;margin-left:auto}
+.colors button,.colors .pick{position:relative;width:26px;height:26px;border-radius:50%;background:var(--c);flex:none;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.14);transition:transform .18s var(--pop),box-shadow .15s ease}
+.colors .pick{background:conic-gradient(#e5484d,#f5a623,#f2d94e,#46a758,#3e8ed0,#8e4ec6,#e5484d)}
+.colors .pick::after{content:"";position:absolute;inset:7px;border-radius:50%;background:var(--c,var(--panel));box-shadow:0 0 0 1px rgba(0,0,0,.12);pointer-events:none}
+.colors button:active{transform:scale(.9)}
+.colors [aria-pressed="true"]{box-shadow:0 0 0 2px var(--panel),0 0 0 4px var(--graphite)}
+.colors :focus-visible{outline:2px solid var(--blue);outline-offset:3px}
 .seg button{
   padding:5px 12px;font:500 13px var(--ui);color:var(--ink-2);border-radius:var(--r-pill);
   transition:background-color .2s var(--spring),color .2s ease,box-shadow .2s ease,transform .18s var(--pop);
@@ -938,7 +972,7 @@ body.noicons .tut-ok .fb{display:block}
 }
 @media print{
   body{overflow:visible}
-  #topbar,#pill,#penpop,#dlpop,#ask-dot,#askbar,#toast,#selbar,.tut,.tut-mark,.sheet,
+  #topbar,#pill,#penpop,#textpop,#dlpop,#ask-dot,#askbar,#toast,#selbar,.tut,.tut-mark,.sheet,
   #local-status,#offline-status{display:none !important}
 }
 
@@ -971,7 +1005,7 @@ body.noicons .tut-ok .fb{display:block}
   #status{ font-size:12px }
 
   .tool{ font-size:22px }
-  #pill,#penpop{ --tool:50px; --gap:4px; padding:6px }
+  #pill,#penpop,#textpop{ --tool:50px; --gap:4px; padding:6px }
   #pill-more{ width:30px }
   .tool .fb{ font-size:16px }
 
@@ -1024,7 +1058,7 @@ body.noicons .tut-ok .fb{display:block}
   .sheet.enter .box{transform:translateY(18px) scale(.97)}
   .sheet.leave .box{transform:translateY(10px) scale(.985)}
   #pill{ --tool:52px; --gap:4px; padding:6px 7px }
-  #penpop{ --tool:52px; --gap:4px; padding:6px }
+  #penpop,#textpop{ --tool:52px; --gap:4px; padding:6px }
 }
 @media (pointer:coarse) and (min-width:700px) and (min-height:560px){
   #topbar{left:max(18px,var(--safe-l));right:max(18px,var(--safe-r))}
@@ -1401,7 +1435,7 @@ html[data-motion="off"] .prep-trace::before{transform:scaleX(1);opacity:.55}
 <div id="pill" role="toolbar" aria-label="tools" data-open="false">
   <div id="pill-strip">
     <span id="pill-lens" aria-hidden="true"></span>
-    <button class="tool" data-tool="text" aria-label="type text" aria-pressed="true" aria-keyshortcuts="T" title="text (T)"><i class="ph ph-text-t"></i><span class="fb">T</span></button>
+    <button class="tool" data-tool="text" aria-label="type text" aria-pressed="true" aria-keyshortcuts="T" aria-expanded="false" aria-controls="textpop" title="text (T), tap again for colours"><i class="ph ph-text-t"></i><span class="fb">T</span></button>
     <button class="tool" data-tool="pen" aria-label="pen" aria-pressed="false" aria-keyshortcuts="P" aria-expanded="false" aria-controls="penpop" title="pen (P), tap again for colours"><i class="ph ph-pencil-simple"></i><span class="fb">P</span></button>
     <button class="tool" data-tool="eraser" aria-label="eraser" aria-pressed="false" aria-keyshortcuts="E" title="eraser (E)"><i class="ph ph-eraser"></i><span class="fb">E</span></button>
     <button class="tool" data-tool="select" aria-label="select and move" aria-pressed="false" aria-keyshortcuts="V" title="select, then drag to move (V)"><i class="ph ph-selection"></i><span class="fb">V</span></button>
@@ -1424,11 +1458,25 @@ html[data-motion="off"] .prep-trace::before{transform:scaleX(1);opacity:.55}
     <button class="tool swatch" data-color="#2E8B57" aria-label="ink, green" aria-pressed="false" title="green"><i style="--c:#2E8B57"></i></button>
     <button class="tool swatch" data-color="#E08A1E" aria-label="ink, orange" aria-pressed="false" title="orange"><i style="--c:#E08A1E"></i></button>
     <button class="tool swatch" data-color="#7B4FBF" aria-label="ink, purple" aria-pressed="false" title="purple"><i style="--c:#7B4FBF"></i></button>
+    <label class="tool pick" data-on="false" title="any colour"><i></i><input type="color" id="pen-pick" aria-label="ink, any colour" value="#2F6FB3"></label>
   </div>
   <div class="penpop-row">
     <button class="tool width" data-w="1.5" aria-label="thin line" aria-pressed="false" title="thin"><i style="--d:4px"></i></button>
     <button class="tool width" data-w="2.4" aria-label="medium line" aria-pressed="true" title="medium"><i style="--d:7px"></i></button>
     <button class="tool width" data-w="4" aria-label="thick line" aria-pressed="false" title="thick"><i style="--d:11px"></i></button>
+  </div>
+</div>
+
+<!-- The text tool's popover: a second tap on the text tool opens it, as the pen's does. -->
+<div id="textpop" hidden role="group" aria-label="text colour">
+  <div class="penpop-row">
+    <button class="tool swatch" data-color="" aria-label="text, theme ink" aria-pressed="true" title="theme ink"><i style="--c:var(--graphite)"></i></button>
+    <button class="tool swatch" data-color="#2F6FB3" aria-label="text, blue" aria-pressed="false" title="blue"><i style="--c:#2F6FB3"></i></button>
+    <button class="tool swatch" data-color="#D64541" aria-label="text, red" aria-pressed="false" title="red"><i style="--c:#D64541"></i></button>
+    <button class="tool swatch" data-color="#2E8B57" aria-label="text, green" aria-pressed="false" title="green"><i style="--c:#2E8B57"></i></button>
+    <button class="tool swatch" data-color="#E08A1E" aria-label="text, orange" aria-pressed="false" title="orange"><i style="--c:#E08A1E"></i></button>
+    <button class="tool swatch" data-color="#7B4FBF" aria-label="text, purple" aria-pressed="false" title="purple"><i style="--c:#7B4FBF"></i></button>
+    <label class="tool pick" data-on="false" title="any colour"><i></i><input type="color" id="text-pick" aria-label="text, any colour" value="#2F6FB3"></label>
   </div>
 </div>
 
@@ -1501,7 +1549,7 @@ const S = {
   strokes:[], lines:[], images:[], annos:[],
   clusters:[], nodes:[], textTranscripts:[],
   tool:'text', lastTool:'pen',
-  settings:{ angle:'deg', fractions:false, aiOn:true, theme:'auto', voice:false, recognizer:'ink', touchDraw:true, animations:true },
+  settings:{ angle:'deg', fractions:false, aiOn:true, theme:'auto', voice:false, recognizer:'ink', touchDraw:true, animations:true, paper:'default', textColor:'', notaColor:'' },
   docH:1600, dirty:false, selection:[], imageSelection:null, savedRev:0, remoteRev:0
 };
 
@@ -1527,7 +1575,7 @@ function strokeById(id){
 }
 const reducedMotion = () => { if(S.settings.animations===false) return true; try{ return matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; } };
 
-const APP_PREF_KEYS = ['theme','touchDraw','voice','recognizer','animations'];
+const APP_PREF_KEYS = ['theme','touchDraw','voice','recognizer','animations','paper','textColor','notaColor'];
 function appPrefs(){
   try{ return JSON.parse(localStorage.getItem('notas.prefs')||'{}')||{}; }catch(e){ return {}; }
 }
@@ -2414,7 +2462,8 @@ const colors = { graphite:'#1D1D1F', red:'#C0392B', blue:'#2B5F8E', quiet:'#5B6F
 function refreshColors(){
   const cs = getComputedStyle(document.documentElement);
   const get = (k, fb) => (cs.getPropertyValue(k) || '').trim() || fb;
-  colors.graphite = get('--graphite', colors.graphite); colors.red = get('--red', colors.red);
+  colors.graphite = get('--graphite', colors.graphite); colors.red = get('--nota', get('--red', colors.red));
+  colors.text = get('--text-ink', colors.graphite);
   colors.blue = get('--blue', colors.blue); colors.quiet = get('--blue-quiet', colors.quiet);
   colors.paper = get('--paper', colors.paper);
 }
@@ -2468,7 +2517,7 @@ function drawSegments(ctx, st, from){
   /* nota's hand is still on this stroke: only the points it has reached */
   const end = st._show !== undefined ? Math.min(p.length, st._show*3) : p.length;
   const weight = st.author === 'user' ? USER_INK_WEIGHT : 1;
-  ctx.strokeStyle = (N.nota?.isCallStroke(st.id)?colors.blue:null) || st.color || inkColor(st.author); ctx.lineCap='round'; ctx.lineJoin='round';
+  ctx.strokeStyle = (N.nota?.isAskedStroke?.(st.id)?colors.blue:null) || st.color || inkColor(st.author); ctx.lineCap='round'; ctx.lineJoin='round';
   /* One path per segment meant one stroke() call per point: a page of
      handwriting was thousands of draw calls every scrolled frame, which is
      where a phone's frame rate went. The pressure is already low-pass
@@ -2497,7 +2546,7 @@ function drawStroke(ctx, st){
 }
 function dot(ctx, st){
   const p = st.pts; if(p.length < 3) return;
-  ctx.fillStyle = (N.nota?.isCallStroke(st.id)?colors.blue:null) || st.color || inkColor(st.author);
+  ctx.fillStyle = (N.nota?.isAskedStroke?.(st.id)?colors.blue:null) || st.color || inkColor(st.author);
   const weight = st.author === 'user' ? USER_INK_WEIGHT : 1;
   ctx.beginPath(); ctx.arc(p[0], p[1], st.w*0.6*weight, 0, 6.284); ctx.fill();
 }
@@ -2742,53 +2791,108 @@ const pen = (()=>{
 function setPen(patch){
   Object.assign(pen, patch);
   try{ localStorage.setItem('notas.pen', JSON.stringify(pen)); }catch(e){}
-  document.querySelectorAll('.tool.swatch').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.color === pen.color)));
+  const swatches = [...document.querySelectorAll('#penpop .tool.swatch')];
+  swatches.forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.color === pen.color)));
   document.querySelectorAll('.tool.width').forEach(b=>b.setAttribute('aria-pressed', String(+b.dataset.w === pen.w)));
+  /* a colour none of the swatches has is the picker's */
+  const own = !!pen.color && !swatches.some(b=>b.dataset.color === pen.color), pick = document.querySelector('#penpop .tool.pick');
+  if(pick){
+    pick.dataset.on = String(own);
+    if(own){ pick.style.setProperty('--c', pen.color); const input = pick.querySelector('input'); if(/^#[0-9a-f]{6}$/i.test(pen.color)) input.value = pen.color; }
+    else pick.style.removeProperty('--c');
+  }
 }
+/* The eraser takes whole strokes, or, tapped again (a double tap), only the
+   ink it passes over; tapped again once more it takes whole strokes again.
+   The choice is the device's, like the pen's colour. */
+let eraseMode = (()=>{ try{ return localStorage.getItem('notas.eraser') === 'pixel' ? 'pixel' : 'stroke'; }catch(e){ return 'stroke'; } })();
+function setEraseMode(mode, announce){
+  eraseMode = mode === 'pixel' ? 'pixel' : 'stroke';
+  try{ localStorage.setItem('notas.eraser', eraseMode); }catch(e){}
+  document.body.dataset.erase = eraseMode;
+  const b = document.querySelector('.tool[data-tool="eraser"]');
+  if(b){
+    const pixel = eraseMode === 'pixel', said = pixel ? 'pixel eraser' : 'stroke eraser';
+    b.setAttribute('aria-label', said); b.title = said+' (E), tap again to switch';
+    /* a round tip for the pixel eraser, the block for the stroke eraser */
+    const icon = b.querySelector('i'), fb = b.querySelector('.fb');
+    if(icon) icon.className = 'ph '+(pixel ? 'ph-circle-dashed' : 'ph-eraser');
+    if(fb) fb.textContent = pixel ? 'e' : 'E';
+  }
+  if(announce) C.toast(eraseMode === 'pixel' ? 'pixel eraser: rubs out only what it passes over.' : 'stroke eraser: takes whole strokes.');
+}
+setEraseMode(eraseMode);
 /* Hold the endpoint still to tidy deliberate geometric strokes. */
 function tidyShape(pts){
-  const p=[];for(let i=0;i<pts.length;i+=3)p.push([pts[i],pts[i+1]]);
-  if(p.length<6)return null;
+  let p=[];for(let i=0;i<pts.length;i+=3)p.push([pts[i],pts[i+1]]);
+  if(p.length<5)return null;
   const distance=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]);
-  const xs=p.map(v=>v[0]),ys=p.map(v=>v[1]);
-  const l=Math.min(...xs),r=Math.max(...xs),t=Math.min(...ys),b=Math.max(...ys),size=Math.hypot(r-l,b-t);
-  if(size<28)return null;
+  const box=q=>{const xs=q.map(v=>v[0]),ys=q.map(v=>v[1]);return [Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)];};
+  let [l,t,r,b]=box(p);const size=Math.hypot(r-l,b-t);
+  if(size<24)return null;
   const segment=(v,a,b)=>{const dx=b[0]-a[0],dy=b[1]-a[1],q=Math.max(0,Math.min(1,((v[0]-a[0])*dx+(v[1]-a[1])*dy)/(dx*dx+dy*dy||1)));return distance(v,[a[0]+q*dx,a[1]+q*dy]);};
-  const path=p.slice(1).reduce((s,v,i)=>s+distance(v,p[i]),0),end=distance(p[0],p.at(-1));
-  let out=null;
-  if(end>size*.8&&path<end*1.12&&p.every(v=>segment(v,p[0],p.at(-1))<size*.045))out=[p[0],p.at(-1)];
-  else if(end<size*.18&&r-l>20&&b-t>20){
-    const simplify=a=>{let max=0,at=0;for(let i=1;i<a.length-1;i++){const d=segment(a[i],a[0],a.at(-1));if(d>max){max=d;at=i;}}return max>size*.045?[...simplify(a.slice(0,at+1)).slice(0,-1),...simplify(a.slice(at))]:[a[0],a.at(-1)];};
-    let far=1;for(let i=2;i<p.length;i++)if(distance(p[0],p[i])>distance(p[0],p[far]))far=i;
-    let corners=[...simplify(p.slice(0,far+1)).slice(0,-1),...simplify([...p.slice(far),p[0]]).slice(0,-1)];
-    for(let i=corners.length-1;i>=0&&corners.length>3;i--)if(segment(corners[i],corners[(i+corners.length-1)%corners.length],corners[(i+1)%corners.length])<size*.06)corners.splice(i,1);
-    if((corners.length===3||corners.length===4)&&p.every(v=>Math.min(...corners.map((a,i)=>segment(v,a,corners[(i+1)%corners.length])))<size*.055)){
+  const lengthOf=q=>q.slice(1).reduce((s,v,i)=>s+distance(v,q[i]),0);
+  const path=lengthOf(p),end=distance(p[0],p.at(-1));
+  /* a line: the ends far apart and every point near the line between them */
+  if(end>size*.7&&path<end*1.45){
+    const off=p.map(v=>segment(v,p[0],p.at(-1)));
+    if(Math.max(...off)<size*.15&&off.reduce((s,v)=>s+v,0)/off.length<size*.05)return [p[0],p.at(-1)].flatMap(v=>[v[0],v[1],.5]);
+  }
+  /* a closed shape: the pen comes back near where it started. A shape
+     drawn past its start is cut where it came back closest, so the
+     overshoot is not read as another side */
+  let close=p.length-1,closest=end;
+  for(let i=Math.floor(p.length*.6);i<p.length;i++){const d=distance(p[0],p[i]);if(d<closest){closest=d;close=i;}}
+  if(closest>size*.36||lengthOf(p.slice(0,close+1))<size*1.5)return null;
+  p=p.slice(0,close+1);[l,t,r,b]=box(p);
+  if(r-l<12||b-t<12)return null;
+  const loop=lengthOf(p)+distance(p[0],p.at(-1));
+  /* the ellipse through the shape's box, and how far the ink strays from it */
+  const cx=(l+r)/2,cy=(t+b)/2,rx=(r-l)/2,ry=(b-t)/2;
+  const radial=p.map(v=>Math.abs(Math.hypot((v[0]-cx)/rx,(v[1]-cy)/ry)-1));
+  const roundErr=radial.reduce((s,v)=>s+v,0)/radial.length;
+  const perimeter=Math.PI*(3*(rx+ry)-Math.sqrt((3*rx+ry)*(rx+3*ry)));
+  const round=roundErr<.13&&Math.max(...radial)<.42&&loop>perimeter*.75&&loop<perimeter*1.3;
+  const ellipse=()=>Array.from({length:65},(_,i)=>[cx+rx*Math.cos(i*Math.PI/32),cy+ry*Math.sin(i*Math.PI/32)]).flatMap(v=>[v[0],v[1],.5]);
+  if(round&&roundErr<.06)return ellipse();
+  /* corners: split where the ink leaves a straight run, merge the ones
+     that turn out to sit on a straight side */
+  const simplify=a=>{let max=0,at=0;for(let i=1;i<a.length-1;i++){const d=segment(a[i],a[0],a.at(-1));if(d>max){max=d;at=i;}}return max>size*.06?[...simplify(a.slice(0,at+1)).slice(0,-1),...simplify(a.slice(at))]:[a[0],a.at(-1)];};
+  let far=1;for(let i=2;i<p.length;i++)if(distance(p[0],p[i])>distance(p[0],p[far]))far=i;
+  let corners=[...simplify(p.slice(0,far+1)).slice(0,-1),...simplify([...p.slice(far),p[0]]).slice(0,-1)];
+  for(let changed=true;changed&&corners.length>3;){
+    changed=false;
+    /* the flattest corner first, while one is flat enough to drop */
+    let flat=-1,least=Infinity;
+    corners.forEach((c,i)=>{const d=segment(c,corners[(i+corners.length-1)%corners.length],corners[(i+1)%corners.length]);if(d<least){least=d;flat=i;}});
+    if(least<size*.09){corners.splice(flat,1);changed=true;}
+  }
+  /* corners closer together than a tenth of the shape are one corner */
+  for(let i=corners.length-1;i>=0&&corners.length>3;i--)if(distance(corners[i],corners[(i+1)%corners.length])<size*.1)corners.splice(i,1);
+  if(corners.length===3||corners.length===4){
+    const edgeErr=p.map(v=>Math.min(...corners.map((a,i)=>segment(v,a,corners[(i+1)%corners.length]))));
+    const polyErr=edgeErr.reduce((s,v)=>s+v,0)/edgeErr.length/size;
+    if(Math.max(...edgeErr)<size*.13&&polyErr<.035&&!(round&&roundErr*.35<polyErr)){
       if(corners.length===4){
-        // Fit a rotated rectangle using the first edge as its local axis.
-        const a=corners[0],z=corners[1],len=distance(a,z),ux=(z[0]-a[0])/len,uy=(z[1]-a[1])/len;
+        // Fit a rotated rectangle using the longest edge as its local axis.
+        let e=0;for(let i=1;i<4;i++)if(distance(corners[i],corners[(i+1)%4])>distance(corners[e],corners[(e+1)%4]))e=i;
+        const a=corners[e],z=corners[(e+1)%4],len=distance(a,z),ux=(z[0]-a[0])/len,uy=(z[1]-a[1])/len;
         const uv=corners.map(v=>[v[0]*ux+v[1]*uy,-v[0]*uy+v[1]*ux]);
         const x0=Math.min(...uv.map(v=>v[0])),x1=Math.max(...uv.map(v=>v[0])),y0=Math.min(...uv.map(v=>v[1])),y1=Math.max(...uv.map(v=>v[1]));
         const rect=[[x0,y0],[x1,y0],[x1,y1],[x0,y1]].map(([x,y])=>[x*ux-y*uy,x*uy+y*ux]);
-        if(!corners.every(v=>Math.min(...rect.map(q=>distance(v,q)))<size*.12))return null;
-        corners=rect;
+        /* a box drawn a little crooked is squared; a real trapezium or kite is kept as drawn */
+        if(corners.every(v=>Math.min(...rect.map(q=>distance(v,q)))<size*.16))corners=rect;
       }
-      out=[...corners,corners[0]];
-    }else{
-      const cx=(l+r)/2,cy=(t+b)/2,rx=(r-l)/2,ry=(b-t)/2;
-      const radial=p.map(v=>Math.hypot((v[0]-cx)/rx,(v[1]-cy)/ry));
-      const perimeter=Math.PI*(3*(rx+ry)-Math.sqrt((3*rx+ry)*(rx+3*ry)));
-      if(radial.every(v=>Math.abs(v-1)<.22)&&path>perimeter*.8&&path<perimeter*1.2){
-        out=Array.from({length:65},(_,i)=>[cx+rx*Math.cos(i*Math.PI/32),cy+ry*Math.sin(i*Math.PI/32)]);
-      }
+      return [...corners,corners[0]].flatMap(v=>[v[0],v[1],.5]);
     }
   }
-  return out?.flatMap(v=>[v[0],v[1],.5])||null;
+  return round?ellipse():null;
 }
 let shapeTimer=0,shapeAnchor=null,shapeOriginal=null;
 function resetShapeHold(){clearTimeout(shapeTimer);shapeTimer=0;shapeAnchor=null;shapeOriginal=null;}
 function holdShape(ev){
   if(!cur||cur.erase||tapChip)return;
-  if(shapeAnchor&&Math.hypot(ev.clientX-shapeAnchor.x,ev.clientY-shapeAnchor.y)<6)return;
+  if(shapeAnchor&&Math.hypot(ev.clientX-shapeAnchor.x,ev.clientY-shapeAnchor.y)<9)return;
   clearTimeout(shapeTimer);
   if(shapeOriginal){cur.pts=shapeOriginal.pts;cur.times=shapeOriginal.times;shapeOriginal=null;cur.drawn=0;clearLive();liveFrame();}
   shapeAnchor={x:ev.clientX,y:ev.clientY};
@@ -2799,7 +2903,7 @@ function holdShape(ev){
     shapeOriginal={pts:cur.pts,times:cur.times};cur.pts=corrected;
     const duration=cur.times.at(-1)||0;cur.times=corrected.filter((_,i)=>i%3===0).map((_,i)=>duration*i/(corrected.length/3-1));
     cur.drawn=0;clearLive();liveFrame();drawLive();
-  },650);
+  },500);
 }
 
 function beginStroke(ev, tool){
@@ -2808,6 +2912,7 @@ function beginStroke(ev, tool){
      should still cover about a fingertip */
   cur = { id:C.uid(), author:'user', tool:'pen', w:pen.w, pts:[], times:[], t0:inkNow(), _eventT0:Number(ev.timeStamp), erase:(tool==='eraser'),
           eraseR:(ERASE_R[kindOf(ev)] || 9)/M.zoom, drawn:0 };
+  if(cur.erase && eraseMode === 'pixel') cur.pixel = true;
   if(pen.color) cur.color = pen.color;
   lastRaw = null;
   clearLive(); liveFrame();
@@ -2916,9 +3021,18 @@ function eraseAlong(st){
     for(let j=3;j<p.length;j+=3)if(segDist(x,y,p[j-3],p[j-2],p[j],p[j+1])<=r)return true;
     return false;
   };
+  /* the pixel eraser cuts a stroke where it passes and keeps the pieces
+     either side, each a stroke of its own */
+  const cut=new Map();
   for(const stroke of before){
     const b=stroke.bbox,r=radius+stroke.w/2;
     if((stroke.author!=='user'&&stroke.author!=='ai')||b[2]<bounds[0]-r||b[0]>bounds[2]+r||b[3]<bounds[1]-r||b[1]>bounds[3]+r){afterStrokes.push(stroke);continue;}
+    if(st.pixel){
+      const pieces=cutStroke(stroke,(x,y)=>touched(x,y,radius+stroke.w*0.35));
+      if(!pieces){afterStrokes.push(stroke);continue;}
+      cut.set(stroke.id,pieces);afterStrokes.push(...pieces);
+      continue;
+    }
     // Contact anywhere on a stroke removes that whole handwritten stroke.
     const q=stroke.pts;let hit=touched(q[0],q[1],r);
     for(let i=3;i<q.length&&!hit;i+=3){
@@ -2937,10 +3051,56 @@ function eraseAlong(st){
      is then, instead of the whole page as it was, which took away anything
      drawn since (someone else's ink, in a shared note) */
   const kept=new Set(afterStrokes),gone=before.filter(s=>!kept.has(s)),goneIds=new Set(gone.map(s=>s.id));
+  const pieceIds=new Set([...cut.values()].flat().map(s=>s.id));
   C.act('erase',
-    ()=>{ S.strokes=S.strokes.filter(s=>!goneIds.has(s.id));for(const e of edits){const ln=lineOf(e);if(ln&&((ln.text||'')===e.before||(ln.text||'')===e.after)){ln.text=e.after;ln.suppressAnswer=e.after;}}N.text.render(); },
-    ()=>{ S.strokes=putBack(S.strokes,gone,before);for(const e of edits){const ln=lineOf(e);if(ln&&(ln.text||'')===e.after)ln.text=e.before;}N.text.render(); });
+    ()=>{
+      /* each cut stroke's pieces stand where it stood in the page's order */
+      const out=[];for(const s of S.strokes){ if(cut.has(s.id))out.push(...cut.get(s.id)); else if(!goneIds.has(s.id)&&!pieceIds.has(s.id))out.push(s); }
+      S.strokes=out;
+      for(const e of edits){const ln=lineOf(e);if(ln&&((ln.text||'')===e.before||(ln.text||'')===e.after)){ln.text=e.after;ln.suppressAnswer=e.after;}}N.text.render();
+    },
+    ()=>{ S.strokes=putBack(S.strokes.filter(s=>!pieceIds.has(s.id)),gone,before);for(const e of edits){const ln=lineOf(e);if(ln&&(ln.text||'')===e.after)ln.text=e.before;}N.text.render(); });
   after(true);
+}
+/* A stroke with the part the eraser touched taken out: the pieces left, each
+   with its own id, or null when the eraser missed it. The stroke is walked
+   at about a pixel a step so a fast, sparse line is cut where it was
+   touched and not at its nearest recorded points. */
+function cutStroke(stroke,touched){
+  const p=stroke.pts,times=Array.isArray(stroke.times)&&stroke.times.length===p.length/3?stroke.times:null;
+  const walk=[];   /* x, y, pressure, time, erased */
+  const push=(x,y,pr,t)=>walk.push([x,y,pr,t,touched(x,y)]);
+  push(p[0],p[1],p[2],times?times[0]:0);
+  for(let i=3;i<p.length;i+=3){
+    const n=Math.max(1,Math.ceil(Math.hypot(p[i]-p[i-3],p[i+1]-p[i-2])/1.2));
+    for(let k=1;k<=n;k++){
+      const f=k/n;
+      push(p[i-3]+(p[i]-p[i-3])*f,p[i-2]+(p[i+1]-p[i-2])*f,p[i-1]+(p[i+2]-p[i-1])*f,times?times[i/3-1]+(times[i/3]-times[i/3-1])*f:0);
+    }
+  }
+  if(!walk.some(v=>v[4]))return null;
+  const runs=[];let run=[];
+  for(const v of walk){ if(v[4]){ if(run.length)runs.push(run); run=[]; } else run.push(v); }
+  if(run.length)runs.push(run);
+  const pieces=[];
+  for(const r of runs){
+    let len=0;for(let i=1;i<r.length;i++)len+=Math.hypot(r[i][0]-r[i-1][0],r[i][1]-r[i-1][1]);
+    if(r.length<2||len<Math.max(1.5,stroke.w*0.6))continue;
+    /* the walk's in-between points go again where the line is straight */
+    const kept=[r[0]];
+    for(let i=1;i<r.length-1;i++){
+      const a=kept[kept.length-1],b=r[i],c=r[i+1];
+      const cross=Math.abs((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]));
+      if(cross>0.6||Math.hypot(b[0]-a[0],b[1]-a[1])>6)kept.push(b);
+    }
+    kept.push(r[r.length-1]);
+    const {id,pts,times:_t,bbox,drawn,_show,quickGroup,quickCount,quickMath,...rest}=stroke;
+    const piece={...rest,id:C.uid(),pts:kept.flatMap(v=>[v[0],v[1],v[2]]),bbox:null};
+    if(times)piece.times=kept.map(v=>v[3]);
+    piece.bbox=bboxOf(piece.pts);
+    pieces.push(piece);
+  }
+  return pieces;
 }
 
 /* ---- the ink clock ----
@@ -2971,6 +3131,7 @@ function setTool(t){
   document.querySelectorAll('.tool[data-tool]').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.tool===t)));
   if(t !== 'select') clearSelection();
   if(t !== 'pen') setPenPop(false);
+  if(t !== 'text') setTextPop(false);
   /* picking the text tool does not grab a line: the caret lands where the
      next tap says, or stays wherever it already was */
 }
@@ -2992,6 +3153,36 @@ function setPenPop(open){
   if(open) placePenPop();
 }
 document.addEventListener('pointerdown', e=>{ if(penPopOpen() && !penPop.contains(e.target) && !penBtn.contains(e.target)) setPenPop(false); }, true);
+/* ---- the text popover: the colour of typed text, as the pen's holds the ink's ---- */
+const textPop = $('#textpop'), textBtn = document.querySelector('.tool[data-tool="text"]');
+function textPopOpen(){ return !textPop.hidden; }
+function placeTextPop(){
+  const b = textBtn.getBoundingClientRect(), p = $('#pill').getBoundingClientRect(), w = textPop.offsetWidth;
+  textPop.style.bottom = Math.round(innerHeight - p.top + 10)+'px';
+  textPop.style.left = Math.round(Math.max(p.left, Math.min(innerWidth - w - 8, b.left + b.width/2 - w/2)))+'px';
+}
+function markTextColor(){
+  const v = (S.settings.textColor || '').toLowerCase(), swatches = [...textPop.querySelectorAll('.tool.swatch')];
+  swatches.forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.color.toLowerCase() === v)));
+  const own = !!v && !swatches.some(b=>b.dataset.color.toLowerCase() === v), pick = textPop.querySelector('.tool.pick');
+  pick.dataset.on = String(own);
+  if(own){ pick.style.setProperty('--c', v); pick.querySelector('input').value = v; } else pick.style.removeProperty('--c');
+}
+function setTextPop(open){
+  if(textPopOpen() === open) return;
+  textPop.hidden = !open;
+  textBtn.setAttribute('aria-expanded', String(open));
+  if(open){ markTextColor(); placeTextPop(); }
+}
+/* the same setting the menu's text colour row holds: this device's */
+function setTextColor(v, save){
+  S.settings.textColor = /^#[0-9a-f]{6}$/i.test(v || '') ? v : '';
+  N.ui && N.ui.applyTheme && N.ui.applyTheme();
+  markTextColor();
+  if(save) C.savePrefs();
+}
+document.addEventListener('pointerdown', e=>{ if(textPopOpen() && !textPop.contains(e.target) && !textBtn.contains(e.target)) setTextPop(false); }, true);
+addEventListener('resize', ()=>{ if(textPopOpen()) placeTextPop(); });
 addEventListener('resize', ()=>{ if(penPopOpen()) placePenPop(); });
 
 /* ---- selection ---- */
@@ -4594,13 +4785,21 @@ function isTyping(e){
 document.querySelectorAll('.tool[data-tool]').forEach(b=>b.addEventListener('click', ()=>{
   const t = b.dataset.tool, again = S.tool === t;
   setTool(t);
+  if(t === 'eraser' && again) setEraseMode(eraseMode === 'pixel' ? 'stroke' : 'pixel', true);
+  if(t === 'text' && again) setTextPop(true);
   if(t !== 'pen'){ setPillOpen(false); return; }
   if(N.ui && !N.ui.penNotice()) return;
   if(again) setPenPop(true);
 }));
 /* picking a colour or a width means you want to draw with it */
-document.querySelectorAll('.tool.swatch').forEach(b=>b.addEventListener('click', ()=>{ setPen({color:b.dataset.color}); setTool('pen'); N.ui && N.ui.penNotice(); }));
+document.querySelectorAll('#penpop .tool.swatch').forEach(b=>b.addEventListener('click', ()=>{ setPen({color:b.dataset.color}); setTool('pen'); N.ui && N.ui.penNotice(); }));
 document.querySelectorAll('.tool.width').forEach(b=>b.addEventListener('click', ()=>{ setPen({w:+b.dataset.w}); setTool('pen'); N.ui && N.ui.penNotice(); }));
+/* any colour: the picker's own value, chosen live as it is dragged */
+$('#pen-pick').addEventListener('input', e=>{ setPen({color:e.target.value}); setTool('pen'); });
+$('#pen-pick').addEventListener('change', ()=>{ N.ui && N.ui.penNotice(); });
+textPop.querySelectorAll('.tool.swatch').forEach(b=>b.addEventListener('click', ()=>setTextColor(b.dataset.color, true)));
+$('#text-pick').addEventListener('input', e=>setTextColor(e.target.value, false));
+$('#text-pick').addEventListener('change', e=>setTextColor(e.target.value, true));
 setPen({});
 
 /* ---- the pill tray: swipe left or scroll down to open, back to close ----
@@ -4660,7 +4859,7 @@ pill.addEventListener('wheel', ev=>{
 }, { passive:false });
 pill.addEventListener('keydown', ev=>{ if(ev.key === 'Escape' && pillOpen()){ setPillOpen(false); moreBtn.focus(); } });
 
-N.ink = { render, renderAI, pasteCut, resize, finishInput, setTool, setPen, pen, setPillOpen, setPenPop, toWorld, viewOrigin, bboxOf, hitStroke, drawStroke,
+N.ink = { render, renderAI, pasteCut, resize, finishInput, setTool, setPen, pen, setPillOpen, setPenPop, setTextPop, setTextColor, toWorld, viewOrigin, bboxOf, hitStroke, drawStroke,
           clearSelection, showSelBar, inkColor, colors, refreshColors, isTyping, after, flush, selectImage, nudgeImage, resizeImage, deleteImage, straightenImage, removeBackground, undoBackground, prefetchCutout, startCrop, applyCrop, cancelCrop, cropping:()=>cropping&&{...cropping}, frameOf, frameHandles,
           copySelection, duplicateSelection, deleteSelection, pasteInk, readClip, clipMarker, selectAll, imageAt, pickImage,
           now:inkNow, drawing:()=>!!cur, peerShift, drag:()=>moving?{dx:moving.dx,dy:moving.dy}:null,
@@ -5096,10 +5295,15 @@ function closeUp(gone){
 function notaReply(id){
   const ln=byId(id);if(!ln)return null;
   const top=ln.y+Math.max(C.LINE_H,ln.h||C.LINE_H);
-  let rows=['…'],ids=[C.uid()],waiting=true,frozen=false;
+  let rows=['…'],ids=[C.uid()],waiting=true,frozen=false,finished=false;
+  /* while the reply is still coming, a waiting line stays under its last
+     line, the paper turning there; done() takes it away */
+  let tail=null;
+  const tailLine=()=>{ const t=tail&&byId(tail); return t&&t.tutor&&t.wait?t:null; };
+  const dropTail=()=>{ const t=tailLine(); tail=null; return t?closeUp([t]):false; };
   /* undo takes out the reply's red lines and closes the gap; it used to put
      back a copy of the whole page from before the question was answered */
-  const takeOut=()=>{ if(closeUp(ids.map(byId).filter(l=>l&&l.tutor))){render();queue();} };
+  const takeOut=()=>{ if(closeUp([...ids.map(byId),tailLine()].filter(l=>l&&l.tutor))){render();queue();} };
   const putIn=()=>{
     if(ids.some(i=>byId(i)))return;
     const list=rows.map((t,i)=>({id:ids[i],y:top+i*C.LINE_H,text:t,h:C.LINE_H,tutor:true,...(waiting?{wait:true}:{})}));
@@ -5121,7 +5325,7 @@ function notaReply(id){
        the question used to delete it along with the old answer. */
     reset(){
       const l=byId(ids[0]);if(!l||!l.tutor)return false;
-      rows=['…'];waiting=true;frozen=false;l.text=rows[0];l.wait=true;
+      dropTail();rows=['…'];waiting=true;frozen=false;finished=false;l.text=rows[0];l.wait=true;
       for(const i of ids.slice(1)){const g=byId(i);if(g&&g.tutor){S.lines=S.lines.filter(x=>x!==g);for(const o of S.lines)if(o.y>g.y)o.y-=Math.max(C.LINE_H,g.h||C.LINE_H);}}
       ids=ids.slice(0,1);render();queue();C.markDirty();return true;
     },
@@ -5146,9 +5350,28 @@ function notaReply(id){
         if(l.text!==next[i])l.text=next[i];
         delete l.wait;prev=l;
       }
-      rows=next;render();fit();queue();C.markDirty();return true;
+      rows=next;
+      if(!finished&&!frozen){
+        const t=tail&&byId(tail);
+        /* the student typed into the waiting line: it is theirs, and the
+           reply stops where it is */
+        if(t&&!t.tutor){tail=null;frozen=true;}
+        else if(!t){
+          const y=prev.y+Math.max(C.LINE_H,prev.h||C.LINE_H);
+          for(const o of S.lines)if(o.y>=y)o.y+=C.LINE_H;
+          tail=C.uid();S.lines.push({id:tail,y,text:'…',h:C.LINE_H,tutor:true,wait:true});
+        }
+      }
+      render();fit();queue();C.markDirty();return true;
+    },
+    /* the last word is in */
+    done(){
+      if(finished)return;
+      finished=true;
+      if(dropTail()){render();queue();C.markDirty();}
     },
     remove(){
+      dropTail();
       closeUp(ids.map(byId).filter(l=>l?.tutor));
       if(C.Undo.back[C.Undo.back.length-1]===entry){C.Undo.back.pop();C.paintUndo();}
       render();queue();C.markDirty();
@@ -6926,7 +7149,7 @@ const sc = $('#scroller');
 /* ---- overlays ---- */
 let sheet = null;
 let sheetReturnFocus = null;
-const inertTargets=['#topbar','#scroller','#pill','#penpop','#askbar','#ask-dot','#offline-status','#local-status','#selbar','#library'];
+const inertTargets=['#topbar','#scroller','#pill','#penpop','#textpop','#askbar','#ask-dot','#offline-status','#local-status','#selbar','#library'];
 function setMainInert(on){
   /* a panel closing over the notes page or drawer leaves the page behind
      them as it found it: still out of reach */
@@ -7345,6 +7568,15 @@ quickMenu.addEventListener('click',e=>{
   }
   sc.scrollTop=Math.max(0,y*M.zoom- sc.clientHeight*.45);C.save();
 });
+/* a settings row of colours: the theme's own first, a picker for any other last */
+function colorRow(label, id, value, choices){
+  const known = choices.some(c=>c[0].toLowerCase() === (value||'').toLowerCase());
+  const own = !!value && !known;
+  return '<div class="mi"><span>'+esc(label)+'</span><span class="colors" id="'+id+'" role="group" aria-label="'+esc(label)+'">' +
+    choices.map(([v,name,c])=>'<button type="button" data-v="'+v+'" aria-label="'+esc(name)+'" title="'+esc(name)+'" aria-pressed="'+(known && v.toLowerCase() === (value||'').toLowerCase())+'" style="--c:'+c+'"></button>').join('') +
+    '<label class="pick" title="any colour"'+(own?' aria-pressed="true" style="--c:'+value+'"':'')+'><input type="color" aria-label="'+esc(label)+', any colour" value="'+(own?value:'#3670b2')+'"></label>' +
+    '</span></div>';
+}
 function menuSheet(){
   const box = openSheet(
     '<h2>menu</h2>' +
@@ -7373,6 +7605,10 @@ function menuSheet(){
       '<button data-v="auto" aria-pressed="'+(S.settings.theme==='auto')+'">auto</button>' +
       '<button data-v="light" aria-pressed="'+(S.settings.theme==='light')+'">light</button>' +
       '<button data-v="dark" aria-pressed="'+(S.settings.theme==='dark')+'">dark</button></span></span></div>' +
+    '<div class="mi"><span>paper</span><span style="margin-left:auto"><span class="seg" id="seg-paper" role="group" aria-label="paper">' +
+      '<button data-v="default" aria-pressed="'+(S.settings.paper!=='white')+'">theme</button>' +
+      '<button data-v="white" aria-pressed="'+(S.settings.paper==='white')+'">white</button></span></span></div>' +
+    colorRow('nota\'s handwriting', 'nota-colour', S.settings.notaColor, [['','nota red','var(--red)'],['#2F6FB3','blue','#2F6FB3'],['#2E8B57','green','#2E8B57'],['#7B4FBF','purple','#7B4FBF'],['#E08A1E','orange','#E08A1E'],['#1C1C1E','black','#1C1C1E']]) +
     '<div class="mi"><span>read handwriting</span><span style="margin-left:auto"><span class="seg" id="seg-ai" role="group" aria-label="read handwriting">' +
       '<button data-v="1" aria-pressed="'+(S.settings.aiOn)+'">on</button>' +
       '<button data-v="0" aria-pressed="'+(!S.settings.aiOn)+'">off</button></span></span></div>' +
@@ -7381,7 +7617,7 @@ function menuSheet(){
       '<button data-v="0" aria-pressed="'+(S.settings.touchDraw===false)+'">pen only</button></span></span></div>' +
     '<button class="mi" id="refresh-reading"><i class="ph ph-arrows-clockwise"></i>refresh handwriting models<span class="k">re-read the page</span></button>' +
     '<button class="mi" id="refresh-site"><i class="ph ph-arrow-circle-up"></i>update<span class="k">fetch the latest app</span></button>' +
-    '<div class="sheet-notes"><p>draw with decides what a single finger does. with pen only, a finger scrolls and a resting hand cannot mark the page. it only takes effect once a pen has been used on this device, so it can never leave you unable to draw.</p>' +
+    '<div class="sheet-notes"><p>white paper keeps the light theme\'s ink, so the page reads the same printed or on screen. the text tool, tapped twice, picks the colour of typed text; nota writes its answers in its own colour.</p><p>draw with decides what a single finger does. with pen only, a finger scrolls and a resting hand cannot mark the page. it only takes effect once a pen has been used on this device, so it can never leave you unable to draw.</p>' +
       '<p>handwriting is read on this device. end an expression with an equals sign for an automatic answer, written beside it. the model downloads once and works offline after that.</p>' +
       '<p>a local text recogniser powers handwriting search and helps keep variable names. it never changes your ink.</p>' +
       '<p>maths hints use local rules for arithmetic and linear equations.</p></div>' +
@@ -7402,6 +7638,23 @@ function menuSheet(){
   seg('seg-frac',  v=>{ S.settings.fractions = v==='1'; N.mathcore.run(); C.markDirty(); });
   seg('seg-motion',v=>{S.settings.animations=v==='1';document.documentElement.dataset.motion=S.settings.animations?'on':'off';if(!S.settings.animations)document.getAnimations().forEach(a=>a.cancel());C.savePrefs();});
   seg('seg-theme', v=>{ S.settings.theme = v; applyTheme(); C.savePrefs(); });
+  seg('seg-paper', v=>{ S.settings.paper = v === 'white' ? 'white' : 'default'; applyTheme(); C.savePrefs(); });
+  /* a colour row sets its setting from a swatch or, live, from the picker */
+  const colours = (id, key)=>{
+    const row = box.querySelector('#'+id), pick = row.querySelector('.pick');
+    const mark = v=>{
+      let hit = false;
+      row.querySelectorAll('button').forEach(b=>{ const on = b.dataset.v.toLowerCase() === v.toLowerCase(); hit = hit || on; b.setAttribute('aria-pressed', String(on)); });
+      if(!hit && v){ pick.setAttribute('aria-pressed','true'); pick.style.setProperty('--c', v); }
+      else { pick.removeAttribute('aria-pressed'); pick.style.removeProperty('--c'); }
+    };
+    const set = v=>{ S.settings[key] = cssColor(v); mark(S.settings[key]); applyTheme(); };
+    row.querySelectorAll('button').forEach(b=>b.onclick = ()=>{ set(b.dataset.v); C.savePrefs(); });
+    const input = pick.querySelector('input');
+    input.addEventListener('input', ()=>set(input.value));
+    input.addEventListener('change', ()=>{ set(input.value); C.savePrefs(); });
+  };
+  colours('nota-colour', 'notaColor');
   seg('seg-ai',    v=>{ S.settings.aiOn = v==='1'; C.markDirty(); N.ai.toggle(); dlSyncReaders(); });
   /* the choice is its own confirmation: the pressed segment says what is
      on, and the sheet's notes say what it means, so no toast repeats it */
@@ -7589,9 +7842,8 @@ async function renderExport(opts={}){
     }catch(e){}
   }
   for(const st of S.strokes) N.ink.drawStroke(x, st);
-  x.fillStyle = cs.getPropertyValue('--graphite').trim();
   x.font = '400 16px '+((getComputedStyle(document.documentElement).getPropertyValue('--type')||'').trim()||'ui-monospace, monospace'); x.textBaseline = 'top';
-  for(const l of S.lines) if(l.text) drawWrapped(x,l.text,2,l.y+3,M.contentW-4,22.4);
+  for(const l of S.lines) if(l.text){ x.fillStyle = l.tutor ? N.ink.colors.red : N.ink.colors.text; drawWrapped(x,l.text,2,l.y+3,M.contentW-4,22.4); }
   x.fillStyle = cs.getPropertyValue('--blue').trim();
   x.font = '600 21px "Caveat","Segoe Script",system-ui,sans-serif';
   x.textBaseline='alphabetic';
@@ -8103,10 +8355,18 @@ $('#ask-spk').onclick = ()=>{
 };
 
 /* ---- theme ---- */
+/* a colour from settings, or '' for the theme's own */
+function cssColor(v){ return typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : ''; }
 function applyTheme(){
-  const t = S.settings.theme;
-  if(t === 'auto') document.documentElement.removeAttribute('data-theme');
-  else document.documentElement.setAttribute('data-theme', t);
+  const root = document.documentElement;
+  /* white paper is the light palette on white: graphite ink stays dark on it */
+  const white = S.settings.paper === 'white', t = white ? 'light' : S.settings.theme;
+  if(t === 'auto') root.removeAttribute('data-theme');
+  else root.setAttribute('data-theme', t);
+  if(white) root.dataset.paper = 'white'; else delete root.dataset.paper;
+  const text = cssColor(S.settings.textColor), nota = cssColor(S.settings.notaColor);
+  if(text) root.style.setProperty('--text-ink', text); else root.style.removeProperty('--text-ink');
+  if(nota) root.style.setProperty('--nota', nota); else root.style.removeProperty('--nota');
   const theme=document.querySelector('meta[name="theme-color"]');
   if(theme)theme.content=getComputedStyle(document.documentElement).getPropertyValue('--paper').trim()||'#F6F7F5';
   N.ink.refreshColors(); N.ink.render();
@@ -8160,7 +8420,7 @@ window.addEventListener('keydown', e=>{
     if(e.key === 'Enter'){ e.preventDefault(); N.ink.applyCrop(); return; }
     if(e.key === 'Escape'){ e.preventDefault(); N.ink.cancelCrop(); return; }
   }
-  if(e.key === 'Escape'){ closeSheet(); showAsk(false); N.ink.setPenPop(false); N.ink.clearSelection(); return; }
+  if(e.key === 'Escape'){ closeSheet(); showAsk(false); N.ink.setPenPop(false); N.ink.setTextPop(false); N.ink.clearSelection(); return; }
   /* a sheet or the library over the page has the keys: Delete on a note in
      the list trashed it and deleted the ink selected behind it as well */
   if(document.querySelector('.sheet:not(.leave)') || (N.library && N.library.modal) || (e.target && e.target.closest && e.target.closest('.sheet'))) return;
@@ -8714,7 +8974,7 @@ new MutationObserver(()=>{ if(L.open) list.querySelectorAll('.lib-thumb img').fo
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', ()=>{ if(L.open) paint(L.hits || undefined); });
 
 /* ---- open, close, dock ---- */
-const MAIN = ['#topbar','#scroller','#pill','#penpop','#askbar','#offline-status','#local-status','#selbar'];
+const MAIN = ['#topbar','#scroller','#pill','#penpop','#textpop','#askbar','#offline-status','#local-status','#selbar'];
 function setMainInert(on){ for(const sel of MAIN){ const m = document.querySelector(sel); if(m) m.inert = !!on; } }
 let returnFocus = null;
 async function open(opts={}){

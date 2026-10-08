@@ -67,13 +67,17 @@ try{
   assert.equal(blue.rest,'what is the square root of this?','the question stays in ink');
   assert.equal(blue.textarea,'rgba(0, 0, 0, 0)','the line text is transparent under the mirror');
   assert.notEqual(blue.color,blue.textarea,'the call has a colour');
-  /* a red line holding three dots stands in until the first word */
+  /* a red line, the paper turning in it, stands in until the first word */
   await page.waitForFunction(()=>[...document.querySelectorAll('.line.tutor.wait .txt')].some(t=>t.value==='…'),null,{timeout:2000});
   assert.equal(await page.locator('#nota-receipt').isVisible(),true,'receipt visible before first token');
   assert.match(await page.locator('#nota-receipt').textContent(),/got it/);
   const waitLine=await page.evaluate(()=>N.core.S.lines.filter(l=>l.tutor).map(l=>({text:l.text,wait:!!l.wait})));
   assert.deepEqual(waitLine,[{text:'…',wait:true}],'the placeholder is a tutor line: '+JSON.stringify(waitLine));
+  assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('.line.tutor.wait'),'::before').animationName),'notaThink','the waiting line plays the paper');
+  assert.equal(await page.evaluate(()=>{const m=document.querySelector('#nota-receipt .nota-think'),cs=getComputedStyle(m);return cs.display!=='none'&&cs.animationName;}),'notaThink','the receipt plays the paper too');
   await page.waitForFunction(()=>N.core.S.lines.some(l=>l.tutor&&l.text.includes('144.')),null,{timeout:5000});
+  /* the paper stays under the reply until its last word, then goes */
+  await page.waitForFunction(()=>!N.core.S.lines.some(l=>l.wait),null,{timeout:5000});
   assert.equal(calls.length,1,'one request for one question');
   assert.equal(calls[0].auth,undefined,'the private key is never sent to the proxy');
   assert.equal(calls[0].body.model,'qwen-3.8-27b','the model that reads pictures is asked');
@@ -131,22 +135,29 @@ try{
     return {group:!!group,hash:group.hash};
   });
   assert.equal(ink.group,true,'the handwriting forms a text group');
-  assert.equal(await page.evaluate(()=>N.nota.isCallStroke('q1')),true,'recognized handwritten call is blue');
+  assert.equal(await page.evaluate(()=>N.nota.isCallStroke('q1')),true,'a recognized handwritten call is known as one');
+  assert.equal(await page.evaluate(()=>N.nota.isAskedStroke('q1')),false,'it is not blue while it may still be being written');
   for(let i=0;i<60&&calls.length<2;i++)await page.waitForTimeout(100);
+  assert.equal(await page.evaluate(()=>N.nota.isAskedStroke('q1')),true,'once nota takes the question, all of it is blue');
   await page.waitForTimeout(250);
   const dots=await page.evaluate(()=>{
     const c=document.getElementById('c-ai'),d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
     let red=0;for(let i=0;i<d.length;i+=4)if(d[i]>150&&d[i+1]<110&&d[i+2]<110&&d[i+3]>40)red++;
     return red;
   });
-  assert.ok(dots>10,'waiting dots are drawn under the handwritten question before the first word: '+dots);
-  await page.waitForFunction(()=>N.core.S.strokes.some(s=>s.author==='ai'),null,{timeout:8000});
-  assert.equal(await page.evaluate(()=>{
+  assert.ok(dots>10,'the paper turns under the handwritten question before the first word: '+dots);
+  const aiRed=()=>page.evaluate(()=>{
     const c=document.getElementById('c-ai'),d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
     let red=0;for(let i=0;i<d.length;i+=4)if(d[i]>150&&d[i+1]<110&&d[i+2]<110&&d[i+3]>40)red++;
     return red;
-  }),0,'the dots are gone once the pen starts');
+  });
+  await page.waitForFunction(()=>N.core.S.strokes.some(s=>s.author==='ai'&&s._show>0),null,{timeout:8000});
+  assert.ok(await aiRed()>10,'the paper keeps turning under the answer while the pen writes it');
   await page.waitForFunction(()=>!N.core.S.strokes.some(s=>s._show!==undefined),null,{timeout:60000});
+  await page.waitForTimeout(150);
+  assert.ok(await aiRed()>0,'the paper fades out after the last stroke rather than vanishing');
+  await page.waitForTimeout(600);
+  assert.equal(await aiRed(),0,'the paper is gone once it has faded');
   const red=await page.evaluate(()=>{
     const S=N.core.S,ai=S.strokes.filter(s=>s.author==='ai');
     const top=Math.min(...ai.map(s=>s.bbox[1])),left=Math.min(...ai.map(s=>s.bbox[0])),right=Math.max(...ai.map(s=>s.bbox[2]));
@@ -238,7 +249,7 @@ try{
   assert.equal(calls.length,n1+1,'the two rows are one handwritten question');
   assert.match(said(calls[n1].body.messages[1].content),/Question: what is the square root of 144/,'the second row is part of the question');
 
-  console.log('nota: blue call, red reply lines, red ink, waiting dots, save, erase, undo and a handwritten question over two rows all pass');
+  console.log('nota: blue call, red reply lines, red ink, the waiting paper, save, erase, undo and a handwritten question over two rows all pass');
 }finally{
   await browser.close();server.close();
 }

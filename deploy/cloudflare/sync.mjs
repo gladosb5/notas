@@ -20,7 +20,7 @@ const out=path.join(here,'public');
 const SHELL=['notas.html','sw.js','model-contract.js','local-recognition.js','ink-worker.js',
   'ink-features.js','model-store.js','text-worker.js','bg-worker.js','local-math-help.js','diagram.js','nota.js','manifest.webmanifest','asset-manifest.json',
   'assets/icon-16.png','assets/icon-32.png','assets/icon-192.png','assets/icon-512.png',
-  'assets/icon-maskable-512.png','assets/apple-touch-icon.png','assets/logo.png'];
+  'assets/icon-maskable-512.png','assets/apple-touch-icon.png','assets/logo.png','assets/nota-thinking.png'];
 const MODEL_DIRS=['assets/smart','assets/ink','assets/text','assets/slide'];
 const ASSET_LIMIT=25*1024*1024;
 
