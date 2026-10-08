@@ -137,7 +137,7 @@ const SYSTEM=[
   'Drawings on the page are described in words between [diagram] and [end of diagram], or [graph] and [end of graph]: the shapes, the lines and arrows joining them, and the handwriting labelling each part, with places as (across, down) from 0 to 100 over the drawing. An arrow "from A to B" points at B. A graph gives its curves as points in the units written on its axes. Read the description as the drawing the person made (a flowchart, a food chain, a Venn diagram, a triangle, a circuit, a graph) and answer about the drawing itself; never mention the description, the coordinates or the brackets.',
   'A question may come with a picture of the page around it: the person\'s handwriting and drawings in dark ink, and any photo or picture they put on the page. The machine readings come from that same ink. Use the picture to read what the readings missed or got wrong and to see drawings and photos, and trust it over a reading that disagrees with it. Never mention that you were sent a picture.',
   'Answer whatever is asked: work out or check maths, explain an idea, suggest what to cook with what is listed and how, convert units or currencies, fix spelling or grammar, translate, summarise the notes, plan the steps, define a word, give a fact. Be accurate; if you are not sure, say so briefly.',
-  'Answer in plain text only: no markdown, no bullets, no LaTeX, no code fences, no emoji, no headings. Write maths in plain notation such as 2x + 3 = 11, sqrt(16), 3/4, 2^3, 12 x 7. Use only plain letters, digits and punctuation, since the answer is handwritten onto the page.',
+  'Answer in plain text only: no markdown (no **, *, _, #, >, tables or links), no bullets, no LaTeX, no $ signs around maths, no code fences, no emoji, no headings. Write maths in plain notation such as 2x + 3 = 11, sqrt(16), 3/4, 2^3, 12 x 7. Use only plain letters, digits and punctuation, since the answer is handwritten onto the page.',
   'Be brief: one to three short sentences, at most about 45 words, unless the person asks for the full working, the steps, a list or a recipe, then give short numbered lines, one per line.',
   'Write so a grade 7 student (about 12 years old) understands, above all when explaining: short sentences, everyday words, one idea at a time, and a simple example when it helps. When you must use a subject word, such as denominator or photosynthesis, say what it means in a few plain words. Stay correct; make it simple, not wrong.',
   'Do not repeat the question. Do not greet. Do not say "hey nota". Give the answer first, then a short reason if it helps.',
@@ -650,11 +650,20 @@ function tidy(text,keepMath=false){
     return tidy(protectedText+String(text).slice(offset)).replace(/\u0001(\d+)\u0002/g,(_,i)=>math[+i][0]);
   }
   parts.push(String(text).slice(at));
-  return parts.join('')
-    .replace(/\\\$/g,'$').replace(/\\\(|\\\)|\\\[|\\\]/g,'')
-    .replace(/\\sqrt\{([^}]*)\}/g,'sqrt($1)').replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g,'($1)/($2)')
+  /* an escaped dollar is a real one, kept through the clean-up below */
+  let out=parts.join('').replace(/\\\$/g,'\u0003').replace(/\\\(|\\\)|\\\[|\\\]/g,'').replace(/\\[dt]frac/g,'\\frac')
+    /* dollars around words ("$5 cm$") were meant as maths, not a price */
+    .replace(/(?<![\\\w$])\$(?!\s)([^$\n]*?\S)\$(?![\d$])/g,'$1');
+  /* roots and fractions inside each other open from the inside out */
+  for(let i=0;i<6;i++){
+    const was=out;
+    out=out.replace(/\\sqrt\{([^{}]*)\}/g,'sqrt($1)').replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g,'($1)/($2)');
+    if(out===was)break;
+  }
+  return out
     .replace(/\\times/g,'x').replace(/\\cdot/g,'*').replace(/\\div/g,'/')
-    .replace(/\\(?:text|mathrm|mathbf|operatorname)\{([^}]*)\}/g,'$1')
+    .replace(/\\(?:text|textbf|textit|mathrm|mathbf|mathit|operatorname|boxed|underline|emph)\{([^}]*)\}/g,'$1')
+    .replace(/\\([%&#_])/g,'$1').replace(/\\[,;:! ]/g,' ').replace(/\\\\/g,'\n')
     /* a command that names a letter or a sign is written as it is said;
        one that only shapes the layout goes */
     .replace(/\\([a-zA-Z]+)/g,(m,name,at,str)=>{
@@ -663,8 +672,18 @@ function tidy(text,keepMath=false){
       const before=str[at-1],after=str[at+m.length];
       return (before&&/[A-Za-z0-9)]/.test(before)?' ':'')+w+(after&&/[A-Za-z0-9(]/.test(after)?' ':'');
     })
-    .replace(/\*\*|__|`+|^#+\s*/gm,'').replace(/^\s*[-*]\s+/gm,'')
-    .replace(/[{}]/g,'');
+    /* markdown never reaches the paper: headings, quotes, bullets, table
+       rules and rows, links, bold, italic, strikes and code */
+    .replace(/^[ \t]*#{1,6}[ \t]*/gm,'').replace(/^[ \t]*>[ \t]?/gm,'').replace(/^[ \t]*[-*+•][ \t]+/gm,'')
+    .replace(/^[ \t]*\|?(?:[ \t]*:?-{3,}:?[ \t]*\|)+[ \t]*(?::?-{3,}:?[ \t]*)?(?:\n|$)/gm,'')
+    .replace(/^[ \t]*\|(.*)\|[ \t]*$/gm,(m,cells)=>cells.split('|').map(s=>s.trim()).filter(Boolean).join(', '))
+    .replace(/\[([^\]\n]+)\]\([^)\s]+\)/g,'$1')
+    .replace(/\*\*|__|~~|`+/g,'')
+    .replace(/(^|[\s(])[*_](?=\S)([^*_\n]*?\S)[*_](?=$|[\s).,;:!?])/gm,'$1$2')
+    /* a dollar left over opened or closed maths the reader could not take;
+       a price keeps its own */
+    .replace(/\$\$/g,'').replace(/\$(?![ \t]?\d)/g,'').replace(/\u0003/g,'$')
+    .replace(/[{}]/g,'').replace(/(\S)[ \t]{2,}(?=\S)/g,'$1 ');
 }
 /* ---- drawings ----
    What is drawn rather than written (boxes and the arrows between them, a
