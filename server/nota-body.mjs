@@ -65,7 +65,7 @@ export function notaBody(json){
     if(!m||typeof m!=='object'||!ROLES.has(m.role))return null;
     // a call of nota's tools, and each call's result straight after it
     if(m.role==='assistant'&&m.tool_calls!==undefined){
-      if(!tools||!Array.isArray(m.tool_calls)||!m.tool_calls.length||m.tool_calls.length>TOOL_CALLS||++rounds>TOOL_ROUNDS)return null;
+      if(!tools||open.size||!Array.isArray(m.tool_calls)||!m.tool_calls.length||m.tool_calls.length>TOOL_CALLS||++rounds>TOOL_ROUNDS)return null;
       if(m.content!=null&&typeof m.content!=='string')return null;
       const calls=[];open=new Set();
       for(const t of m.tool_calls){

@@ -1023,7 +1023,7 @@ const NOTE_TOOLS=[
     parameters:{type:'object',properties:{id:{type:'string',description:'The note\'s id, from list_notes.'}},required:['id']}}}
 ];
 const TOOL_SYSTEM='You can look at the person\'s other notes in this notebook with two tools: list_notes lists them (with a query, those matching its words first) and read_note reads one by its id. Use them when the question is about their notes (a test, a quiz, a summary, what they wrote about something) or names a topic or note that is not on this page: list, read the one to three notes that fit, then answer from them. Do not use them when the page or general knowledge answers the question. Never mention the tools, the ids or looking anything up in the answer.';
-const TOOL_ROUNDS=3,TOOL_CALLS=4,TOOL_ERRORS=3,TOOL_CHARS=32000,LIST_MAX=30,READ_CHARS=5000,TOOL_TAG='<tool_call>';
+const TOOL_ROUNDS=3,TOOL_CALLS=4,TOOL_ERRORS=3,TOOL_CHARS=32000,LIST_MAX=30,READ_CHARS=5000,TOOL_TAG='<tool_call>',TOOL_HOLD=160;
 const GRAB_TEXT='nota is grabbing your notes for its reference.';
 const toolsFailed=(why,cause)=>Object.assign(new Error('nota could not look at the notes: '+why),{toolsFailed:true,cause});
 const CALL_ID=/^[\w.:-]{1,128}$/;
@@ -1042,11 +1042,11 @@ async function listNotes(args){
   if(words.size){
     /* the title counts most, then the first words, then (for the latest
        few dozen notes) the words inside */
+    const docs=await Promise.all(rows.slice(0,RECALL_SCAN).map(r=>C.Store.get('notas.note.'+r.id).catch(()=>null)));
     const scored=[];
     for(let i=0;i<rows.length;i++){
       const r=rows[i],tWords=new Set(recallWords(rowTitle(r))),pWords=new Set(recallWords(r.preview));
-      let cWords=null;
-      if(i<RECALL_SCAN){ let doc=null;try{doc=await C.Store.get('notas.note.'+r.id);}catch(e){} if(doc)cWords=new Set(recallWords(noteText(doc))); }
+      const cWords=docs[i]?new Set(recallWords(noteText(docs[i]))):null;
       let score=0;
       for(const w of words){ if(tWords.has(w))score+=4; else if(pWords.has(w)||cWords&&cWords.has(w))score+=1; }
       scored.push({r,score});
@@ -1174,9 +1174,12 @@ async function readSSE(response,onDelta){
 }
 /* A question the model may answer after looking at notes: up to
    TOOL_ROUNDS rounds of calls, each answered here and sent back, then an
-   answer streamed as any other. Words before the first call are held, as
-   they may be the call itself written out; a round that turns out to be
-   calls never reaches the page. onGrab is told when notes are fetched. */
+   answer streamed as any other. A round's first words are held until
+   there are TOOL_HOLD of them (or the round ends), as they may be the call
+   itself written out, or a line such as "let me check your notes" before
+   a call; a round that turns out to be calls never reaches the page. The
+   last round may not call, so it is written as it comes. onGrab is told
+   when notes are fetched. */
 async function streamTools(question,context,onDelta,signal,picture,model,{onGrab}={}){
   const text=ask(context,question,'');
   const pictures=picture?[{...picture,what:'the page'}]:[];
@@ -1212,7 +1215,7 @@ async function streamTools(question,context,onDelta,signal,picture,model,{onGrab
       if(live){total+=piece;onDelta(piece,total);return;}
       held+=piece;
       const lead=held.trimStart();
-      if(!lead||calls.length||lead.startsWith(TOOL_TAG)||TOOL_TAG.startsWith(lead))return;
+      if(!lead||calls.length||lead.startsWith(TOOL_TAG)||TOOL_TAG.startsWith(lead)||!last&&held.length<TOOL_HOLD)return;
       live=true;total+=held;onDelta(held,total);held='';
     });
     const asked=calls.filter(c=>c&&(c.name||c.args));
@@ -1706,7 +1709,7 @@ if(N.recog&&N.recog.selectionUnread){
   };
 }
 
-N.nota={overloaded,tools:NOTE_TOOLS,isCallStroke,isAskedStroke,drawings:readDrawings,onTranscript,onTyped,askSelection,parseCall,callLength,drawWaiting,mathMatches,tidy,spell,Writer,get busy(){return busy>0;},get writing(){return queue.length;},config:CONFIG,
+N.nota={overloaded,tools:NOTE_TOOLS,toolLimits:{rounds:TOOL_ROUNDS,calls:TOOL_CALLS},isCallStroke,isAskedStroke,drawings:readDrawings,onTranscript,onTyped,askSelection,parseCall,callLength,drawWaiting,mathMatches,tidy,spell,Writer,get busy(){return busy>0;},get writing(){return queue.length;},config:CONFIG,
   /* the page as nota reads it, for the console: N.nota.context() */
   context(where){ where=where||liveWhere(); return pageRows({...where,diagrams:knownDrawings(where.skip)}); }};
 })();

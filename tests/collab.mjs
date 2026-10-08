@@ -72,6 +72,16 @@ try{
   await b.page.evaluate(()=>{ const st={id:'ben-1',author:'user',w:2.8,t0:3,t1:4,pts:[150,150,.5,180,150,.5,180,180,.5],bbox:[150,150,180,180]}; N.core.act('draw',()=>N.core.S.strokes.push(st),()=>{}); });
   await b.page.evaluate(()=>{ const ln=N.core.S.lines[0]; ln.text='hello ben'; N.text.render(); N.core.markDirty(); });
   await a.page.waitForFunction(()=>N.core.S.strokes.some(s=>s.id==='ben-1')&&N.core.S.lines[0].text==='hello ben',null,{timeout:20000});
+  /* ben's writing is his own pen, not ana's: it never holds back ana's
+     handwriting reader, while a stroke of her own just written does */
+  const rest=await a.page.evaluate(()=>{
+    const S=N.core.S,ben=S.strokes.find(s=>s.id==='ben-1'),was=ben.t1;
+    ben.t1=N.ink.now();const peer=N.recog.penResting();ben.t1=was;
+    const own={id:'ana-rest',author:'user',w:2.8,t0:N.ink.now(),t1:N.ink.now(),pts:[10,10,.5,20,10,.5],bbox:[10,10,20,10]};
+    S.strokes.push(own);const local=N.recog.penResting();S.strokes.splice(S.strokes.indexOf(own),1);
+    return {flagged:ben._peer===true,peer,local};
+  });
+  assert.deepEqual(rest,{flagged:true,peer:true,local:false},'only the pen on this device holds its reader back');
   const painted=await a.page.evaluate(()=>{ const i=document.querySelector('.line .txt'); return i&&i.value; });
   assert.equal(painted,'hello ben','ana\'s line on screen carries ben\'s text');
 

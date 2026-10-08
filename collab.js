@@ -427,6 +427,8 @@ function observe(){
         if(ch.action==='delete'){ S.strokes=S.strokes.filter(s=>s.id!==id); r.known.strokes.delete(id); N.ink.peerShift.delete(id); continue; }
         const st=takeStroke(id,r.strokes.get(id));
         if(!st){ r.known.strokes.set(id,''); continue; }
+        /* written on another device: not this pen (local-recognition.js penResting); never synced, as _ fields are not */
+        st._peer=true;
         r.known.strokes.set(id,strokeSig(st));
         dirty.bottom=Math.max(dirty.bottom,st.bbox[3]);
         const at=S.strokes.findIndex(s=>s.id===id);

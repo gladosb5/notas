@@ -71,6 +71,7 @@ test("nota's calls and their results go through, and nothing else in their place
   assert.equal(notaBody({...convo(...round('a')),tools:undefined}),null,'no calls without the tools');
   assert.equal(notaBody(convo({role:'assistant',content:null,tool_calls:[call('a','fetch_url')]},{role:'tool',tool_call_id:'a',content:'x'})),null,"only nota's tools");
   assert.equal(notaBody(convo({role:'assistant',content:null,tool_calls:[call('a')]})),null,'every call has its result');
+  assert.equal(notaBody(convo({role:'assistant',content:null,tool_calls:[call('a'),call('b')]},...round('c'))),null,'a round is answered before the next');
   assert.equal(notaBody(convo({role:'assistant',content:null,tool_calls:[call('a')]},{role:'tool',tool_call_id:'b',content:'x'})),null,'a result answers a call');
   assert.equal(notaBody(convo({role:'tool',tool_call_id:'a',content:'x'})),null,'no result without its call');
   assert.equal(notaBody(convo({role:'assistant',content:null,tool_calls:[call('a',undefined,'x'.repeat(3000))]},{role:'tool',tool_call_id:'a',content:'x'})),null,'short arguments');

@@ -8,7 +8,7 @@ import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {startServer} from '../scripts/serve.mjs';
-import {TOOLS} from '../server/nota-body.mjs';
+import {TOOLS,TOOL_ROUNDS,TOOL_CALLS} from '../server/nota-body.mjs';
 const server=await startServer(0),browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
 try{
  const page=await browser.newPage({serviceWorkers:'block'});
@@ -49,6 +49,7 @@ try{
  },question);
 
  assert.deepEqual(await page.evaluate(()=>N.nota.tools),TOOLS,'the page and the forward offer the same tools');
+ assert.deepEqual(await page.evaluate(()=>N.nota.toolLimits),{rounds:TOOL_ROUNDS,calls:TOOL_CALLS},'and allow the same rounds and calls');
 
  /* the provider parses the calls: list, read, answer */
  script=[{deltas:toolCall('call_a','list_notes','{"query":"photosynthesis"}')},{deltas:[{content:''},...toolCall('call_b','read_note','{"id":"bio1"}')]},{deltas:words('1. Where does photosynthesis happen?')}];
@@ -80,11 +81,23 @@ try{
  assert.equal(calls[1].messages.at(-2).content.trim(),raw.trim());
  assert.match(calls[1].messages.at(-1).content,/^<tool_response>[\s\S]*1789 storming of the bastille[\s\S]*<\/tool_response>$/);
 
- /* an answer without calls streams as it comes */
+ /* a short answer comes whole once the round ends; a long one streams
+    once past the first words held back */
  script=[{deltas:words('12 x 7 = 84.')}];calls.length=0;
  got=await ask('what is 12 times 7');
- assert.deepEqual(got.pieces,['12 ','x ','7 ','= ','84.']);
+ assert.equal(got.text,'12 x 7 = 84.');
  assert.equal(got.grabs,0);
+ const long='Photosynthesis is how a plant makes its own food. It takes in light, water and carbon dioxide, and makes sugar and oxygen. '.repeat(3).trim();
+ script=[{deltas:words(long)}];
+ got=await ask('what is photosynthesis');
+ assert.equal(got.text,long);
+ assert.ok(got.pieces.length>10,'the rest streams word by word: '+got.pieces.length);
+
+ /* words before a call ("let me check your notes") are never written */
+ script=[{deltas:[...words('Let me check your notes first. '),...toolCall('p1','read_note','{"id":"bio1"}')]},{deltas:words('Plants make food in the chloroplasts.')}];
+ got=await ask();
+ assert.equal(got.text,'Plants make food in the chloroplasts.');
+ assert.ok(!/check your notes/.test(got.pieces.join('')),'the preamble never reaches the page');
 
  /* calls that make no sense, more rounds than allowed, or nothing answered
     after calls: the tools fail, and nothing was written */

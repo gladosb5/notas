@@ -1283,7 +1283,9 @@ function penResting(){
   if(!N.ink)return true;
   if(N.ink.drawing&&N.ink.drawing())return false;
   if(!N.ink.now)return true;
-  let last=0;for(const st of S.strokes)if(st.author==='user'&&st.t1>last)last=st.t1;
+  // only this device's pen: someone writing on a shared note elsewhere
+  // must not hold this device's reading back
+  let last=0;for(const st of S.strokes)if(st.author==='user'&&!st._peer&&st.t1>last)last=st.t1;
   return N.ink.now()-last>=TEXT_REST;
 }
 async function readText(){
@@ -2088,6 +2090,6 @@ function retry(){restart();boot().then(schedule).catch(()=>{});}
 function retryText(){textRestartSeq++;stopText('Restarting handwriting search');healText();textAttempted.clear();return setupText().then(()=>scheduleText()).catch(()=>{});}
 N.pauseRecognitionForImage=pauseForImage;
 N.ai={enabled,setup:boot,setupText,retry,retryText,toggle,watch,watchText,setupState,textSetupState,get ready(){return state(preferred()).ready;}};
-N.recog={resultVersion:RESULT_VERSION.ink,rebuild,frames:()=>pageFrames,frameInfo,release,selectionUnread,readStrokesText,mathStrokeGroups,equalsGeometryRepair,stackedBarPairs,schedule,scheduleText,scheduleIndex,indexOthers,textGroupsOfDoc,recognize,recognizeText,solveSelection,crop,linearizedCrop,textCrop,textGroups,cache,confirm,reset,refreshModels,engine:preferred,switchEngine,validText,wordReading,wordGeometry,needsConfirmation,inkTextAlternatives,textSupportedInk,textSupportedEquation,
+N.recog={resultVersion:RESULT_VERSION.ink,rebuild,penResting,frames:()=>pageFrames,frameInfo,release,selectionUnread,readStrokesText,mathStrokeGroups,equalsGeometryRepair,stackedBarPairs,schedule,scheduleText,scheduleIndex,indexOthers,textGroupsOfDoc,recognize,recognizeText,solveSelection,crop,linearizedCrop,textCrop,textGroups,cache,confirm,reset,refreshModels,engine:preferred,switchEngine,validText,wordReading,wordGeometry,needsConfirmation,inkTextAlternatives,textSupportedInk,textSupportedEquation,
   get inkError(){return inkError;},get textReady(){return textState.ready;},get textVersion(){return TEXT_VERSION;},get textConfidenceMin(){return TEXT_CONFIDENCE_MIN;}};
 })();
