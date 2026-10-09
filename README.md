@@ -39,6 +39,10 @@ Follow **[the deployment guide](deploy/cloudflare/README.md)** for setup, local 
 
 ## Development
 
+The text reader checks each handwriting line before background maths recognition. Plain text skips the formula decoder, and uncertain ink stays quiet. Automatic calculation requires independent math evidence and an equals sign supported by actual strokes. Explicit **Solve** remains available for ambiguous ink. Text stays searchable.
+
+Run `npm run test:handwriting` for the routing and browser regressions. Set `NOTAS_IAM_CORPUS` to a local IAM image directory with `labels.json` to test the text gate on genuine handwriting. See [handwriting intent checks](HANDWRITING-INTENT.md) for results and limitations.
+
 ```sh
 npm test
 npx playwright install chromium

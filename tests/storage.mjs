@@ -148,14 +148,14 @@ try{
   const versions=await page.evaluate(async id=>{
     const rows=await N.core.Store.index(),out=[];
     for(const row of rows){
-      if(row.id===id||/Concurrent [AB] \((?:conflict|recovered) copy\)/.test(row.title||'')){
-        const doc=await N.core.Store.get('notas.note.'+row.id);if(doc)out.push({id:row.id,title:doc.title});
+      if(row.id===id||row.recoveryOf===id){
+        const doc=await N.core.Store.get('notas.note.'+row.id);if(doc)out.push({id:row.id,title:doc.title,recoveryOf:doc.recoveryOf});
       }
     }
     return out;
   },result.second);
   assert.ok(versions.some(v=>v.title==='Concurrent A'||v.title==='Concurrent B'),'One concurrent save remains the canonical note');
-  assert.ok(versions.some(v=>/Concurrent [AB] \(conflict copy\)/.test(v.title)),'The other concurrent save becomes a conflict copy');
+  assert.ok(versions.some(v=>v.recoveryOf===result.second&&/^Concurrent [AB]$/.test(v.title)),'The other concurrent save becomes a conflict copy');
 
   await peer.evaluate(id=>N.ui.openNote(id),result.second);
   const stale=await peer.evaluate(()=>({id:N.core.S.id,rev:N.core.S.savedRev,title:N.core.S.title}));
@@ -164,7 +164,7 @@ try{
   const recovered=await peer.evaluate(async()=>{N.core.S.title='After remote delete';N.core.markDirty();return {ok:await N.core.save(),id:N.core.S.id,title:N.core.S.title};});
   assert.equal(recovered.ok,true);
   assert.notEqual(recovered.id,result.second,'A stale tab does not resurrect a deleted note ID');
-  assert.match(recovered.title,/\(recovered copy\)$/);
+  assert.equal(recovered.title,'After remote delete');
   assert.equal(await page.evaluate(id=>N.core.Store.get('notas.note.'+id),result.second),undefined,'Deleted canonical note stays deleted');
   await peer.close();
   console.log('Storage regressions passed: switching, delayed saves, failed saves, fallback reads, atomic concurrent saves, and delete/save recovery');

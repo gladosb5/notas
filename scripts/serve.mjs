@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { notaBody, MAX_BODY } from '../server/nota-body.mjs';
+import { notaBody, MAX_BODY, CLOUDFLARE_MODEL } from '../server/nota-body.mjs';
 import { cspFor, ASSET_CSP } from '../server/csp.mjs';
 const root=path.resolve(import.meta.dirname,'..');
 const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css','.json':'application/json','.webmanifest':'application/manifest+json','.svg':'image/svg+xml','.woff2':'font/woff2','.woff':'font/woff','.ttf':'font/ttf','.f32':'application/octet-stream','.mjs':'text/javascript; charset=utf-8','.wasm':'application/wasm','.onnx':'application/octet-stream','.md':'text/markdown; charset=utf-8'};
@@ -11,35 +11,38 @@ export function startServer(port=4173){
 // CEREBRAS_API_KEY in the environment, or the page's own when it sent one;
 // with neither the answer is 501 and the page falls back to calling the
 // provider directly. deploy/cloudflare/worker.js is the same forward as a
-// cloudflare worker.
+// cloudflare worker. Cloudflare Qwen uses CLOUDFLARE_ACCOUNT_ID and
+// CLOUDFLARE_API_TOKEN, both kept on the server.
 const NOTA_UPSTREAM='https://api.cerebras.ai/v1/chat/completions';
 async function notaProxy(req,res){
   // As the worker does: another website open in this browser may not spend
   // the key (a text/plain POST needs no preflight), and the body is bounded.
   const origin=req.headers.origin;
   if(origin&&!/^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(origin)){res.writeHead(403,{'Content-Type':'text/plain'});res.end('nota answers its own page only.');return;}
-  const siteKey=process.env.CEREBRAS_API_KEY;
-  const key=siteKey||(req.headers.authorization||'').replace(/^Bearer\s+/i,'');
-  if(!key){res.writeHead(501,{'Content-Type':'text/plain'});res.end('nota has no key here.');return;}
   const chunks=[];let size=0;
   for await(const c of req){size+=c.length;if(size>MAX_BODY){res.writeHead(413,{'Content-Type':'text/plain'});res.end('the question is too long.');return;}chunks.push(c);}
-  // the environment's key is spent only on nota's own question, as the worker's is
-  let body=Buffer.concat(chunks);
-  if(siteKey){
-    let json=null;try{json=JSON.parse(body.toString('utf8'));}catch{}
-    const clean=notaBody(json);
-    if(!clean){res.writeHead(400,{'Content-Type':'text/plain'});res.end('invalid request');return;}
-    body=JSON.stringify(clean);
-  }
-  let upstream;
+  let json=null;try{json=JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{}
+  const clean=notaBody(json);
+  if(!clean){res.writeHead(400,{'Content-Type':'text/plain'});res.end('invalid request');return;}
+  const cloudflare=clean.model===CLOUDFLARE_MODEL;
+  const key=cloudflare?process.env.CLOUDFLARE_API_TOKEN:(process.env.CEREBRAS_API_KEY||(req.headers.authorization||'').replace(/^Bearer\s+/i,''));
+  if(cloudflare&&(!key||!process.env.CLOUDFLARE_ACCOUNT_ID)){res.writeHead(503,{'Content-Type':'text/plain'});res.end('nota Cloudflare fallback is not configured.');return;}
+  if(!key){res.writeHead(501,{'Content-Type':'text/plain'});res.end('nota has no key here.');return;}
+  const target=cloudflare?`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(process.env.CLOUDFLARE_ACCOUNT_ID)}/ai/v1/chat/completions`:NOTA_UPSTREAM;
+  const body=JSON.stringify(clean),control=new AbortController();
+  const cancel=()=>control.abort();
+  res.once('close',cancel);
   try{
-    upstream=await fetch(NOTA_UPSTREAM,{method:'POST',body,
-      headers:{'Content-Type':'application/json','Accept':req.headers.accept||'text/event-stream','Authorization':'Bearer '+key}});
-  }catch(e){res.writeHead(502,{'Content-Type':'text/plain'});res.end('nota could not reach the model.');return;}
-  res.writeHead(upstream.status,{'Content-Type':upstream.headers.get('content-type')||'text/event-stream','Cache-Control':'no-cache'});
-  if(!upstream.body){res.end();return;}
-  for await(const chunk of upstream.body)res.write(chunk);
-  res.end();
+    let upstream;
+    try{
+      upstream=await fetch(target,{method:'POST',body,signal:control.signal,
+        headers:{'Content-Type':'application/json','Accept':req.headers.accept||'text/event-stream','Authorization':'Bearer '+key}});
+    }catch(e){res.writeHead(502,{'Content-Type':'text/plain'});res.end('nota could not reach the model.');return;}
+    res.writeHead(upstream.status,{'Content-Type':upstream.headers.get('content-type')||'text/event-stream','Cache-Control':'no-cache'});
+    if(!upstream.body){res.end();return;}
+    for await(const chunk of upstream.body)res.write(chunk);
+    res.end();
+  }finally{res.removeListener('close',cancel);control.abort();}
 }
 const server=http.createServer(async(req,res)=>{
   try{

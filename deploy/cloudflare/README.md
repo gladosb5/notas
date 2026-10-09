@@ -75,3 +75,19 @@ cd deploy/cloudflare
 npm run sync
 npx wrangler deploy --dry-run
 ```
+
+
+## Nota provider fallback
+
+Qwen requests try Cerebras `qwen-3.8-27b`, then Cloudflare Workers AI `@cf/qwen/qwen3.8-27b`, then Cerebras `gpt-oss-120b`. Cloudflare keeps the page image; the final GPT-OSS attempt sends text only. Each Qwen attempt has a 12-second initial-answer deadline. Cancellation, an answer already being written, started notebook tools, site rate/budget limits, and authentication failures stop retries.
+
+Configure these server settings alongside `CEREBRAS_API_KEY`:
+
+```sh
+npx wrangler secret put CLOUDFLARE_ACCOUNT_ID
+npx wrangler secret put CLOUDFLARE_API_TOKEN
+```
+
+Use your Cloudflare account ID and an API token with Workers AI access for that account. The token is used only by the backend at `https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1/chat/completions`; neither Cloudflare setting belongs in the frontend. Each attempt using site credentials reserves its maximum token allowance against the same daily budget.
+
+For Wrangler development, put the same names in the ignored `.dev.vars` file. For root `npm start`, set them in the terminal environment; the Node server does not load `.env` or `.dev.vars`. If Cloudflare settings are missing, its attempt reports unavailable and Nota proceeds to Cerebras GPT-OSS. A static host without a backend can use Cerebras with a browser key, but cannot use the Cloudflare fallback.

@@ -203,7 +203,7 @@ try{
   await a.page.evaluate(()=>N.core.save()); await a2.evaluate(()=>N.core.save());
   const notes=await a.page.evaluate(async()=>(await N.core.Store.index()).map(r=>r.title));
   assert.deepEqual(notes.filter(t=>/conflict|recovered/.test(t)),[],'no conflict copy was made: '+JSON.stringify(notes));
-  assert.equal(notes.filter(t=>!t.endsWith(" (before a big change)")).length,1,"one active note plus intentional safety snapshots");
+  assert.equal(await a.page.evaluate(async()=>(await N.core.Store.index()).filter(r=>!r.recoveryOf).length),1,'one active note plus intentional safety snapshots');
   assert.equal(await a.page.evaluate(()=>N.core.S.id),noteId,'the first tab kept its note');
   /* Both editors ask the same question before either sees a reply. */
   let notaCalls=0;
@@ -277,7 +277,7 @@ try{
   console.log('collab: share link, join by link, ink and text both ways, strokes as they are drawn, eraser and lasso live, tool shown, same-line merge, erase, reopen, late arrival, stop sharing all pass');
 }catch(error){
   console.error('collab browser errors:',errors);
-  for(const c of browser.contexts())for(const p of c.pages())console.error('room:',await p.evaluate(()=>window.N?.collab?.room&&{status:N.collab.room.status,ready:N.collab.room.ready}).catch(()=>null));
+  for(const c of browser.contexts())for(const p of c.pages())console.error('room:',await p.evaluate(()=>window.N?.collab?.room&&{status:N.collab.room.status,ready:N.collab.room.ready,lines:N.core.S.lines.map(l=>l.text)}).catch(()=>null));
   throw error;
 }finally{
   await browser.close();

@@ -2,7 +2,7 @@
 // assets and never reach this script; only what assets cannot serve arrives
 // here: the room's websocket and the "hey nota" forward.
 export { NoteRoom } from './room.js';
-import { notaBody, bodyTokens, MAX_BODY } from '../../server/nota-body.mjs';
+import { notaBody, bodyTokens, MAX_BODY, CLOUDFLARE_MODEL } from '../../server/nota-body.mjs';
 const UPSTREAM='https://api.cerebras.ai/v1/chat/completions';
 // /collab/<note id>: the websocket of the note's room. Ids are what the page
 // makes with uid(): lowercase base 36.
@@ -55,7 +55,8 @@ export default {
     // page's own Authorization header when it sent one; with neither the
     // answer is 501, which the page reads as "no forward here" and falls
     // back to calling the provider itself. Mirrors notaProxy in
-    // scripts/serve.mjs.
+    // scripts/serve.mjs. Cloudflare Qwen uses the account ID and API token
+    // in server settings and cannot use a browser Cerebras key.
     if(url.pathname==='/nota/chat'){
       // a preflight is answered without any Access-Control headers: the
       // browser then refuses the other site's request, as intended
@@ -67,31 +68,27 @@ export default {
       // tests) sends none and is forwarded only with a key of its own.
       const origin=request.headers.get('origin');
       if(origin&&origin!==url.origin)return new Response('nota answers its own page only.',{status:403,headers:{'Content-Type':'text/plain'}});
+      if(+request.headers.get('content-length')>MAX_BODY)return new Response('the question is too long.',{status:413,headers:{'Content-Type':'text/plain'}});
+      const text=await request.text();
+      if(new TextEncoder().encode(text).byteLength>MAX_BODY)return new Response('the question is too long.',{status:413,headers:{'Content-Type':'text/plain'}});
+      let json;try{json=JSON.parse(text);}catch{json=null;}
+      const clean=notaBody(json);
+      if(!clean)return new Response('invalid request',{status:400,headers:{'Content-Type':'text/plain'}});
+      const cloudflare=clean.model===CLOUDFLARE_MODEL;
       const own=(request.headers.get('authorization')||'').replace(/^Bearer\s+/i,'');
-      // The site's own key is spent only for its page (a browser's POST
-      // always names its origin), only on nota's model and length, and only
-      // so often per address. A caller with their own key spends theirs.
-      // A script can forge Origin, so the model, length and rate limits are
-      // what actually bound the spend; the Origin check keeps other sites'
-      // pages and casual reuse out.
-      const siteKey=!!env.CEREBRAS_API_KEY&&origin===url.origin;
-      const key=siteKey?env.CEREBRAS_API_KEY:own;
+      const siteKey=origin===url.origin&&!!(cloudflare?env.CLOUDFLARE_API_TOKEN:env.CEREBRAS_API_KEY);
+      // The browser's Authorization header is a Cerebras key, never a Cloudflare token.
+      const key=cloudflare?(siteKey?env.CLOUDFLARE_API_TOKEN:null):(siteKey?env.CEREBRAS_API_KEY:own);
+      if(cloudflare&&(!key||!env.CLOUDFLARE_ACCOUNT_ID))return new Response('nota Cloudflare fallback is not configured.',{status:503,headers:{'Content-Type':'text/plain'}});
       if(!key)return new Response('nota has no key here.',{status:501,headers:{'Content-Type':'text/plain'}});
-      let body=request.body;
+      const target=cloudflare?`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(env.CLOUDFLARE_ACCOUNT_ID)}/ai/v1/chat/completions`:UPSTREAM;
+      const body=JSON.stringify(clean);
       if(siteKey){
         if(env.NOTA_LIMIT){
           const {success}=await env.NOTA_LIMIT.limit({key:request.headers.get('cf-connecting-ip')||'unknown'});
           if(!success)return new Response('nota is busy. try again in a minute.',{status:429,headers:{'Content-Type':'text/plain','Retry-After':'60'}});
         }
-        if(+request.headers.get('content-length')>MAX_BODY)return new Response('the question is too long.',{status:413,headers:{'Content-Type':'text/plain'}});
-        const text=await request.text();
-        if(text.length>MAX_BODY)return new Response('the question is too long.',{status:413,headers:{'Content-Type':'text/plain'}});
-        let json;try{json=JSON.parse(text);}catch{json=null;}
-        const clean=notaBody(json);
-        if(!clean)return new Response('invalid request',{status:400,headers:{'Content-Type':'text/plain'}});
-        body=JSON.stringify(clean);
-        // Origin is not authentication. Reserve the worst case before using
-        // the public site's key, across all IP addresses and Worker isolates.
+        // Each provider attempt reserves its maximum spend in the same site budget.
         const tokens=bodyTokens(clean);
         let budget;
         try{budget=await env.ROOMS.get(env.ROOMS.idFromName('site-budget')).fetch(new Request(new URL('/site-budget',url),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tokens})}));}
@@ -100,7 +97,7 @@ export default {
       }
       let upstream;
       try{
-        upstream=await fetch(UPSTREAM,{method:'POST',body,
+        upstream=await fetch(target,{method:'POST',body,signal:request.signal,
           headers:{'Content-Type':'application/json','Accept':request.headers.get('accept')||'text/event-stream','Authorization':'Bearer '+key}});
       }catch(e){
         return new Response('nota could not reach the model.',{status:502,headers:{'Content-Type':'text/plain'}});

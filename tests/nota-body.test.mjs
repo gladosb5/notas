@@ -2,15 +2,16 @@
 // words and up to two pictures of the page, and nothing a caller adds.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {notaBody,bodyTokens,MODEL,MAX_TOKENS,IMAGE_TOKENS,MAX_BODY,TOOLS,TOOL_ROUNDS,TOOL_CALLS} from '../server/nota-body.mjs';
+import {notaBody,bodyTokens,MODEL,TEXT_MODEL,CLOUDFLARE_MODEL,MAX_TOKENS,IMAGE_TOKENS,MAX_BODY,TOOLS,TOOL_ROUNDS,TOOL_CALLS} from '../server/nota-body.mjs';
 
 const jpeg='data:image/jpeg;base64,'+'A'.repeat(4000);
 const ask=(content,extra={})=>({model:MODEL,stream:true,max_tokens:1600,messages:[{role:'system',content:'you are nota'},{role:'user',content}],...extra});
 
-test('the model that reads pictures, and only it',()=>{
+test('only the supported vision and text models are allowed',()=>{
   assert.equal(MODEL,'qwen-3.8-27b');
   assert.ok(notaBody(ask('hello')));
-  assert.equal(notaBody({...ask('hello'),model:'gpt-oss-120b'}),null);
+  assert.equal(notaBody({...ask('hello'),model:TEXT_MODEL}).model,TEXT_MODEL);
+  assert.equal(notaBody(ask([{type:'image_url',image_url:{url:jpeg}}],{model:TEXT_MODEL})),null);
   assert.equal(notaBody({...ask('hello'),stream:false}),null);
 });
 
@@ -86,4 +87,20 @@ test('what the calls bring back counts against the allowance',()=>{
   const bare=notaBody(ask('q')),offered=notaBody(ask('q',{tools:[{}]})),read=notaBody(convo(...round('a')));
   assert.ok(bodyTokens(offered)>bodyTokens(bare));
   assert.ok(bodyTokens(read)>bodyTokens(offered));
+});
+
+
+test('Cloudflare Qwen accepts images and tools with only supported reasoning efforts',()=>{
+  const input=ask([{type:'text',text:'what is this?'},{type:'image_url',image_url:{url:jpeg}}],{model:CLOUDFLARE_MODEL,tools:[{}],reasoning_effort:'low',max_tokens:99999});
+  const body=notaBody(input);
+  assert.equal(body.model,'@cf/qwen/qwen3.8-27b');
+  assert.equal(body.messages[1].content[1].image_url.url,jpeg);
+  assert.deepEqual(body.tools,TOOLS);
+  assert.equal(body.max_tokens,MAX_TOKENS);
+  assert.equal(body.reasoning_effort,'low');
+  assert.equal(notaBody({...input,reasoning_effort:'xhigh'}).reasoning_effort,'xhigh');
+  assert.equal(notaBody({...input,reasoning_effort:'none'}).reasoning_effort,undefined);
+  assert.equal(notaBody({...input,reasoning_effort:'high'}).reasoning_effort,undefined);
+  assert.equal(notaBody({...input,model:'@cf/some/other-model'}),null);
+  assert.ok(notaBody({...convo(...round('cf_call')),model:CLOUDFLARE_MODEL}));
 });

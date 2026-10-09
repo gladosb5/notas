@@ -381,11 +381,9 @@ input:focus-visible,textarea:focus-visible{outline:none}
   position:fixed;inset:var(--bar) 0 0 0;overflow:auto;touch-action:pan-y pinch-zoom;
   overscroll-behavior:contain;
   -webkit-overflow-scrolling:touch;
-  scrollbar-width:thin;scrollbar-color:var(--ink-3) transparent;
+  scrollbar-width:none;
 }
-#scroller::-webkit-scrollbar{width:8px;height:8px}
-#scroller::-webkit-scrollbar-thumb{background:var(--ink-3);border-radius:8px;border:2px solid var(--paper)}
-#scroller::-webkit-scrollbar-track{background:transparent}
+#scroller::-webkit-scrollbar{display:none}
 #doc{position:relative;width:100%}
 #col{position:relative;margin:0;width:var(--col-w,940px);transform-origin:0 0;z-index:3;pointer-events:none}
 /* Zoom gives the column its own stacking context. Keep its controls above
@@ -1174,8 +1172,9 @@ body.lib-docked #local-status,body.lib-docked #offline-status{ left:calc(var(--l
 .lib-chip.drop{ box-shadow:0 0 0 2px var(--blue);background:var(--blue-soft);color:var(--graphite) }
 #notelist{
   flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:2px 4px 8px;
-  scrollbar-width:thin;scrollbar-color:var(--ink-3) transparent;
+  scrollbar-width:none;
 }
+#notelist::-webkit-scrollbar{display:none}
 #library[data-mode="page"] #notelist{ padding-bottom:calc(96px + var(--safe-b)) }
 #library.selecting #notelist{ padding-bottom:calc(112px + var(--safe-b)) }
 .lib-empty{ margin:24px 16px;max-width:36ch;font:400 14px/1.5 var(--ui);color:var(--ink-2) }
@@ -1309,6 +1308,105 @@ body:has(#library:not([hidden]):not([data-mode="dock"])) #toast{ top:auto;bottom
 body:has(#library[data-mode="drawer"]:not([hidden])) #toast{ left:calc(50% + min(390px, 100vw - 62px) / 2);max-width:calc(100vw - min(390px, 100vw - 62px) - 32px) }
 @media print{ #library,#lib-undo{ display:none !important } }
 
+/* The logo opens a destination for all notes. Other library entry points
+   retain their existing drawer/sidebar behavior. The notebook itself is
+   never scaled or reflowed: a view-transition snapshot becomes the preview. */
+#library[data-mode="overview"] .lib-panel{
+  inset:0;background:var(--paper);padding:calc(var(--safe-t) + 64px) max(6vw,var(--safe-r),24px) 24px;
+}
+#library[data-mode="overview"] .lib-head,
+#library[data-mode="overview"] .lib-search,
+#library[data-mode="overview"] .lib-chips,
+#library[data-mode="overview"] #notelist{width:min(620px,53vw)}
+#library[data-mode="overview"] .lib-head{padding:0 0 24px;gap:8px}
+#library[data-mode="overview"] .lib-head h2{font-size:34px;letter-spacing:-.035em}
+#library[data-mode="overview"] .lib-close,
+#library[data-mode="page"] .lib-close{display:none}
+#library.searching .lib-chips{display:none}
+#library[data-mode="overview"] .lib-search{margin:0 0 18px}
+#library[data-mode="overview"] .lib-chips{padding:0 0 20px;gap:7px}
+#library[data-mode="overview"] #notelist{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-content:start;align-items:start;grid-auto-rows:max-content;gap:20px 24px;padding:3px 3px 32px;
+}
+#library[data-mode="overview"] .note-row{margin:0;min-width:0}
+#library[data-mode="overview"] .lib-card{padding:3px;align-items:flex-start}
+#library[data-mode="overview"] .note-row .t{display:block;padding:3px;min-width:0}
+#library[data-mode="overview"] .lib-thumb{display:block;width:100%;aspect-ratio:4/3;border-radius:12px;background:var(--panel)}
+#library[data-mode="overview"] .lib-thumb-txt{inset:18px;font-size:14px;color:var(--ink-2)}
+#library[data-mode="overview"] .lib-text{margin:14px 34px 6px 1px;gap:5px}
+#library[data-mode="overview"] .lib-more{position:absolute;right:3px;bottom:9px}
+#library[data-mode="overview"] .lib-empty{grid-column:1/-1}
+#library[data-mode="overview"] .lib-selbar{width:min(620px,53vw);left:max(6vw,var(--safe-l),24px);right:auto}
+#lib-current{display:none}
+#library[data-mode="overview"] #lib-current{
+  display:block;position:absolute;right:max(4vw,var(--safe-r));top:29%;width:32vw;max-width:500px;padding:0;text-align:center;
+}
+#lib-current-preview{
+  display:block;position:relative;width:100%;aspect-ratio:4/3;border-radius:18px;background:var(--paper);
+  overflow:hidden;box-shadow:0 8px 40px rgba(28,28,30,.10),0 0 0 1px var(--rule-2);
+}
+#lib-current-preview img{width:100%;height:100%;object-fit:contain}
+#lib-current-preview img.flip{filter:invert(1) hue-rotate(180deg)}
+#lib-current-title{display:block;margin:25px 0 7px;font:500 15px var(--ui)}
+#lib-current .lib-current-hint{display:block;color:var(--ink-2);font:400 12px var(--ui)}
+html.library-transition::view-transition-group(notebook){animation-duration:.62s;animation-timing-function:cubic-bezier(.22,1,.36,1);z-index:2}
+/* Capture the completed library layout. Capturing its separate entrance
+   fade halfway through leaves a translucent snapshot that jumps at the end. */
+html.library-transition #library[data-mode="overview"] .lib-panel{transition:none}
+html.library-transition::view-transition-old(notebook),
+html.library-transition::view-transition-new(notebook){
+  height:100%;object-fit:contain;animation-duration:.62s;animation-timing-function:cubic-bezier(.4,0,.2,1);
+  animation-fill-mode:both;mix-blend-mode:normal;
+}
+/* Keep the departing ink visible as it moves, then blend into the preview.
+   The surrounding scene fades too, rather than switching at the first frame. */
+html.library-transition::view-transition-old(notebook){animation-name:notebook-fade-out}
+html.library-transition::view-transition-new(notebook){animation-name:notebook-fade-in}
+html.library-transition::view-transition-old(root){animation:library-scene-out .62s cubic-bezier(.4,0,.2,1) both}
+html.library-transition::view-transition-new(root){animation:library-scene-in .62s cubic-bezier(.4,0,.2,1) both}
+@keyframes notebook-fade-out{0%,30%{opacity:1}100%{opacity:0}}
+@keyframes notebook-fade-in{0%,30%{opacity:0}100%{opacity:1}}
+@keyframes library-scene-out{from{opacity:1}to{opacity:0}}
+@keyframes library-scene-in{from{opacity:0}to{opacity:1}}
+/* Opening a card animates the freshly rendered, complete notebook snapshot
+   from that card's bounds. The thumbnail bitmap never becomes full screen. */
+html.library-transition.library-expand::view-transition-old(root){animation-duration:.3s}
+html.library-transition.library-expand::view-transition-new(root){
+  transform-origin:0 0;animation:real-note-expand .62s cubic-bezier(.22,1,.36,1) both;
+  opacity:1;mix-blend-mode:normal;
+}
+@keyframes real-note-expand{
+  from{
+    transform:translate(var(--note-from-x),var(--note-from-y)) scale(var(--note-from-sx),var(--note-from-sy));
+    border-radius:18px;box-shadow:0 8px 40px rgba(28,28,30,.10);
+  }
+  to{transform:translate(0,0) scale(1,1);border-radius:0;box-shadow:none}
+}
+#library[data-mode="overview"].enter .lib-panel,
+#library[data-mode="overview"].leave .lib-panel{transform:translateY(12px);opacity:0}
+@media(max-width:1099px){
+  #library[data-mode="overview"] .lib-panel{padding-top:calc(var(--safe-t) + 32px)}
+  #library[data-mode="overview"] .lib-head,#library[data-mode="overview"] .lib-search,
+  #library[data-mode="overview"] .lib-chips,#library[data-mode="overview"] #notelist{width:100%}
+  #library[data-mode="overview"] #notelist{grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+  #library[data-mode="overview"] #lib-current{display:none}
+  #library[data-mode="overview"] .lib-selbar{left:16px;right:16px;width:auto}
+}
+@media(max-width:699px){
+  #library[data-mode="overview"] .lib-panel{padding:calc(var(--safe-t) + 16px) max(16px,var(--safe-r)) 0 max(16px,var(--safe-l))}
+  #library[data-mode="overview"] .lib-head{padding-bottom:18px}
+  #library[data-mode="overview"] .lib-head h2{font-size:29px}
+  #library[data-mode="overview"] .lib-chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:16px}
+  #library[data-mode="overview"] #notelist{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 10px;padding-bottom:calc(96px + var(--safe-b))}
+  #library[data-mode="overview"] #lib-new{display:none}
+  #library[data-mode="overview"] #lib-fab{display:inline-flex}
+  #library[data-mode="overview"].selecting #lib-fab{display:none}
+  #library[data-mode="overview"] .lib-name{font-size:14px}
+  #library[data-mode="overview"] .lib-meta{font-size:11px}
+  #library[data-mode="overview"] .lib-text{margin-right:25px}
+  #library[data-mode="overview"] .lib-more{width:30px;min-height:44px;bottom:4px}
+}
+
 /* Quick maths owns the middle of the bar: the name and who is here sit to its
    left, the note's own buttons to its right. The answer drops down beneath
    the field; enter (or a tap on the answer) offers to put it in the note. */
@@ -1408,6 +1506,10 @@ html[data-motion="off"] .prep-trace::before{transform:scaleX(1);opacity:.55}
       <button type="button" data-done="1"><span>done</span></button>
     </div>
     <button id="lib-fab" type="button"><i class="ph ph-plus"></i>new note</button>
+    <button id="lib-current" type="button" aria-label="return to the current note">
+      <span id="lib-current-preview"></span><span id="lib-current-title"></span>
+      <span class="lib-current-hint">pick up where you left off</span>
+    </button>
   </div>
 </aside>
 <div id="lib-undo" class="glass" role="status" hidden><span></span><button type="button">undo</button></div>
@@ -1729,14 +1831,29 @@ function oneRowEach(ix){
   return out;
 }
 
-/* the first typed line, for a note that was never named */
-function firstLine(lines){
-  const ln = (lines || []).slice().sort((a,b)=>a.y-b.y).find(l=>l.text && l.text.trim());
-  return ln ? ln.text.trim().replace(/\s+/g,' ').slice(0, 60) : '';
+/* Automatic recovery labels describe storage, not the note's content. */
+function cleanTitle(title){
+  return String(title||'').replace(/(?:\s+\((?:before a big change|edits from another tab|conflict copy|recovered copy)\))+$/i,'').trim();
 }
-/* what a note is called on screen: its name, or its first line until it has one */
-function displayTitle(title, lines){
-  return title && title !== 'untitled' ? title : (firstLine(lines) || 'untitled');
+/* The first user-written row, typed or recognized ink, in page order. */
+function firstLine(lines, textTranscripts=[], transcripts=[]){
+  const rows=(lines||[]).filter(l=>!l.tutor&&!l.wait&&l.text?.trim()).map(l=>({y:l.y,x:l.x||0,text:l.text}));
+  for(const t of textTranscripts||[]){
+    if(!t.text?.trim())continue;
+    const box=t.bbox || (lines===S.lines ? N.recog?.textGroups?.().find(g=>g.hash===t.hash)?.bbox : null);
+    rows.push({y:box?.[1]??Infinity,x:box?.[0]??0,text:t.text});
+  }
+  for(const t of transcripts||[]){
+    if(t.dismissed||t.needsConfirmation||!(t.ascii||t.latex)?.trim())continue;
+    if((textTranscripts||[]).some(p=>p.bbox&&t.bbox&&Math.abs(p.bbox[1]-t.bbox[1])<24))continue;
+    rows.push({y:t.bbox?.[1]??Infinity,x:t.bbox?.[0]??0,text:t.ascii||t.latex});
+  }
+  rows.sort((a,b)=>(a.y-b.y)||(a.x-b.x));
+  return rows[0]?.text.trim().replace(/\s+/g,' ').slice(0,60)||'';
+}
+function displayTitle(title, lines, textTranscripts, transcripts){
+  const name=cleanTitle(title);
+  return name&&name!=='untitled' ? name : (firstLine(lines,textTranscripts??(lines===S.lines?S.textTranscripts:[]),transcripts??(lines===S.lines?S.clusters:[]))||'untitled');
 }
 /* a page with nothing on it and no name: not yet a note */
 function isBlank(){
@@ -1766,11 +1883,11 @@ function serialize(){
     /* transcriptions are persisted so search can reach handwriting offline */
     localVersion:2,
     answers:N.mathcore ? N.mathcore.savedAnswers() : (S.savedAnswers||[]),
-    transcripts:S.clusters.filter(c=>c.latex||c.ascii||c.asked).map(c=>({hash:c.hash, latex:c.latex, ascii:c.ascii, kind:c.kind, modelVersion:c.modelVersion, alternatives:c.alternatives||[], confirmed:!!c.confirmed, needsConfirmation:!!c.needsConfirmation, confidence:c.confidence||0, asked:!!c.asked, ...(c.dismissed?{dismissed:true}:{}), plotVals:c._plotVals||null})),
+    transcripts:S.clusters.filter(c=>c.latex||c.ascii||c.asked).map(c=>({hash:c.hash, bbox:c.bbox, latex:c.latex, ascii:c.ascii, kind:c.kind, modelVersion:c.modelVersion, alternatives:c.alternatives||[], confirmed:!!c.confirmed, needsConfirmation:!!c.needsConfirmation, confidence:c.confidence||0, asked:!!c.asked, ...(c.dismissed?{dismissed:true}:{}), plotVals:c._plotVals||null})),
     /* PP-OCRv6 prose readings are hidden search metadata. They never replace
        ink or feed the maths evaluator, and the raw reading is kept so search
        can show exactly what the text recogniser saw. */
-    textTranscripts:(S.textTranscripts||[]).map(t=>({hash:t.hash,text:t.text,confidence:t.confidence||0,modelVersion:t.modelVersion,...(t.asked?{asked:true}:{})}))
+    textTranscripts:(S.textTranscripts||[]).map(t=>({hash:t.hash,text:t.text,confidence:t.confidence||0,modelVersion:t.modelVersion,...(t.bbox?{bbox:t.bbox.slice()}:{}),...(t.asked?{asked:true}:{})}))
   };
 }
 
@@ -1883,7 +2000,7 @@ async function repairIndex(){
         const doc=await Store.read(key);
         if(!doc||typeof doc!=='object')continue;
         const now=Date.now();
-        row={id,title:doc.title||'untitled',updated:doc.updated||now,created:doc.created||doc.updated||now,preview:firstLine(doc.lines),...(doc.library||{})};
+        row={id,title:doc.title||'untitled',updated:doc.updated||now,created:doc.created||doc.updated||now,preview:firstLine(doc.lines,doc.textTranscripts,doc.transcripts),...(doc.recoveryOf?{recoveryOf:doc.recoveryOf}:{}),...(doc.library||{})};
       }
       found.push(row); listed.add(id);
     }
@@ -1956,14 +2073,15 @@ function contentWeight(d){
 /* a stored version of a note kept as a note of its own, filed beside it;
    called inside that note's lock */
 async function writeCopy(base, title){
+  title=cleanTitle(title)||'untitled';
   const id=uid(),now=Date.now();
-  const copy={...base,id,title,created:now,updated:now,rev:1};
+  const copy={...base,id,title,recoveryOf:base.id,created:now,updated:now,rev:1};
   delete copy.live;
   if(!await Store.set('notas.note.'+id, copy)) throw new Error('Copy write failed');
   try{
     await withIndexLock(async()=>{
       const ix=await Store.index(),was=ix.find(r=>r.id===base.id);
-      ix.unshift({id,title,updated:now,created:now,preview:firstLine(copy.lines),...(was&&was.folder?{folder:was.folder}:{})});
+      ix.unshift({id,title,recoveryOf:base.id,updated:now,created:now,preview:firstLine(copy.lines,copy.textTranscripts,copy.transcripts),...(was&&was.folder?{folder:was.folder}:{})});
       if(!await Store.putIndex(ix)) throw new Error('Copy index write failed');
     });
   }catch(e){ await Store.del('notas.note.'+id); throw e; }
@@ -2049,7 +2167,7 @@ async function save(opts){
          would; and a version written by such a tab is kept as a copy before
          a tab in the room writes over it. */
       if(newerElsewhere&&live){
-        if(current.live===false) await safetyCopy(current, (current.title||'untitled')+' (edits from another tab)');
+        if(current.live===false) await safetyCopy(current, cleanTitle(current.title)||'untitled');
         doc.rev=Math.max(currentRev,S.id===doc.id?(S.remoteRev||0):0); newerElsewhere=false;
       }
       /* Anyone in a shared note can remove anything, and the removal reaches
@@ -2060,19 +2178,19 @@ async function save(opts){
         const changed=(current.strokes||[]).some(st=>st.author!=='ai'&&(!strokes.has(st.id)||JSON.stringify(st.pts)!==JSON.stringify(strokes.get(st.id).pts)))||
           (current.lines||[]).some(ln=>!ln.tutor&&ln.text&&(!lines.has(ln.id)||!lines.get(ln.id).text.includes(ln.text)))||
           (current.images||[]).some(im=>!images.has(im.id)||images.get(im.id).src!==im.src);
-        if(changed&&Date.now()-(lastSafetyCopy.get(doc.id)||0)>300000&&await safetyCopy(current,(current.title||'untitled')+' (before a big change)')){
+        if(changed&&Date.now()-(lastSafetyCopy.get(doc.id)||0)>300000&&await safetyCopy(current,cleanTitle(current.title)||'untitled')){
           lastSafetyCopy.set(doc.id,Date.now());
           if(contentWeight(doc)<contentWeight(current)/2)toast('removed content was kept as a copy in your notes.',8000);
         }
       }
       if(deletedElsewhere||newerElsewhere){
         const conflictId=uid();
-        const conflict={...doc,id:conflictId,title:(doc.title||'untitled')+(deletedElsewhere?' (recovered copy)':' (conflict copy)'),created:Date.now(),updated:Date.now(),rev:1};
+        const conflict={...doc,id:conflictId,recoveryOf:doc.id,title:cleanTitle(doc.title)||'untitled',created:Date.now(),updated:Date.now(),rev:1};
         if(!await Store.set('notas.note.'+conflictId, conflict)) throw new Error('Conflict copy write failed');
         await withIndexLock(async()=>{
           const cix=await Store.index();
           const was=cix.find(r=>r.id===doc.id);
-          cix.unshift({id:conflictId,title:conflict.title,updated:conflict.updated,created:conflict.created,preview:firstLine(conflict.lines),...(was&&was.folder?{folder:was.folder}:{})});
+          cix.unshift({id:conflictId,recoveryOf:doc.id,title:conflict.title,updated:conflict.updated,created:conflict.created,preview:firstLine(conflict.lines,conflict.textTranscripts,conflict.transcripts),...(was&&was.folder?{folder:was.folder}:{})});
           if(!await Store.putIndex(cix)) throw new Error('Conflict index write failed');
         });
         locallyWrittenRevs.set(conflictId,{rev:1,revision:savedRevision,complete:true});
@@ -2090,7 +2208,7 @@ async function save(opts){
       locallyWrittenRevs.set(doc.id,{rev:doc.rev,revision:savedRevision,complete:false});
       await withIndexLock(async()=>{
         const ix = await Store.index();
-        const row = { id:doc.id, title:doc.title, updated:doc.updated, created:doc.created, preview:firstLine(doc.lines) };
+        const row = { id:doc.id, title:doc.title, updated:doc.updated, created:doc.created, preview:firstLine(doc.lines,doc.textTranscripts,doc.transcripts) };
         const at = ix.findIndex(r=>r.id===doc.id);
         /* the library's own fields (folder, pinned, trashed) belong to the row,
            not to the note, so a save carries them over rather than dropping them */
@@ -2415,7 +2533,7 @@ function anonId(){
 }
 
 applyPrefs();
-N.core = { S, M, Store, uid, clamp, $, layout, growDoc, setZoom, firstLine, displayTitle, whenLabel, ZOOM_MIN, ZOOM_MAX, markDirty, save, serialize,
+N.core = { S, M, Store, uid, clamp, $, layout, growDoc, setZoom, firstLine, displayTitle, cleanTitle, whenLabel, ZOOM_MIN, ZOOM_MAX, markDirty, save, serialize,
            act, undo, redo, Undo, paintUndo, typed, toast, status, anonId, LINE_H, CONTENT_MAX, strokeById, reducedMotion, smoothWheel, glideTarget,
            FEEDBACK_URL, savePrefs, applyPrefs, setActive, getActive, saveView, getView, flushView, setSaveError, clearSaveError, withNoteLock, withIndexLock, deleteStoredNote, repairIndex, recoverRescues, rescueSave, patchIndexRows, exportText, isBlank, swipeAway };
 })();
@@ -3094,7 +3212,7 @@ function cutStroke(stroke,touched){
       if(cross>0.6||Math.hypot(b[0]-a[0],b[1]-a[1])>6)kept.push(b);
     }
     kept.push(r[r.length-1]);
-    const {id,pts,times:_t,bbox,drawn,_show,quickGroup,quickCount,quickMath,...rest}=stroke;
+    const {id,pts,times:_t,bbox,drawn,_show,quickGroup,quickCount,quickMath,notaGroup,notaCount,notaText,...rest}=stroke;
     const piece={...rest,id:C.uid(),pts:kept.flatMap(v=>[v[0],v[1],v[2]]),bbox:null};
     if(times)piece.times=kept.map(v=>v[3]);
     piece.bbox=bboxOf(piece.pts);
@@ -6141,7 +6259,7 @@ function asksForAnswer(n){
   if(n.kind !== 'cluster') return true;
   if(n.ref?.confirmed || n.ref?.asked) return true;
   if(n.ref?.needsConfirmation) return false;
-  return /=/.test(n.src || '') && !readsAsProse(n.src);
+  return N.recog?.handwritingKind(n.ref)==='math' && N.recog.hasWrittenEquals(n.ref,n.src) && !readsAsProse(n.src);
 }
 /* Handwriting without an '=' is not calculated, but it is not hidden either:
    the chip shows what the reader made of the ink and offers Solve. The student
@@ -6150,7 +6268,7 @@ function asksForAnswer(n){
 function offersSolve(n){
   if(n.kind !== 'cluster' || !n.src || n.pending || n.ref?.review) return false;
   if(asksForAnswer(n)) return false;
-  return looksLikeMath(n.src) && !readsAsProse(n.src);
+  return N.recog?.handwritingKind(n.ref)==='math' && looksLikeMath(n.src) && !readsAsProse(n.src);
 }
 function requestSolve(id){
   const live = S.clusters.find(c=>c.id===id); if(!live) return;
@@ -6222,6 +6340,7 @@ function paintAccessible(nodes){
   const out=[];
   for(const n of nodes){
     if(!n.src)continue;
+    if(n.kind==='cluster'&&!n.ref?.asked&&!n.ref?.confirmed&&N.recog?.handwritingKind(n.ref)!=='math')continue;
     out.push((n.kind==='cluster'?'handwriting read as ':'typed ')+n.src);
     if(n.result&&n.kind==='line'&&!n.stated&&/=\s*$/.test(n.src||''))out.push('answer '+n.result+' suggested; press Space to accept');
     else if(n.result)out.push('result '+n.result);
@@ -6304,6 +6423,9 @@ function paint(nodes){
     /* Handwriting that does not ask for an answer gets no chip at all. Writing
        a word is not a failed sum, and a model that only knows formulae will
        always read one, so the quiet default is to leave prose alone. */
+    // Background prose, uncertain ink and failed reads never become math UI.
+    // Explicit Solve still surfaces its reading or a useful failure.
+    if(n.kind==='cluster'&&!n.ref?.asked&&!n.ref?.confirmed&&(N.recog?.handwritingKind(n.ref)!=='math'||n.ref?.review))continue;
     const editingError=n.kind==='line'&&n.error&&N.text&&N.text.isFocused&&N.text.isFocused(n.id);
     /* a typed line that reads as words and never asks with '=' is a note, not
        a failed sum: "homework 12 sep" gets no chip */
@@ -7792,7 +7914,7 @@ function privacySheet(){
   openSheet(
     '<h2>privacy</h2>' +
     '<p>your notes are saved in this browser. no account is needed. handwriting recognition, calculations and local maths hints run on this device.</p>' +
-    '<p>asking nota sends your question and nearby note text to cerebras for an ai reply. ink and images are not sent to the tutor.</p>' +
+    '<p>asking nota sends your question, nearby note text, and any page image to cerebras. if qwen cannot answer, cloudflare workers ai is tried with the same context, then cerebras gpt-oss with text only.</p>' +
     '<p>sharing uploads the note to our cloudflare service and syncs it with anyone who has the link. your nickname is saved on this device and shown to collaborators. stopping sharing on this device does not delete their copies.</p>' +
     '<p>setup downloads app files and ai models. once ready, local features work offline. nota and live sharing need a connection. microphone input is disabled.</p>' +
     '<p>clearing browser data deletes local notes. export anything you want to keep.</p>');
@@ -8223,6 +8345,8 @@ function validateImportedNote(doc){
     return {id:safeId(st.id),author:st.author==='ai'?'ai':'user',w,t0:Number(st.t0)||0,t1:Number(st.t1)||0,pts,bbox:N.ink.bboxOf(pts),...(times?{times}:{}),
       ...(typeof st.quickGroup==='string'&&st.quickGroup.length<=160&&Number.isInteger(st.quickCount)&&st.quickCount>0&&st.quickCount<=200000
         ?{quickGroup:st.quickGroup,quickCount:st.quickCount,...(typeof st.quickMath==='string'&&st.quickMath.length<=8192?{quickMath:st.quickMath}:{})}:{}),
+      ...(typeof st.notaGroup==='string'&&st.notaGroup.length<=160&&Number.isInteger(st.notaCount)&&st.notaCount>0&&st.notaCount<=200000
+        ?{notaGroup:st.notaGroup,notaCount:st.notaCount,...(typeof st.notaText==='string'&&st.notaText.length<=32000?{notaText:st.notaText}:{})}:{}),
       ...(typeof st.color==='string'&&/^#[0-9a-f]{6}$/i.test(st.color)?{color:st.color}:{})};
   });
   const lines=doc.lines.map(l=>{
@@ -8249,9 +8373,9 @@ function validateImportedNote(doc){
       ...(finite(im.rot,100)&&Number(im.rot)?{rot:Number(im.rot)}:{}),
       ...(full?{full,crop:{l:c.l,t:c.t,r:c.r,b:c.b}}:{}),...(bg?{bg}:{}),...(cut?{cut}:{})};
   });
-  const textTranscripts=Array.isArray(doc.textTranscripts)?doc.textTranscripts.filter(t=>t&&typeof t.hash==='string'&&typeof t.text==='string'&&t.hash.length<=500&&t.text.length<=10000).map(t=>({hash:t.hash,text:t.text,confidence:Number(t.confidence)||0,modelVersion:String(t.modelVersion||''),...(t.asked?{asked:true}:{})})):[];
+  const textTranscripts=Array.isArray(doc.textTranscripts)?doc.textTranscripts.filter(t=>t&&typeof t.hash==='string'&&typeof t.text==='string'&&t.hash.length<=500&&t.text.length<=10000).map(t=>({hash:t.hash,text:t.text,confidence:Number(t.confidence)||0,modelVersion:String(t.modelVersion||''),...(Array.isArray(t.bbox)&&t.bbox.length===4&&t.bbox.every(coord)?{bbox:t.bbox.map(Number)}:{}),...(t.asked?{asked:true}:{})})):[];
   const transcripts=Array.isArray(doc.transcripts)?doc.transcripts.filter(t=>t&&typeof t.hash==='string'&&t.hash.length<=500).slice(0,20000).map(t=>({
-    hash:t.hash,latex:typeof t.latex==='string'?t.latex.slice(0,2000):'',ascii:typeof t.ascii==='string'?t.ascii.slice(0,2000):'',
+    hash:t.hash,...(Array.isArray(t.bbox)&&t.bbox.length===4&&t.bbox.every(coord)?{bbox:t.bbox.map(Number)}:{}),latex:typeof t.latex==='string'?t.latex.slice(0,2000):'',ascii:typeof t.ascii==='string'?t.ascii.slice(0,2000):'',
     kind:t.kind==='expression'?'expression':'expression',modelVersion:typeof t.modelVersion==='string'?t.modelVersion.slice(0,100):'',
     alternatives:Array.isArray(t.alternatives)?t.alternatives.filter(x=>typeof x==='string').slice(0,20):[],confirmed:!!t.confirmed,needsConfirmation:!!t.needsConfirmation,
     confidence:Number.isFinite(Number(t.confidence))?Number(t.confidence):0,asked:!!t.asked,...(t.dismissed?{dismissed:true}:{}),
@@ -8555,7 +8679,7 @@ if(N.ai && N.ai.watch){ N.ai.watch(dlSyncReaders); N.ai.watchText && N.ai.watchT
 N.downloads = { set:dlSet, sync:dlSyncReaders, open:dlOpen, busy:dlBusy };
 $('#btn-redo').onclick = ()=>C.redo();
 $('#btn-menu').onclick = menuSheet;
-$('#brand').onclick = ()=>N.library ? N.library.toggle() : notesSheet();
+$('#brand').onclick = ()=>N.library ? N.library.toggle({overview:true}) : notesSheet();
 /* the title edits where it sits: tap it, type, and Enter or a tap elsewhere
    keeps the new name. Escape puts the old one back. */
 const titleEl = $('#title'), titleIn = $('#title-edit');
@@ -8661,8 +8785,9 @@ async function loadFolders(){
 async function saveFolders(names){ await C.Store.set('notas.folders', [...new Set(names.map(cleanFolder).filter(Boolean))]); }
 
 /* ---- the list ---- */
-function title(r){ return r.title && r.title !== 'untitled' ? r.title : (r.preview || 'untitled'); }
+function title(r){ const name=C.cleanTitle(r.title); return name&&name!=='untitled'?name:(r.preview||'untitled'); }
 function inView(r){
+  if(L.query) return !r.trashed;
   if(L.view === 'trash') return !!r.trashed;
   if(r.trashed) return false;
   if(L.view === 'shared') return !!(N.collab && N.collab.isShared(r.id));
@@ -8682,12 +8807,18 @@ async function refresh(){
   /* a list that cannot be read now keeps what it showed last */
   try{ L.ix = await C.Store.index(); }
   catch(e){ if(Date.now()-unreadWarned > 60000){ unreadWarned = Date.now(); C.toast('your notes could not be read just now. they are safe. reload if this keeps happening.', 7000); } }
+  if(L.open&&el.dataset.mode==='overview')updateCurrentPreview();
   warnTrashedHere();
   await purgeTrash();
   L.folders = await loadFolders();
   if(L.view.startsWith('f:') && !L.folders.includes(L.view.slice(2))) L.view = 'all';
   if(L.view === 'shared' && !L.ix.some(r=>!r.trashed && N.collab && N.collab.isShared(r.id))) L.view = 'all';
   for(const id of [...L.sel]) if(!L.ix.some(r=>r.id===id)) L.sel.delete(id);
+  for(const row of L.ix){
+    if(C.cleanTitle(row.title)&&C.cleanTitle(row.title)!=='untitled')continue;
+    const doc=await docOf(row.id);
+    if(doc)row.preview=C.firstLine(doc.lines,doc.textTranscripts,doc.transcripts)||row.preview;
+  }
   paintChips();
   if(L.query) await runSearch(L.query); else paint();
 }
@@ -8716,6 +8847,7 @@ function chip(view, icon, label, count){
     (count ? '<span class="n">'+count+'</span>' : '') + '</button>';
 }
 function paintChips(){
+  el.classList.toggle('searching',!!L.query);
   const live = L.ix.filter(r=>!r.trashed), trashed = L.ix.length - live.length;
   const shared = live.filter(r=>N.collab && N.collab.isShared(r.id)).length;
   chips.innerHTML =
@@ -8724,7 +8856,7 @@ function paintChips(){
     L.folders.map(f=>chip('f:'+f,'ph-folder-simple', f, live.filter(r=>r.folder===f).length)).join('') +
     '<button type="button" class="lib-chip add" data-add="1"><i class="ph ph-folder-simple-plus" aria-hidden="true"></i><span>new folder</span></button>' +
     chip('trash','ph-trash','trash', trashed);
-  heading.textContent = L.view === 'trash' ? 'trash' : L.view === 'shared' ? 'shared' : L.view.startsWith('f:') ? L.view.slice(2) : 'notes';
+  heading.textContent = L.query ? 'notes' : L.view === 'trash' ? 'trash' : L.view === 'shared' ? 'shared' : L.view.startsWith('f:') ? L.view.slice(2) : 'notes';
   $('#lib-fab').hidden = L.view === 'trash';
 }
 chips.addEventListener('click', e=>{
@@ -8806,6 +8938,7 @@ let searchTimer = null;
 search.addEventListener('input', ()=>{
   clearTimeout(searchTimer);
   L.query = search.value.trim();
+  paintChips();
   if(!L.query){ L.searchSeq++; paint(); return; }
   searchTimer = setTimeout(()=>runSearch(L.query), 150);
 });
@@ -8977,39 +9110,121 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', ()=>{ if
 const MAIN = ['#topbar','#scroller','#pill','#penpop','#textpop','#askbar','#offline-status','#local-status','#selbar'];
 function setMainInert(on){ for(const sel of MAIN){ const m = document.querySelector(sel); if(m) m.inert = !!on; } }
 let returnFocus = null;
+/* Snapshot navigation leaves the real editor's zoom, scroll and input
+   geometry alone. Queue changes so a fast close/open cannot reuse a
+   transition name while the preceding snapshot is still alive. */
+let overviewNavigation = Promise.resolve();
+function overviewChange(opening, update, source){
+  const run = async()=>{
+    if(!document.startViewTransition || C.reducedMotion()) return update();
+    // Leaving the notebook uses a shared page snapshot. Opening a card instead
+    // grows the complete new scene from its bounds, with real content from frame one.
+    const old = opening ? $('#scroller') : null;
+    const oldName = old?.style.viewTransitionName || '';
+    let target = null, targetName = '';
+    const root = document.documentElement, bounds = !opening && source?.getBoundingClientRect();
+    const expanding = !!(bounds && bounds.width > 0 && bounds.height > 0);
+    if(expanding){
+      root.style.setProperty('--note-from-x',bounds.left+'px');
+      root.style.setProperty('--note-from-y',bounds.top+'px');
+      root.style.setProperty('--note-from-sx',String(bounds.width/innerWidth));
+      root.style.setProperty('--note-from-sy',String(bounds.height/innerHeight));
+      root.classList.add('library-expand');
+    }
+    document.documentElement.classList.add('library-transition');
+    if(old) old.style.viewTransitionName = 'notebook';
+    const transition = document.startViewTransition(async()=>{
+      if(old) old.style.viewTransitionName = oldName;
+      await update();
+      if(expanding && L.open) transition.skipTransition(); // A failed save keeps the library in place.
+      target = opening ? overviewPreview() : null;
+      if(target){targetName = target.style.viewTransitionName;target.style.viewTransitionName = 'notebook';}
+    });
+    transition.ready.catch(()=>{}); // A skipped snapshot still completes navigation.
+    try{
+      await transition.updateCallbackDone;
+      await transition.finished;
+    }finally{
+      if(old) old.style.viewTransitionName = oldName;
+      if(target) target.style.viewTransitionName = targetName;
+      document.documentElement.classList.remove('library-transition');
+      root.classList.remove('library-expand');
+      for(const name of ['--note-from-x','--note-from-y','--note-from-sx','--note-from-sy']) root.style.removeProperty(name);
+    }
+  };
+  const next = overviewNavigation.then(run,run);
+  overviewNavigation = next.catch(()=>{});
+  return next;
+}
+function overviewPreview(){
+  const current = $('#lib-current-preview');
+  return current.getClientRects().length ? current : list.querySelector('.note-row[aria-current="true"] .lib-thumb');
+}
+let currentPreviewSeq=0;
+async function updateCurrentPreview(){
+  const id=S.id, seq=++currentPreviewSeq, button=$('#lib-current'), preview=$('#lib-current-preview');
+  const row=L.ix.find(r=>r.id===id);
+  const available=!!id&&!row?.trashed;
+  button.disabled=!available;
+  if(preview.dataset.id!==id||!available)preview.replaceChildren();
+  preview.dataset.id=id||'';
+  $('#lib-current-title').textContent=available?C.displayTitle(S.title,S.lines):'';
+  if(!available)return;
+  const thumb=await renderThumb(C.serialize()).catch(()=>null);
+  if(seq!==currentPreviewSeq||id!==S.id)return;
+  preview.replaceChildren();
+  if(thumb){
+    thumbs.set(id,thumb);
+    const img=document.createElement('img');img.src=thumb.src;img.alt='';
+    img.classList.toggle('flip',thumb.dark!==darkNow());preview.appendChild(img);
+  }
+}
 async function open(opts={}){
-  const was = L.open, mode = shape();
+  if(opts.overview && !opts.transitioned){
+    if(L.open && el.dataset.mode !== 'overview') close({immediate:true});
+    L.view = 'all'; L.query = ''; search.value = ''; endSelect();
+    await updateCurrentPreview();
+    return overviewChange(true,()=>open({...opts,transitioned:true}));
+  }
+  const was = L.open, mode = opts.overview ? 'overview' : shape();
   if(!was){
     L.open = true;
     returnFocus = document.activeElement instanceof HTMLElement && !el.contains(document.activeElement) ? document.activeElement : null;
     el.dataset.mode = mode;
     panel.setAttribute('role', mode === 'dock' ? 'complementary' : 'dialog');
     if(mode === 'dock') panel.removeAttribute('aria-modal'); else panel.setAttribute('aria-modal','true');
+    el.classList.remove('leave'); el.inert = false;
     el.hidden = false; el.classList.add('enter');
     $('#brand').setAttribute('aria-expanded','true');
     if(mode === 'dock'){ setPref('docked', true); document.body.classList.add('lib-docked'); C.layout(); }
     else {
       setMainInert(true);
-      if(mode === 'page'){ try{ history.pushState({notasLibrary:1}, ''); L.pushed = true; }catch(e){} }
+      if(mode === 'overview') setPref('docked',false);
+      if(mode === 'page' || mode === 'overview'){ try{ history.pushState({notasLibrary:1}, ''); L.pushed = true; }catch(e){} }
     }
     void el.offsetWidth; el.classList.remove('enter');
   }
   if(was && opts.focusSearch && mqFine.matches){ search.focus(); search.select(); return; }
   await refresh();
+  if(!L.open) return;
+  if(mode === 'overview') await showThumb(S.id);
   /* with a keyboard the search box is where the list starts; on a touch
      screen that would raise the keyboard over the list */
   if(opts.focusSearch && (mqFine.matches || opts.focusSearch === 'force')){ search.focus(); search.select(); }
   else if(!was){
     const cur = list.querySelector('.note-row[aria-current="true"] .t') || list.querySelector('.note-row .t');
-    (mode === 'dock' && cur ? cur : el.querySelector('.lib-close')).focus({preventScroll:true});
+    (mode === 'dock'&&cur ? cur : mode==='overview'||mode==='page' ? (cur||search) : el.querySelector('.lib-close')).focus({preventScroll:true});
     const row = list.querySelector('.note-row[aria-current="true"]'); if(row) row.scrollIntoView({block:'nearest'});
   }
 }
 function close(opts={}){
   if(!L.open) return;
+  if(el.dataset.mode === 'overview' && !opts.transitioned && !opts.immediate){
+    return overviewChange(false,()=>close({...opts,transitioned:true,immediate:!!document.startViewTransition || C.reducedMotion()}));
+  }
   /* on a phone the list is a page in the history: closing it is going back,
-     so the system back gesture and the arrow in the corner agree */
-  if(el.dataset.mode === 'page' && L.pushed && !opts.fromHistory){ L.pushed = false; try{ history.back(); }catch(e){} }
+     so the system back gesture returns to the editor */
+  if((el.dataset.mode === 'page' || el.dataset.mode === 'overview') && L.pushed && !opts.fromHistory){ L.pushed = false; try{ history.back(); }catch(e){} }
   L.open = false; L.pushed = false; endSelect(); closePop();
   const mode = el.dataset.mode, inside = el.contains(document.activeElement);
   $('#brand').setAttribute('aria-expanded','false');
@@ -9017,6 +9232,7 @@ function close(opts={}){
     if(!opts.keepDocked) setPref('docked', false);
     document.body.classList.remove('lib-docked'); el.hidden = true; C.layout();
   } else {
+    el.inert = true;
     setMainInert(false);
     if(opts.immediate){ el.hidden = true; }
     else {
@@ -9028,10 +9244,14 @@ function close(opts={}){
   if(inside){ const back = returnFocus && returnFocus.isConnected ? returnFocus : $('#brand'); try{ back.focus({preventScroll:true}); }catch(e){} }
   returnFocus = null;
 }
-function toggle(){ L.open ? close() : open(); }
+function toggle(opts={}){
+  if(opts.overview && L.open && el.dataset.mode !== 'overview') return open(opts);
+  return L.open ? close() : open(opts);
+}
 addEventListener('popstate', ()=>{ if(L.open && L.pushed){ L.pushed = false; close({fromHistory:true}); } });
 /* a rotated tablet or a resized window takes the panel's other shape */
 function reshape(){
+  if(L.open && el.dataset.mode === 'overview') return;
   const mode = shape();
   if(L.open && el.dataset.mode !== mode){
     const wasDock = el.dataset.mode === 'dock';
@@ -9043,6 +9263,7 @@ function reshape(){
 mqDock.addEventListener?.('change', reshape); mqWide.addEventListener?.('change', reshape);
 el.querySelector('.lib-close').onclick = ()=>close();
 el.querySelector('.lib-scrim').onclick = ()=>close();
+$('#lib-current').onclick = ()=>{const id=$('#lib-current-preview').dataset.id;if(id===S.id&&!$('#lib-current').disabled)openRow(id,$('#lib-current-preview'));};
 el.addEventListener('keydown', e=>{
   if(e.key === 'Escape' && !e.defaultPrevented){
     e.preventDefault(); e.stopPropagation();
@@ -9079,9 +9300,19 @@ el.addEventListener('keydown', e=>{
 }
 
 /* ---- opening a note ---- */
-async function openRow(id){
+async function openRow(id,previewSource){
   if(L.selecting){ toggleSel(id); return; }
   if(L.view === 'trash'){ rowMenu(id); return; }
+  if(el.dataset.mode === 'overview'){
+    const source = previewSource || list.querySelector('.note-row[data-id="'+CSS.escape(id)+'"] .lib-thumb');
+    return overviewChange(false,async()=>{
+      if(id !== S.id) await N.ui.openNote(id);
+      if(id === S.id){
+        close({transitioned:true,immediate:true});
+        N.text && N.text.focusLast && N.text.focusLast();
+      }
+    },source);
+  }
   if(el.dataset.mode !== 'dock') close();
   if(id !== S.id) await N.ui.openNote(id);
   else N.text && N.text.focusLast && N.text.focusLast();
@@ -9092,6 +9323,15 @@ function markCurrent(){
 }
 async function newNote(){
   const folder = L.view.startsWith('f:') ? L.view.slice(2) : '';
+  if(el.dataset.mode === 'overview'){
+    return overviewChange(false,async()=>{
+      const before = S.id;
+      await N.ui.newNote();
+      if(S.id === before) return;
+      S.newFolder = folder ? {id:S.id,folder} : null;
+      close({transitioned:true,immediate:true});
+    });
+  }
   if(el.dataset.mode !== 'dock') close();
   await N.ui.newNote();
   S.newFolder = folder ? {id:S.id, folder} : null;
@@ -9434,7 +9674,7 @@ async function trash(ids){
   const now = Date.now();
   ids.forEach(id=>trashingHere.add(id));
   try{
-    if(!await C.patchIndexRows(ids, ()=>({trashed:now}))) C.toast('could not move that to the trash.');
+    if(!await C.patchIndexRows(ids, ()=>({trashed:now}))){ C.toast('could not move that to the trash.'); return; }
     endSelect();
     /* the open note went to the trash: the page moves on to the next note */
     if(ids.includes(S.id)){
@@ -9459,12 +9699,12 @@ async function duplicate(id){
   const row = L.ix.find(r=>r.id===id);
   if(!doc) return C.toast('could not copy that note.');
   const nid = C.uid(), now = Date.now();
-  const copy = {...JSON.parse(JSON.stringify(doc)), id:nid, title:C.displayTitle(doc.title, doc.lines)+' copy', created:now, updated:now, rev:1};
+  const copy = {...JSON.parse(JSON.stringify(doc)), id:nid, title:C.displayTitle(doc.title, doc.lines,doc.textTranscripts,doc.transcripts)+' copy', created:now, updated:now, rev:1};
   const ok = await C.withNoteLock(nid, async()=>{
     if(!await C.Store.set('notas.note.'+nid, copy)) return false;
     return await C.withIndexLock(async()=>{
       const ix = await C.Store.index(), at = ix.findIndex(r=>r.id===id);
-      const fresh = {id:nid, title:copy.title, updated:now, created:now, preview:C.firstLine(copy.lines), ...(row && row.folder ? {folder:row.folder} : {})};
+      const fresh = {id:nid, title:copy.title, updated:now, created:now, preview:C.firstLine(copy.lines,copy.textTranscripts,copy.transcripts), ...(row && row.folder ? {folder:row.folder} : {})};
       ix.splice(at < 0 ? 0 : at, 0, fresh);
       return await C.Store.putIndex(ix);
     });
@@ -9495,7 +9735,7 @@ async function exportNotes(ids, backup){
     N.ui.download(name.replace(/[\\/:*?"<>|]+/g,' '), url);
     setTimeout(()=>URL.revokeObjectURL(url), 60000);
   }, delay);
-  if(docs.length === 1 && !backup){ N.ui.downloadJSON((C.displayTitle(docs[0].title, docs[0].lines)||'notas')+'.notas.json',docs[0]); endSelect(); return; }
+  if(docs.length === 1 && !backup){ N.ui.downloadJSON((C.displayTitle(docs[0].title, docs[0].lines,docs[0].textTranscripts,docs[0].transcripts)||'notas')+'.notas.json',docs[0]); endSelect(); return; }
   /* A bundle bigger than import takes (200 MB a file) could never be
      restored, so a large one is split into parts; import takes them all
      back at once, several files chosen together. */
@@ -9563,7 +9803,7 @@ async function importBundle(raw, intoFolder){
       doc.library=folder?{folder}:{};
       if(!await C.Store.set('notas.note.'+id, doc)){ bad++; continue; }
       if(folder) folders.add(folder);
-      rows.push({id, title:doc.title, updated, created, preview:C.firstLine(doc.lines), ...(folder ? {folder} : {})});
+      rows.push({id, title:doc.title, updated, created, preview:C.firstLine(doc.lines,doc.textTranscripts,doc.transcripts), ...(folder ? {folder} : {})});
     }catch(e){ bad++; }
   }
   let listed = true;
@@ -9620,7 +9860,7 @@ if(chan) chan.onmessage = e=>{
 /* a docked sidebar left open last time is open again, once the first note is */
 function boot(){ if(shape() === 'dock' && prefs().docked) open(); }
 /* another note is on the page: the list says which */
-function changed(){ if(L.open){ markCurrent(); refresh(); } }
+function changed(){ if(L.open){ markCurrent(); if(el.dataset.mode==='overview')updateCurrentPreview(); refresh(); } }
 
 N.library = { open, close, toggle, refresh, leaving, changed, boot, importBundle, renderThumb,
               get isOpen(){ return L.open; }, get mode(){ return L.open ? el.dataset.mode : ''; },

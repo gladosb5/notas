@@ -43,7 +43,7 @@ try{
  const ask=(question='test me on my notes about photosynthesis')=>page.evaluate(async question=>{
   let text='';const pieces=[],grabs=[];
   try{
-   await N.nota.stream(question,'page context',p=>{text+=p;pieces.push(p);},new AbortController().signal,null,{onGrab:()=>grabs.push(document.querySelector('#nota-receipt')?.textContent||'')});
+   await N.nota.stream(question,'page context',p=>{text+=p;pieces.push(p);},new AbortController().signal,null,false,undefined,{onGrab:()=>grabs.push(document.querySelector('#nota-receipt')?.textContent||'')});
    return {text,pieces,grabs:grabs.length};
   }catch(e){return {text,pieces,grabs:grabs.length,failed:!!e.toolsFailed,error:String(e.message)};}
  },question);
@@ -109,8 +109,16 @@ try{
  script=[{deltas:toolCall('e1','list_notes','{}')},{deltas:[{content:'  '}]}];
  got=await ask();assert.ok(got.failed,'nothing answered after the calls: '+got.error);
  /* a refused request is an ordinary error, not a failure of the tools */
- script=[{status:400},{status:400}];
+ script=Array.from({length:6},()=>({status:400}));calls.length=0;
  got=await ask();assert.ok(!got.failed&&got.error==='refused','a refused request: '+got.error);
+ assert.deepEqual(calls.map(c=>c.model),['qwen-3.8-27b','qwen-3.8-27b','@cf/qwen/qwen3.8-27b','@cf/qwen/qwen3.8-27b','gpt-oss-120b','gpt-oss-120b']);
+
+ /* Cloudflare carries the full notebook tool conversation after primary failure. */
+ script=[{status:503},{deltas:toolCall('cf1','read_note','{"id":"bio1"}')},{deltas:words('Plants make food in the chloroplasts.')}];calls.length=0;
+ got=await ask();assert.equal(got.text,'Plants make food in the chloroplasts.');assert.equal(got.grabs,1);
+ assert.deepEqual(calls.map(c=>c.model),['qwen-3.8-27b','@cf/qwen/qwen3.8-27b','@cf/qwen/qwen3.8-27b']);
+ assert.equal(calls[2].messages.at(-1).tool_call_id,'cf1');
+ assert.match(calls[2].messages.at(-1).content,/chloroplasts/);
 
  /* through the page: the receipt says notes are being fetched while the
     paper plays, and never shows a raw call */

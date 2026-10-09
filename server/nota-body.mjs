@@ -12,6 +12,8 @@
 // pictures of the page, as PNG or JPEG data URLs (the provider takes no
 // links, and its free trial no more than two pictures to a request).
 export const MODEL='qwen-3.8-27b';
+export const TEXT_MODEL='gpt-oss-120b';
+export const CLOUDFLARE_MODEL='@cf/qwen/qwen3.8-27b';
 // The model thinks before it answers, and its thinking counts against this.
 export const MAX_TOKENS=2048;
 const MAX_IMAGES=2,MAX_IMAGE_CHARS=1500*1024;
@@ -55,7 +57,7 @@ function content(m,count){
 // the upstream body, or null when this is not a question nota would ask
 export function notaBody(json){
   if(!json||typeof json!=='object'||Array.isArray(json))return null;
-  if(json.model!==MODEL||json.stream!==true)return null;
+  if(![MODEL,CLOUDFLARE_MODEL,TEXT_MODEL].includes(json.model)||json.stream!==true)return null;
   const list=json.messages;
   if(!Array.isArray(list)||!list.length||list.length>MAX_MESSAGES)return null;
   const tools=Array.isArray(json.tools)&&json.tools.length>0;
@@ -91,11 +93,11 @@ export function notaBody(json){
     messages.push({role:m.role,content:c.content});
   }
   if(open.size)return null;
-  if(chars>MAX_CHARS||!['user','tool'].includes(messages[messages.length-1].role))return null;
-  const body={model:MODEL,stream:true,messages,max_tokens:Math.max(1,Math.min(Math.floor(+json.max_tokens)||MAX_TOKENS,MAX_TOKENS))};
+  if((json.model===TEXT_MODEL&&images)||chars>MAX_CHARS||!['user','tool'].includes(messages[messages.length-1].role))return null;
+  const body={model:json.model,stream:true,messages,max_tokens:Math.max(1,Math.min(Math.floor(+json.max_tokens)||MAX_TOKENS,MAX_TOKENS))};
   const t=+json.temperature;
   if(json.temperature!==undefined&&Number.isFinite(t))body.temperature=Math.max(0,Math.min(1.5,t));
-  if(EFFORTS.has(json.reasoning_effort))body.reasoning_effort=json.reasoning_effort;
+  if((json.model===CLOUDFLARE_MODEL?['low','medium','xhigh'].includes(json.reasoning_effort):EFFORTS.has(json.reasoning_effort)))body.reasoning_effort=json.reasoning_effort;
   if(tools){body.tools=TOOLS;body.tool_choice=json.tool_choice==='none'?'none':'auto';}
   return body;
 }

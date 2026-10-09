@@ -78,12 +78,13 @@ try{
     N.mathcore.run();
     const word=N.core.S.clusters.find(c=>c.strokeIds.some(id=>id.startsWith('w')));
     const node=N.core.S.nodes.find(o=>o.ref===word);
-    return {read:word?.latex,hasEquals:/=/.test(word?.ascii||''),result:node?.result,
+    return {read:word?.latex,intent:N.recog.handwritingKind(word),hasEquals:/=/.test(word?.ascii||''),result:node?.result,
             chips:document.querySelectorAll('#margin .chip').length,
             clusters:N.core.S.clusters.length};
   },placeWord('hello','w',380,-100,60000));
   console.log('Prose handling:',JSON.stringify(quiet));
-  assert.ok(quiet.read,'The word was still read');
+  assert.equal(quiet.intent,'text','Independent text evidence keeps the word out of maths');
+  assert.ok(!quiet.read,'Prose bypasses the formula decoder');
   assert.ok(!quiet.hasEquals,'Test word did not accidentally read as an equation');
   assert.ok(!quiet.result,'A word is never calculated');
   assert.ok(quiet.chips<quiet.clusters,'A word with no equals sign gets no chip');

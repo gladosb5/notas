@@ -54,6 +54,7 @@ function clearUnconfirmedReadings(){
   }
   S.textTranscripts=[];
   attempted.clear();textAttempted.clear();
+  lineReadings.clear();lineRequests.clear();inkRoutes.clear();
 }
 function state(name){
   // gen rises on every teardown and every fresh boot. A boot that fails after
@@ -534,9 +535,77 @@ function textGroups(clusters,byId,frames){
 function validText(text,confidence){
   return !!String(text||'').trim() && Number(confidence)>=TEXT_CONFIDENCE_MIN && /[\p{L}\p{N}]/u.test(String(text));
 }
+
+// Formula likelihood is not evidence that ink is mathematics. Route with the
+// independent text reader, using the whole line so word fragments stay quiet.
+const lineReadings=new Map(),lineRequests=new Map(),inkRoutes=new Map();
+function classifyHandwriting(out){
+  const text=String(out?.text||'').trim(),confidence=Number(out?.confidence);
+  if(!text||!Number.isFinite(confidence)||confidence<TEXT_CONFIDENCE_MIN)return 'uncertain';
+  const src=text.replace(/[×·]/g,'*').replace(/÷/g,'/').replace(/[−–]/g,'-').replace(/(\d)\s*[xX]\s*(?=\d)/g,'$1*');
+  if(/^\d{1,4}[-/]\d{1,2}[-/]\d{1,4}$/.test(src))return 'text';
+  const signal=/[=+*/^<>-]|\b(?:sqrt|sin|cos|tan|log|ln|exp|abs)\s*\(/i.test(src);
+  if(!signal)return 'text';
+  const named=/^\s*[A-Za-z][A-Za-z0-9_]*\s*[=+*/^-]\s*[-+\d.(][\d\s.+*/^()=-]*$/.test(src);
+  const known=/^(?:sqrt|nthRoot|sin|cos|tan|asin|acos|atan|arcsin|arccos|arctan|log|ln|exp|abs|min|max|det|pi|solve|integrate|antiderivative|derivative|plot|true|false)$/i;
+  const prose=!named&&((src.match(/[A-Za-z]{3,}/g)||[]).some(word=>!known.test(word))||
+    /[^\x00-\x7f\u0370-\u03ff]/.test(src)||/[\p{L}]{2,}/u.test(src.replace(/[A-Za-z]+/g,''))||/\b[A-Za-z]{2,}\s+[A-Za-z]{2,}\b/.test(src));
+  if(prose)return /\d/.test(src)?'mixed':'text';
+  return /[\p{L}\p{N}]/u.test(src)&&!/[!?;:"'@#]/.test(src)?'math':'uncertain';
+}
+function groupForInk(cl){
+  const ids=new Set(cl.strokeIds||[]);
+  return textGroups().find(g=>g.strokeIds.some(id=>ids.has(id)));
+}
+function handwritingKind(cl){
+  const group=groupForInk(cl);if(!group)return 'uncertain';
+  const route=inkRoutes.get(cl.hash);
+  if(route?.groupHash===group.hash)return route.kind;
+  const saved=(S.textTranscripts||[]).find(t=>t.hash===group.hash&&t.modelVersion===TEXT_VERSION);
+  const kind=classifyHandwriting(lineReadings.get(group.hash)||saved);
+  return kind==='mixed'?'uncertain':kind;
+}
+async function readLineText(group,valid){
+  const saved=lineReadings.get(group.hash)||(S.textTranscripts||[]).find(t=>t.hash===group.hash&&t.modelVersion===TEXT_VERSION);
+  if(saved)return saved;
+  if(lineRequests.has(group.hash))return lineRequests.get(group.hash);
+  const generation=epoch,note=S.id;
+  const request=textInfer(textCrop(group),valid).then(out=>{
+    if(generation===epoch&&S.id===note&&valid())lineReadings.set(group.hash,out);
+    return out;
+  });
+  lineRequests.set(group.hash,request);
+  try{return await request;}finally{if(lineRequests.get(group.hash)===request)lineRequests.delete(group.hash);}
+}
+async function routeInk(cl,group,out,valid){
+  let kind=classifyHandwriting(out);
+  // A prose line containing a distinct equation needs evidence from that
+  // equation's own crop, rather than promoting every fragment on the line.
+  if(kind==='mixed'){
+    kind='uncertain';
+    if(group.strokeIds.length!==cl.strokeIds.length){
+      try{kind=classifyHandwriting(await textInfer(textCrop(cl),valid));}
+      catch(e){if(e.name==='AbortError')throw e;}
+    }
+  }
+  if(valid())inkRoutes.set(cl.hash,{groupHash:group.hash,kind:kind==='mixed'?'uncertain':kind});
+}
+function hasWrittenEquals(cl,src){
+  const strokes=(cl.strokeIds||[]).map(id=>C.strokeById(id)).filter(Boolean);
+  const pairs=stackedBarPairs(strokes),count=(String(src||'').match(/=/g)||[]).length;
+  if(!count||pairs.length<count)return false;
+  if(!/=\s*$/.test(src))return true;
+  return pairs.some(pair=>{
+    const right=Math.max(pair.a.st.bbox[2],pair.b.st.bbox[2]);
+    return strokes.every(st=>st===pair.a.st||st===pair.b.st||st.bbox[2]<=right+4);
+  });
+}
+
 function syncTextTranscripts(groups){
   if(!Array.isArray(S.textTranscripts))S.textTranscripts=[];
   const valid=new Set(groups.map(g=>g.hash));
+  for(const hash of lineReadings.keys())if(!valid.has(hash))lineReadings.delete(hash);
+  for(const [hash,route] of inkRoutes)if(!valid.has(route.groupHash))inkRoutes.delete(hash);
   for(const hash of [...textAttempted])if(!valid.has(hash))textAttempted.delete(hash);
   const before=S.textTranscripts.length;
   S.textTranscripts=S.textTranscripts.filter(t=>valid.has(t.hash)&&t.modelVersion===TEXT_VERSION&&validText(t.text,t.confidence));
@@ -1295,7 +1364,15 @@ async function readText(){
   // the line just written first: a "hey nota," there should not wait
   // behind the rest of the page
   const latest=g=>{let t=0;for(const id of g.strokeIds){const st=C.strokeById(id);if(st&&st.t1>t)t=st.t1;}return t;};
-  const todo=groups.filter(g=>!saved.has(g.hash)&&!textAttempted.has(g.hash)).sort((a,b)=>latest(b)-latest(a));
+  const todo=groups.filter(g=>{
+    if(textAttempted.has(g.hash))return false;
+    if(!saved.has(g.hash))return true;
+    // Reopened mixed lines retain their transcript, but their distinct math
+    // crops still need routing before any automatic chip is restored.
+    const reading=S.textTranscripts.find(t=>t.hash===g.hash);
+    return classifyHandwriting(reading)==='mixed'&&S.clusters.some(cl=>
+      cl.strokeIds.some(id=>g.strokeIds.includes(id))&&inkRoutes.get(cl.hash)?.groupHash!==g.hash);
+  }).sort((a,b)=>latest(b)-latest(a));
   for(const group of todo){
     if(!enabled()||document.hidden||textState.broken)break;
     if(!penResting()){textTimer=setTimeout(readText,400);return;}
@@ -1459,7 +1536,12 @@ async function recognizeText(group){
   if(!valid())return;
   textAttempted.add(hash);
   try{
-    const out=await textInfer(textCrop(group),valid);if(!valid())return;
+    const out=await readLineText(group,valid);if(!valid())return;
+    const ids=new Set(group.strokeIds);
+    for(const cl of S.clusters.filter(c=>c.strokeIds.some(id=>ids.has(id)))){
+      await routeInk(cl,group,out,valid);if(!valid())return;
+    }
+    N.mathcore.run();
     const text=String(out.text||'').trim(),confidence=Number(out.confidence)||0;
     // "hey nota," is a question to the page. Nota sees every reading, quiet
     // ones included, and applies its own floor; the reading itself stays
@@ -1469,10 +1551,11 @@ async function recognizeText(group){
     // value. Fuzzy matching still recovers small mistakes above the calibrated
     // confidence floor.
     if(!validText(text,confidence))return;
-    const item={hash,text,confidence,modelVersion:TEXT_VERSION};
+    const item={hash,text,confidence,bbox:group.bbox?.slice(),modelVersion:TEXT_VERSION};
     if(!Array.isArray(S.textTranscripts))S.textTranscripts=[];
     const at=S.textTranscripts.findIndex(t=>t.hash===hash);
     if(at<0)S.textTranscripts.push(item);else S.textTranscripts[at]=item;
+    N.ui?.refreshTitle();
     C.markDirty();
   }catch(e){
     if(e.name!=='AbortError')textAttempted.delete(hash);
@@ -1546,7 +1629,7 @@ async function indexOthers(){
         try{
           const out=await textInfer(textCrop(group,byId),live);
           const text=String(out.text||'').trim(),confidence=Number(out.confidence)||0;
-          if(validText(text,confidence))read.set(group.hash,{hash:group.hash,text,confidence,modelVersion:TEXT_VERSION});
+          if(validText(text,confidence))read.set(group.hash,{hash:group.hash,text,confidence,bbox:group.bbox?.slice(),modelVersion:TEXT_VERSION});
         }catch(e){
           if(e.name==='AbortError'||!live()){complete=false;break;}
         }
@@ -1555,7 +1638,10 @@ async function indexOthers(){
         await C.withNoteLock(row.id,async()=>{
           const fresh=await C.Store.get(key);if(!fresh)return;
           fresh.textTranscripts=(fresh.textTranscripts||[]).filter(t=>t&&t.hash&&!read.has(t.hash)).concat([...read.values()]);
-          await C.Store.set(key,fresh);
+          if(await C.Store.set(key,fresh))await C.withIndexLock(async()=>{
+            const ix=await C.Store.index(), entry=ix.find(r=>r.id===row.id);
+            if(entry){entry.preview=C.firstLine(fresh.lines,fresh.textTranscripts,fresh.transcripts);await C.Store.putIndex(ix);}
+          });
         });
       }
       if(!complete){if(live())scheduleIndex(8000);break;}
@@ -1991,6 +2077,16 @@ async function recognize(cl,explicit){
   if(!valid())return;
   attempted.add(hash);cl.pending=true;N.mathcore.run();
   try{
+    if(!explicit&&!cl.asked&&!cl.confirmed){
+      const group=groupForInk(cl);
+      if(group){
+        try{
+          const text=await readLineText(group,valid);if(!valid())return;
+          await routeInk(cl,group,text,valid);if(!valid())return;
+          if(handwritingKind(cl)==='text')return;
+        }catch(e){if(e.name==='AbortError'||!valid())throw e;}
+      }
+    }
     const linear=linearizedCrop(cl);
     let out=await inferInk(cl,valid);if(!valid())return;
     const completedInk=out?.terminated===true&&!out.truncated&&!!String(out.latex||'').trim()?out:null;
@@ -2044,6 +2140,7 @@ function solveSelection(){
 function reset(){
   epoch++;indexEpoch++;clearTimeout(timer);clearTimeout(textTimer);clearTimeout(indexTimer);
   attempted.clear();textAttempted.clear();cache.clear();hashMemo.clear();grouped=null;
+  lineReadings.clear();lineRequests.clear();inkRoutes.clear();
 }
 // Re-reads the page with the readers restarted. The model files stay where
 // they are (IndexedDB, the service worker's cache): a refresh is about the
@@ -2090,6 +2187,6 @@ function retry(){restart();boot().then(schedule).catch(()=>{});}
 function retryText(){textRestartSeq++;stopText('Restarting handwriting search');healText();textAttempted.clear();return setupText().then(()=>scheduleText()).catch(()=>{});}
 N.pauseRecognitionForImage=pauseForImage;
 N.ai={enabled,setup:boot,setupText,retry,retryText,toggle,watch,watchText,setupState,textSetupState,get ready(){return state(preferred()).ready;}};
-N.recog={resultVersion:RESULT_VERSION.ink,rebuild,penResting,frames:()=>pageFrames,frameInfo,release,selectionUnread,readStrokesText,mathStrokeGroups,equalsGeometryRepair,stackedBarPairs,schedule,scheduleText,scheduleIndex,indexOthers,textGroupsOfDoc,recognize,recognizeText,solveSelection,crop,linearizedCrop,textCrop,textGroups,cache,confirm,reset,refreshModels,engine:preferred,switchEngine,validText,wordReading,wordGeometry,needsConfirmation,inkTextAlternatives,textSupportedInk,textSupportedEquation,
+N.recog={resultVersion:RESULT_VERSION.ink,rebuild,penResting,frames:()=>pageFrames,frameInfo,release,selectionUnread,readStrokesText,mathStrokeGroups,equalsGeometryRepair,stackedBarPairs,schedule,scheduleText,scheduleIndex,indexOthers,textGroupsOfDoc,recognize,recognizeText,solveSelection,crop,linearizedCrop,textCrop,textGroups,cache,confirm,reset,refreshModels,engine:preferred,switchEngine,validText,classifyHandwriting,handwritingKind,hasWrittenEquals,wordReading,wordGeometry,needsConfirmation,inkTextAlternatives,textSupportedInk,textSupportedEquation,
   get inkError(){return inkError;},get textReady(){return textState.ready;},get textVersion(){return TEXT_VERSION;},get textConfidenceMin(){return TEXT_CONFIDENCE_MIN;}};
 })();

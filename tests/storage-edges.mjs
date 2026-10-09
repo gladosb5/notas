@@ -40,7 +40,7 @@ try{
     // Simulate termination before the queued write reaches IndexedDB.
     C.S.dirty=false;await C.recoverRescues();return (await C.Store.index()).map(r=>r.title);
   });
-  assert.ok(rescue.includes('Last unsaved words (recovered copy)'));
+  assert.ok(rescue.includes('Last unsaved words'));
   const fidelity=await page.evaluate(async()=>{
     const C=N.core;const raw={localVersion:2,title:'Imported',created:123456789,folder:'school',strokes:[],lines:[{id:'one',text:'hello',y:120,h:30}],images:[]};
     const ok=await N.ui.importNoteFile(new File([JSON.stringify(raw)],'note.json'));

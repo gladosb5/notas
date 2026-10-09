@@ -8,7 +8,7 @@ try{
   await page.goto(`http://127.0.0.1:${server.address().port}/notas.html`);
   await page.waitForFunction(()=>window.N?.recog);
   await page.locator('#local-status').filter({hasText:'handwriting ready.'}).waitFor({state:'attached',timeout:180000});
-  const result=await page.evaluate(({normal,touching,colonTouching})=>{
+  const result=await page.evaluate(({normal,touching,colonTouching,definition,use})=>{
     N.tutorial.finish(false);const S=N.core.S;S.settings.aiOn=false;N.recog.reset();
     const out={};
     for(const [kind,offset] of [['baseline',0],['subscript',16],['superscript',-24]]){
@@ -42,14 +42,13 @@ try{
     out.colonGeometry=N.recog.wordGeometry(N.recog.textCrop(colonGroup),'hi=4',colonGroup);
     out.colonReading=N.recog.wordReading({latex:'h:i=4',confidence:.2},{text:'hi=4',confidence:.99},out.colonGeometry).latex;
     out.prose=['Pens=3','Pens*4','hello there','today is lesson 3'].map(s=>N.mathcore.readsAsProse(s));
-    S.strokes=[];S.lines=[];S.images=[];
-    S.clusters=[
-      {id:'define',source:'ink',strokeIds:[],bbox:[40,100,200,140],ascii:'xy=3'},
-      {id:'use',source:'ink',strokeIds:[],bbox:[40,200,200,240],ascii:'xy*4='}
-    ];
-    N.mathcore.run();out.scope=S.scope.xy;out.answer=S.nodes.find(n=>n.ref?.id==='use')?.result;
+    // Scope evaluation uses actual equals geometry and independent readings.
+    S.strokes=[...definition,...use];S.lines=[];S.images=[];S.clusters=[];N.recog.rebuild();
+    for(const cl of S.clusters)Object.assign(cl,{ascii:cl.bbox[1]<180?'xy=3':'xy*4=',needsConfirmation:false});
+    S.textTranscripts=N.recog.textGroups().map(g=>({hash:g.hash,bbox:g.bbox,text:g.bbox[1]<180?'xy=3':'xy*4=',confidence:.99,modelVersion:N.recog.textVersion}));
+    N.mathcore.run();out.scope=S.scope.xy;out.answer=S.nodes.find(n=>n.ref?.ascii==='xy*4=')?.result;
     return out;
-  },{normal:writing('hi=4'),touching:writing('hi=4',40,140,'touch',1,.32),
+  },{normal:writing('hi=4'),touching:writing('hi=4',40,140,'touch',1,.32),definition:writing('hi=4',40,100,'def'),use:writing('hi*4=',40,200,'use'),
     colonTouching:[...writing('hi=4',40,140,'colon',1,.32),stroke('colon-top',[[58,151],[58,152]],2.8,20),stroke('colon-bottom',[[58,166],[58,167]],2.8,21)]});
   assert.deepEqual(result.baseline,{name:'hi',operator:'='});
   assert.equal(result.subscript,null);assert.equal(result.superscript,null);

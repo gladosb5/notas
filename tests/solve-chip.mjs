@@ -38,11 +38,14 @@ try{
     const S=N.core.S;
     const pts=[100,300,.5,160,300,.5,160,340,.5,220,340,.5];
     S.strokes=[{id,author:'user',w:2.8,t0:1,pts,bbox:[100,300,220,340]}];
+    // Automatic equals needs a written sign as well as a decoder reading.
+    if(ascii.includes('='))for(const [suffix,y] of [['top',318],['bottom',325]])S.strokes.push({id:id+'-'+suffix,author:'user',w:2.8,t0:1,pts:[230,y,.5,260,y,.5],bbox:[230,y,260,y]});
     N.recog.rebuild();
     const cl=S.clusters[0];
     // stamped with the production result version so a rebuild (undo does one) keeps the reading
     Object.assign(cl,{ascii,latex,modelVersion:N.recog.resultVersion,confidence:.9,review:false,pending:false,confirmed:false},extra);
     N.recog.cache.set(cl.hash,{ascii,latex,modelVersion:N.recog.resultVersion,confidence:.9,confirmed:false,asked:!!extra.asked});
+    S.textTranscripts=N.recog.textGroups().map(g=>({hash:g.hash,bbox:g.bbox,text:ascii,confidence:.99,modelVersion:N.recog.textVersion}));
     N.mathcore.run();
     return {id:cl.id,hash:cl.hash};
   },[id,ascii,latex,extra]);
@@ -190,6 +193,7 @@ try{
       const cl=S.clusters[0];
       Object.assign(cl,{ascii:'6+2',latex:'6+2',confidence:.9,review:false,pending:false,confirmed:false});
       N.recog.cache.set(cl.hash,{ascii:'6+2',latex:'6+2',modelVersion:cl.modelVersion,confidence:.9,confirmed:false});
+      S.textTranscripts=N.recog.textGroups().map(g=>({hash:g.hash,bbox:g.bbox,text:'6+2',confidence:.99,modelVersion:N.recog.textVersion}));
       N.mathcore.run();
       return document.querySelectorAll('.chip').length;
     });
@@ -239,6 +243,7 @@ try{
         {id:'w2',author:'user',w:2.8,t0:3,t1:4,pts:[100,500,.5,160,500,.5,160,540,.5,220,540,.5],bbox:[100,500,220,540]}];
       N.recog.rebuild();
       for(const cl of S.clusters)cl.pending=true;
+      S.textTranscripts=N.recog.textGroups().map(g=>({hash:g.hash,bbox:g.bbox,text:'6+2',confidence:.99,modelVersion:N.recog.textVersion}));
       N.mathcore.run();
     });
     const first=await waiting();

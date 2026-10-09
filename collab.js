@@ -127,6 +127,7 @@ function cleanStroke(v,id){
   const st={...plainFields(v,['pts','bbox','times','id','author','color']),id,author:v.author==='ai'?'ai':'user',pts:p.slice(),bbox:N.ink.bboxOf(p)};
   if(typeof v.color==='string'&&/^#[0-9a-f]{6}$/i.test(v.color))st.color=v.color;
   if(typeof v.quickMath==='string'&&v.quickMath.length<=8192)st.quickMath=v.quickMath;
+  if(typeof v.notaText==='string'&&v.notaText.length<=32000)st.notaText=v.notaText;
   if(Array.isArray(v.times)&&v.times.length===p.length/3&&v.times.every(t=>num(t,3600000)&&t>=0))st.times=v.times.slice();
   return st;
 }

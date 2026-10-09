@@ -41,6 +41,13 @@ try{
   await receiver.waitForFunction(()=>N?.collab?.room&&N.core.S.strokes.length===300,null,{timeout:120000});
   await receiver.fill('#collab-name','receiver');await receiver.click('#collab-name-ok');
   await sender.waitForFunction(()=>N.collab.room.peers.length===1);
+  const reply=('This is the earlier shared explanation. '+ 'More detail for a follow-up question. '.repeat(8)).trim();
+  await sender.evaluate(text=>{
+    const writer=N.nota.Writer({x:10,y:900,rowH:24,instant:true});
+    writer.feed(text);writer.finish();
+  },reply);
+  await receiver.waitForFunction(text=>N.core.S.strokes.some(st=>st.notaText===text),reply,{timeout:20000});
+  assert.ok((await receiver.evaluate(()=>N.nota.context({x:0,y:900}))).includes(reply),'another person receives the complete handwritten reply as follow-up context');
   await sender.keyboard.press('Escape');
   await sender.evaluate(()=>N.ink.setTool('pen'));
 

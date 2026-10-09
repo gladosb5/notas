@@ -171,6 +171,8 @@ try{
   assert.ok(red.top>red.questionBottom,'the reply sits under the question');
   assert.ok(red.left>=100-1&&red.right<=N_CONTENT_W(),'the reply stays within the column');
   assert.equal(red.clusters,0,'the recogniser never reads the red ink');
+  assert.match(said(calls[1].body.messages[1].content),/\[nota reply\].*square root of 144 is 12/,'handwritten follow-up receives the previous typed reply');
+  assert.match(await page.evaluate(()=>N.nota.context()),/\[nota reply\].*square root of 144 is 12/,'the generated handwritten reply is also readable context');
 
   // the red ink is drawn on the committed canvas
   const painted=await page.evaluate(()=>{
@@ -191,6 +193,7 @@ try{
   await page.waitForFunction(id=>N.core.S.id===id&&N.core.S.strokes.length>0,id);
   const back=await page.evaluate(()=>({ai:N.core.S.strokes.filter(s=>s.author==='ai').length,shown:N.core.S.strokes.some(s=>s._show!==undefined),tutorLines:N.core.S.lines.filter(l=>l.tutor).length}));
   assert.equal(back.ai,red.count,'every red stroke is back after reload');
+  assert.match(await page.evaluate(()=>N.nota.context()),/\[nota reply\].*square root of 144 is 12/,'reply context survives reload');
   assert.equal(back.shown,false,'no stroke came back half written');
   assert.equal(back.tutorLines,1,'the typed reply line is back and still red');
   await page.waitForTimeout(4500);

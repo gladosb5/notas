@@ -32,13 +32,78 @@ const names = page=>page.$$eval('#library .note-row .lib-name', els=>els.map(e=>
 const index = page=>page.evaluate(()=>N.core.Store.index());
 
 try{
+  /* ---- logo: overview with real notes, reversible navigation ---- */
+  for(const width of [1440,820,390,320]){
+    const context = await browser.newContext({viewport:{width,height:900},hasTouch:width<1100,serviceWorkers:'block'});
+    const page = await context.newPage(), errors = [];
+    page.on('pageerror',e=>errors.push(String(e)));
+    await seed(page);
+    const current = await page.evaluate(async()=>{
+      const ix = await N.core.Store.index(), id = ix.find(r=>r.title==='algebra').id;
+      await N.ui.openNote(id);
+      N.core.setZoom(1.15);
+      const sc = document.querySelector('#scroller'); sc.scrollTop = 360;
+      N.core.saveView(id,sc.scrollTop,sc.scrollLeft); N.core.flushView();
+      return {id,top:sc.scrollTop,zoom:N.core.M.zoom,width:N.core.M.contentW,text:N.core.S.lines[0].text};
+    });
+    await page.locator('#brand').click();
+    await page.waitForFunction(()=>N.library.mode==='overview'&&!document.documentElement.classList.contains('library-transition'));
+    assert.equal(await page.evaluate(()=>N.library.modal),true,'the overview is a destination, not a dock');
+    assert.equal(await rows(page).count(),3,'the overview shows the real saved notes');
+    assert.equal(await page.locator('.lib-chip[data-view="all"]').getAttribute('aria-selected'),'true');
+    assert.equal(await page.locator('#scroller').evaluate(el=>el.inert),true);
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'overview fits '+width);
+    assert.equal(await page.locator('#lib-current').isVisible(),width>=1100);
+    if(shots) await page.screenshot({path:shots+'/overview-'+width+'.png'});
+    await page.evaluate(()=>N.library.close());
+    await page.waitForFunction(()=>!N.library.isOpen&&!document.documentElement.classList.contains('library-transition'));
+    assert.deepEqual(await page.evaluate(()=>({id:N.core.S.id,top:document.querySelector('#scroller').scrollTop,zoom:N.core.M.zoom,width:N.core.M.contentW,text:N.core.S.lines[0].text})),current,'leaving and returning preserves the page and its view');
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'brand','focus returns to the logo');
+
+    // A selected folder or search never hides notes on the next logo visit.
+    await page.locator('#brand').click();
+    await page.waitForFunction(()=>N.library.mode==='overview'&&!document.documentElement.classList.contains('library-transition'));
+    await page.locator('.lib-chip[data-view="trash"]').click();
+    await page.evaluate(()=>N.library.close());
+    await page.waitForFunction(()=>!N.library.isOpen&&!document.documentElement.classList.contains('library-transition'));
+    await page.locator('#brand').click();
+    await page.waitForFunction(()=>N.library.mode==='overview'&&!document.documentElement.classList.contains('library-transition'));
+    assert.equal(await rows(page).count(),3,'logo restores all notes');
+    await rows(page).filter({hasText:'geometry'}).locator('.t').click();
+    await page.waitForFunction(()=>!N.library.isOpen&&N.core.S.title==='geometry'&&!document.documentElement.classList.contains('library-transition'));
+    assert.equal(await page.locator('#scroller').evaluate(el=>el.inert),false,'choosing a note restores editing');
+    assert.equal(await page.locator('.line .txt').first().evaluate(el=>el.value??el.textContent),'angles in a triangle');
+    const geometryId = await page.evaluate(()=>N.core.S.id);
+    await page.locator('#brand').click();
+    await page.waitForFunction(()=>N.library.mode==='overview'&&!document.documentElement.classList.contains('library-transition'));
+    await page.goBack();
+    await page.waitForFunction(()=>!N.library.isOpen&&!document.documentElement.classList.contains('library-transition'));
+    assert.equal(await page.evaluate(()=>N.core.S.id),geometryId,'browser back keeps the current note');
+
+    // Reduced motion and browsers without snapshots retain the same navigation.
+    await page.emulateMedia({reducedMotion:'reduce'});
+    await page.locator('#brand').click();
+    await page.waitForFunction(()=>N.library.mode==='overview');
+    assert.equal(await page.evaluate(()=>document.documentElement.classList.contains('library-transition')),false);
+    await page.evaluate(()=>N.library.close());
+    await page.waitForFunction(()=>!N.library.isOpen);
+    await page.emulateMedia({reducedMotion:'no-preference'});
+    await page.evaluate(()=>document.startViewTransition=undefined);
+    await page.locator('#brand').click();
+    await page.waitForFunction(()=>N.library.mode==='overview');
+    await rows(page).filter({hasText:'algebra'}).locator('.t').click();
+    await page.waitForFunction(()=>!N.library.isOpen&&N.core.S.title==='algebra');
+    assert.deepEqual(errors,[],'no overview errors at '+width);
+    await context.close();
+  }
+
   /* ---- desktop: the docked sidebar ---- */
   {
     const context = await browser.newContext({viewport:{width:1440, height:900}, serviceWorkers:'block', acceptDownloads:true});
     const page = await context.newPage();
     const errors = []; page.on('pageerror', e=>errors.push(String(e)));
     await seed(page);
-    await page.locator('#brand').click();
+    await page.evaluate(()=>N.library.open());
     await page.waitForFunction(()=>N.library.isOpen);
     assert.equal(await page.evaluate(()=>N.library.mode), 'dock', 'a wide desktop docks the library');
     assert.equal(await page.evaluate(()=>document.body.classList.contains('lib-docked')), true);
@@ -136,7 +201,7 @@ try{
 
     // reload: the sidebar that was left open is open again
     await page.reload(); await page.waitForFunction(()=>window.N?.library && N.library.isOpen, null, {timeout:15000});
-    await page.locator('.lib-close').click();
+    await page.evaluate(()=>N.library.close());
     assert.equal(await page.evaluate(()=>document.body.classList.contains('lib-docked')), false);
     assert.equal(await page.evaluate(()=>document.querySelector('#scroller').getBoundingClientRect().left), 0);
     assert.deepEqual(errors, [], 'no page errors on the desktop');
@@ -149,7 +214,7 @@ try{
     const page = await context.newPage();
     const errors = []; page.on('pageerror', e=>errors.push(String(e)));
     await seed(page);
-    await page.locator('#brand').click();
+    await page.evaluate(()=>N.library.open());
     await page.waitForFunction(()=>N.library.isOpen);
     assert.equal(await page.evaluate(()=>N.library.mode), 'drawer');
     assert.equal(await page.evaluate(()=>document.querySelector('#scroller').inert), true, 'the paper is out of reach under the drawer');
@@ -177,7 +242,7 @@ try{
     const errors = []; page.on('pageerror', e=>errors.push(String(e)));
     await seed(page);
     const noteId = await page.evaluate(()=>N.core.S.id);
-    await page.locator('#brand').tap();
+    await page.evaluate(()=>N.library.open());
     await page.waitForFunction(()=>N.library.isOpen);
     assert.equal(await page.evaluate(()=>N.library.mode), 'page');
     await page.waitForTimeout(500);                        /* the page slides in */
@@ -195,7 +260,7 @@ try{
     assert.equal(page.url().startsWith(base+'/notas.html'), true);
 
     // a long press picks a note; the bar acts on the pick
-    await page.locator('#brand').tap();
+    await page.evaluate(()=>N.library.open());
     await page.waitForFunction(()=>N.library.isOpen);
     await rows(page).first().waitFor();
     const touch = async(sel, type, x, y)=>page.evaluate(([sel, type, x, y])=>{
