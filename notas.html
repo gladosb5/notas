@@ -1184,6 +1184,12 @@ body.lib-docked #local-status,body.lib-docked #offline-status{ left:calc(var(--l
   -webkit-touch-callout:none;touch-action:pan-y;
 }
 #library .note-row:hover{ background:none }
+/* rows out of sight are not laid out or painted, so a long list of notes
+   opens (and is captured by the view transition) as fast as a short one.
+   A row being swiped slides past its own edge, so it is drawn in full */
+#library .note-row{ content-visibility:auto;contain-intrinsic-block-size:auto 72px }
+#library[data-mode="overview"] .note-row{ contain-intrinsic-block-size:auto 240px }
+#library .note-row.swiping{ content-visibility:visible }
 .lib-card{
   position:relative;display:flex;align-items:center;gap:4px;padding:6px 4px 6px 6px;border-radius:14px;
   transition:background-color .15s ease,transform .32s var(--spring);
@@ -2535,7 +2541,9 @@ function anonId(){
 applyPrefs();
 N.core = { S, M, Store, uid, clamp, $, layout, growDoc, setZoom, firstLine, displayTitle, cleanTitle, whenLabel, ZOOM_MIN, ZOOM_MAX, markDirty, save, serialize,
            act, undo, redo, Undo, paintUndo, typed, toast, status, anonId, LINE_H, CONTENT_MAX, strokeById, reducedMotion, smoothWheel, glideTarget,
-           FEEDBACK_URL, savePrefs, applyPrefs, setActive, getActive, saveView, getView, flushView, setSaveError, clearSaveError, withNoteLock, withIndexLock, deleteStoredNote, repairIndex, recoverRescues, rescueSave, patchIndexRows, exportText, isBlank, swipeAway };
+           FEEDBACK_URL, savePrefs, applyPrefs, setActive, getActive, saveView, getView, flushView, setSaveError, clearSaveError, withNoteLock, withIndexLock, deleteStoredNote, repairIndex, recoverRescues, rescueSave, patchIndexRows, exportText, isBlank, swipeAway,
+           /* counts every edit to the page, so a picture of it can be reused until the next one */
+           get revision(){ return revision; } };
 })();
 </script>
 
@@ -8813,14 +8821,62 @@ async function refresh(){
   L.folders = await loadFolders();
   if(L.view.startsWith('f:') && !L.folders.includes(L.view.slice(2))) L.view = 'all';
   if(L.view === 'shared' && !L.ix.some(r=>!r.trashed && N.collab && N.collab.isShared(r.id))) L.view = 'all';
-  for(const id of [...L.sel]) if(!L.ix.some(r=>r.id===id)) L.sel.delete(id);
+  const ids = new Set(L.ix.map(r=>r.id));
+  for(const id of [...L.sel]) if(!ids.has(id)) L.sel.delete(id);
+  /* an untitled note is named by its first line, which the row may have from
+     before its handwriting was read. Notes already in memory are named now;
+     the rest are read after the list is on screen, not before it */
+  const unread = [];
   for(const row of L.ix){
-    if(C.cleanTitle(row.title)&&C.cleanTitle(row.title)!=='untitled')continue;
-    const doc=await docOf(row.id);
-    if(doc)row.preview=C.firstLine(doc.lines,doc.textTranscripts,doc.transcripts)||row.preview;
+    if(named(row)) continue;
+    if(row.id !== S.id && !L.docs.has(row.id)){ unread.push(row.id); continue; }
+    row.preview = previewOf(row) || row.preview;
   }
+  const seq = ++previewSeq;
+  darkMemo = null;
   paintChips();
   if(L.query) await runSearch(L.query); else paint();
+  if(unread.length) fillPreviews(unread, seq);
+}
+function named(r){ const n = C.cleanTitle(r.title); return !!n && n !== 'untitled'; }
+function previewOf(row){
+  if(row.id === S.id) return C.firstLine(S.lines, S.textTranscripts, S.clusters);
+  const doc = L.docs.get(row.id);
+  return doc ? C.firstLine(doc.lines, doc.textTranscripts, doc.transcripts) : '';
+}
+let previewSeq = 0;
+async function fillPreviews(ids, seq){
+  await settled();
+  for(let i = 0; i < ids.length; i += 16){
+    if(seq !== previewSeq || !L.open) return;
+    await Promise.all(ids.slice(i, i+16).map(docOf));
+  }
+  if(seq !== previewSeq || !L.open) return;
+  const want = new Set(ids), changed = [];
+  for(const row of L.ix){
+    if(!want.has(row.id) || named(row)) continue;
+    const p = previewOf(row) || row.preview;
+    if(p !== row.preview){ row.preview = p; changed.push(row); }
+  }
+  if(!changed.length) return;
+  /* sorted by name, a new name can move a row; otherwise it is relabelled in place */
+  if(prefs().sort === 'name' && !L.query){ paint(); return; }
+  for(const row of changed){
+    const d = list.querySelector('.note-row[data-id="'+CSS.escape(row.id)+'"]'); if(!d) continue;
+    d.querySelector('.lib-name').textContent = title(row);
+    d.querySelector('.lib-thumb-txt').textContent = row.preview || '';
+    d.querySelector('.lib-more').setAttribute('aria-label', 'more for '+title(row));
+  }
+}
+/* Work the list can do without (reading whole notes, drawing their pictures)
+   waits until it has finished arriving: done during the view transition or
+   the panel's slide, it costs that animation its frames. */
+let settleAt = 0;
+async function settled(){
+  await overviewNavigation;
+  const wait = settleAt - performance.now();
+  if(wait > 0) await new Promise(r=>setTimeout(r, wait));
+  await new Promise(r=>(window.requestIdleCallback||setTimeout)(r, {timeout:400}));
 }
 /* Trash is retained until explicitly deleted, even if the device clock jumps. */
 async function purgeTrash(){ L.purged=true; }
@@ -8901,15 +8957,14 @@ function paint(hits){
   list.innerHTML = '';
   list.classList.toggle('selecting', L.selecting);
   if(!rows.length){ list.innerHTML = '<p class="lib-empty">'+esc(emptyText())+'</p>'; paintSel(); return; }
-  const frag = document.createDocumentFragment();
+  /* one string, parsed once: a few hundred notes built row by row was a
+     visible pause before the list appeared */
+  const hitOf = new Map((hits||[]).map(h=>[h.row.id, h]));
+  const drag = mqFine.matches && L.view !== 'trash', html = [];
   for(const r of rows){
-    const h = hits && hits.find(x=>x.row.id===r.id);
-    const d = document.createElement('div');
-    d.className = 'note-row'; d.dataset.id = r.id; d.setAttribute('role','listitem');
-    if(r.id === S.id) d.setAttribute('aria-current','true');
-    if(L.sel.has(r.id)) d.classList.add('sel');
+    const h = hitOf.get(r.id);
     const shared = N.collab && N.collab.isShared(r.id);
-    d.innerHTML =
+    html.push('<div class="note-row'+(L.sel.has(r.id)?' sel':'')+'" data-id="'+esc(r.id)+'" role="listitem"'+(r.id === S.id?' aria-current="true"':'')+(drag?' draggable="true"':'')+'>' +
       '<span class="lib-swipe" aria-hidden="true"><span class="l"><i class="ph ph-push-pin"></i>'+(r.pinned?'unpin':'pin')+'</span>' +
         '<span class="r"><i class="ph ph-trash"></i>'+(L.view==='trash'?'restore':'trash')+'</span></span>' +
       '<div class="lib-card">' +
@@ -8922,11 +8977,9 @@ function paint(hits){
           '</span>' +
         '</button>' +
         '<button type="button" class="lib-more" aria-label="more for '+esc(title(r))+'" title="more"><i class="ph ph-dots-three-vertical"></i><span class="fb" hidden>...</span></button>' +
-      '</div>';
-    if(mqFine.matches && L.view !== 'trash'){ d.draggable = true; }
-    frag.appendChild(d);
+      '</div></div>');
   }
-  list.appendChild(frag);
+  list.innerHTML = html.join('');
   list.scrollTop = keepTop;
   if(focusId){ const f = list.querySelector('.note-row[data-id="'+CSS.escape(focusId)+'"] .t'); if(f) f.focus({preventScroll:true}); }
   watchThumbs();
@@ -8953,13 +9006,16 @@ async function docOf(id){
   return L.docs.get(id);
 }
 async function runSearch(q){
-  const seq = ++L.searchSeq, hits = [];
-  for(const row of L.ix.filter(inView)){
-    const doc = await docOf(row.id);
+  const seq = ++L.searchSeq, hits = [], rows = L.ix.filter(inView);
+  /* notes not yet in memory are read a batch at a time, not one after another */
+  for(let i = 0; i < rows.length; i += 16){
+    const batch = rows.slice(i, i+16), docs = await Promise.all(batch.map(r=>docOf(r.id)));
     if(seq !== L.searchSeq) return;
-    if(!doc) continue;
-    const hit = N.ui.searchHit(doc, q);
-    if(hit) hits.push({row, ...hit});
+    batch.forEach((row, j)=>{
+      if(!docs[j]) return;
+      const hit = N.ui.searchHit(docs[j], q);
+      if(hit) hits.push({row, ...hit});
+    });
   }
   hits.sort((a,b)=>a.score-b.score || ((b.row.updated||0)-(a.row.updated||0)));
   paint(hits);
@@ -8972,11 +9028,15 @@ async function runSearch(q){
    shown under the other theme it is inverted, so a page of graphite ink
    never turns into a white card in dark mode. */
 const thumbs = new Map();                /* id -> {src, dark, at} */
+/* asked once per picture shown; reading the theme each time restyled the
+   page for every row that came into view. Forgotten when the theme changes */
+let darkMemo = null;
 function darkNow(){
+  if(darkMemo !== null) return darkMemo;
   const g = getComputedStyle(document.documentElement).getPropertyValue('--graphite').trim();
   const cx = document.createElement('canvas').getContext('2d'); cx.fillStyle = g;
-  const hex = /^#([0-9a-f]{6})$/i.exec(cx.fillStyle); if(!hex) return false;
-  const n = parseInt(hex[1],16); return ((n>>16&255)*.299 + (n>>8&255)*.587 + (n&255)*.114) > 140;
+  const hex = /^#([0-9a-f]{6})$/i.exec(cx.fillStyle); if(!hex) return darkMemo = false;
+  const n = parseInt(hex[1],16); return darkMemo = ((n>>16&255)*.299 + (n>>8&255)*.587 + (n&255)*.114) > 140;
 }
 function loadImage(src){
   return new Promise(res=>{
@@ -9072,7 +9132,7 @@ async function drainBacklog(){
       const id = backlog.shift(), row = L.ix.find(r=>r.id===id); if(!row) continue;
       const have = await thumbOf(id);
       if(have ? (have.at >= (row.updated||0) - 1000) : false){ showThumb(id); continue; }
-      await new Promise(r=>(window.requestIdleCallback||setTimeout)(r, {timeout:400}));
+      await settled();
       const doc = id === S.id ? C.serialize() : await C.Store.get('notas.note.'+id);
       if(!doc) continue;
       const t = await renderThumb(doc);
@@ -9102,9 +9162,9 @@ function watchThumbs(){
   boxes.forEach(b=>seen.observe(b));
 }
 /* the theme changed: pictures drawn under the other one are inverted */
-new MutationObserver(()=>{ if(L.open) list.querySelectorAll('.lib-thumb img').forEach(img=>{ const id = img.parentNode.dataset.thumb, t = thumbs.get(id); if(t) img.classList.toggle('flip', !!t.dark !== darkNow()); }); })
+new MutationObserver(()=>{ darkMemo = null; if(L.open) list.querySelectorAll('.lib-thumb img').forEach(img=>{ const id = img.parentNode.dataset.thumb, t = thumbs.get(id); if(t) img.classList.toggle('flip', !!t.dark !== darkNow()); }); })
   .observe(document.documentElement, {attributes:true, attributeFilter:['data-theme']});
-matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', ()=>{ if(L.open) paint(L.hits || undefined); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', ()=>{ darkMemo = null; if(L.open) paint(L.hits || undefined); });
 
 /* ---- open, close, dock ---- */
 const MAIN = ['#topbar','#scroller','#pill','#penpop','#textpop','#askbar','#offline-status','#local-status','#selbar'];
@@ -9160,18 +9220,24 @@ function overviewPreview(){
   const current = $('#lib-current-preview');
   return current.getClientRects().length ? current : list.querySelector('.note-row[aria-current="true"] .lib-thumb');
 }
-let currentPreviewSeq=0;
+let currentPreviewSeq=0, currentPreviewKey='';
 async function updateCurrentPreview(){
   const id=S.id, seq=++currentPreviewSeq, button=$('#lib-current'), preview=$('#lib-current-preview');
   const row=L.ix.find(r=>r.id===id);
   const available=!!id&&!row?.trashed;
   button.disabled=!available;
-  if(preview.dataset.id!==id||!available)preview.replaceChildren();
+  if(preview.dataset.id!==id||!available){preview.replaceChildren();currentPreviewKey='';}
   preview.dataset.id=id||'';
   $('#lib-current-title').textContent=available?C.displayTitle(S.title,S.lines):'';
   if(!available)return;
+  /* Opening the overview asks for this picture more than once, the last time
+     while the view transition holds the screen still. An unchanged page is
+     not drawn and encoded again. */
+  const key=[id,C.revision,S.savedRev,M.contentW].join(':');
+  if(key===currentPreviewKey){const img=preview.querySelector('img'),t=thumbs.get(id);if(img&&t)img.classList.toggle('flip',t.dark!==darkNow());return;}
   const thumb=await renderThumb(C.serialize()).catch(()=>null);
   if(seq!==currentPreviewSeq||id!==S.id)return;
+  currentPreviewKey=key;
   preview.replaceChildren();
   if(thumb){
     thumbs.set(id,thumb);
@@ -9203,6 +9269,7 @@ async function open(opts={}){
       if(mode === 'page' || mode === 'overview'){ try{ history.pushState({notasLibrary:1}, ''); L.pushed = true; }catch(e){} }
     }
     void el.offsetWidth; el.classList.remove('enter');
+    settleAt = performance.now() + (mode === 'dock' ? 340 : mode === 'overview' ? 0 : 440);
   }
   if(was && opts.focusSearch && mqFine.matches){ search.focus(); search.select(); return; }
   await refresh();
