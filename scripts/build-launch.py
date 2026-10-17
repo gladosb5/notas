@@ -55,7 +55,7 @@ Rebuild and embed in notas.html with Python and Pillow:
 
     python scripts/build-launch.py --source D:/notas-launch-work/film
 
-The atlas is lossless WebP, embedded immediately after the launch markup so launch never waits for another request. The launch runtime shows each frame once, holds the completed logo, and respects reduced motion and the saved animation preference.
+The atlas is lossless WebP, embedded immediately after the launch markup so launch never waits for another request. The launch runtime shows every frame once at its natural pace. App readiness immediately releases the notebook: a quick start puts the animation in the header, while a slower start moves it there over 300 ms. The drawing finishes as a static header wordmark. Reduced motion and the saved animations-off preference skip motion.
 ''',encoding='utf-8')
 page=options.project/'notas.html'
 html=page.read_text(encoding='utf-8')
