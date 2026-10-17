@@ -1188,7 +1188,12 @@ body.lib-docked #local-status,body.lib-docked #offline-status{ left:calc(var(--l
    opens (and is captured by the view transition) as fast as a short one.
    A row being swiped slides past its own edge, so it is drawn in full */
 #library .note-row{ content-visibility:auto;contain-intrinsic-block-size:auto 72px }
-#library[data-mode="overview"] .note-row{ contain-intrinsic-block-size:auto 240px }
+/* Safari can stop painting a previously focused overview card when it
+   loses focus under content-visibility:auto. Keep grid cards rendered;
+   the scrolling sidebar still uses containment and thumbnails stay lazy. */
+#library[data-mode="overview"] .note-row{
+  content-visibility:visible;contain-intrinsic-block-size:none;
+}
 #library .note-row.swiping{ content-visibility:visible }
 .lib-card{
   position:relative;display:flex;align-items:center;gap:4px;padding:6px 4px 6px 6px;border-radius:14px;
