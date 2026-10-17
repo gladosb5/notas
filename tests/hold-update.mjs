@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import {startServer} from '../scripts/serve.mjs';
 
 const html=readFileSync(new URL('../notas.html',import.meta.url),'utf8');
+const current=Number(/name="notas-version" content="v(\d+)"/.exec(html)[1]);
 const ctx=vm.createContext({});
 vm.runInContext(html.slice(html.indexOf('function tidyShape('),html.indexOf('let shapeTimer=')),ctx);
 const tidy=p=>ctx.tidyShape(p.flatMap(([x,y])=>[x,y,.5]));
@@ -40,17 +41,33 @@ try{
  assert.ok((await draw(true,true)).pts.length>6,'moving after correction restores freehand');
  const offline=html.slice(html.indexOf('async function prepareOffline(){'),html.indexOf('/* The notebook does not open without its storage.'));
  for(const waiting of [true,false]){
-   const notices=await page.evaluate(async({source,waiting})=>{
+   const notices=await page.evaluate(async({source,waiting,version})=>{
      const messages=[],events={},workerEvents={};
-     const worker={state:'installed',addEventListener:(name,fn)=>workerEvents[name]=fn,postMessage:(_,ports)=>ports[0].postMessage({version:'v109'})};
+     const worker={state:'installed',addEventListener:(name,fn)=>workerEvents[name]=fn,postMessage:(_,ports)=>ports[0].postMessage({version})};
      const reg={active:{state:'activated',addEventListener(){}},waiting:waiting?worker:null,addEventListener:(name,fn)=>events[name]=fn,update:async()=>{}};
      const navigator={serviceWorker:{register:async()=>reg}},C={toast:m=>messages.push(m)};
      const setInterval=()=>0;
      await eval('('+source+')')();
      if(!waiting){reg.installing=worker;events.updatefound();workerEvents.statechange();workerEvents.statechange();}
      await new Promise(r=>setTimeout(r,100));return messages;
-   },{source:offline,waiting});
-   assert.equal(notices.length,1);assert.match(notices[0],/v109.*… → update/);
+   },{source:offline,waiting,version:'v'+(current+1)});
+   assert.equal(notices.length,1);assert.ok(notices[0].includes('v'+(current+1)));assert.match(notices[0],/… → update/);
+ }
+ for(const scenario of ['current','older','activated','invalid']){
+   const result=await page.evaluate(async({source,scenario,current})=>{
+     const messages=[];let applied=0;
+     const worker={state:'installed',addEventListener(){},postMessage:(_,ports)=>{
+       if(scenario==='activated')worker.state='activated';
+       ports[0].postMessage({version:scenario==='invalid'?'unknown':'v'+(scenario==='older'?current-1:scenario==='activated'?current+1:current)});
+     }};
+     const reg={active:{state:'activated',addEventListener(){}},waiting:worker,addEventListener(){}};
+     const navigator={serviceWorker:{register:async()=>reg}},C={toast:m=>messages.push(m)},setInterval=()=>0;
+     const activateUpdate=async()=>{applied++;};
+     await eval('('+source+')')();await new Promise(r=>setTimeout(r,100));
+     return {messages,applied};
+   },{source:offline,scenario,current});
+   assert.deepEqual(result.messages,[],scenario+' does not announce an update');
+   assert.equal(result.applied,scenario==='current'?1:0,'already-loaded worker handoff is completed quietly');
  }
  assert.deepEqual(errors,[]);
  console.log('Shape recognition, hold/release/resume, undo/redo, and versioned update notices passed.');

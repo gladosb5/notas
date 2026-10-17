@@ -1,7 +1,10 @@
 'use strict';
-const CACHE='notas-local-v141';
+const CACHE='notas-local-v142';
 self.addEventListener('message',event=>{
   if(event.data?.type==='GET_VERSION')event.ports[0]?.postMessage({version:CACHE.replace('notas-local-','')});
+  // The update button explicitly applies this installed build. Only the
+  // page requesting the update reloads its notebook.
+  if(event.data?.type==='SKIP_WAITING')event.waitUntil(self.skipWaiting());
 });
 const RECOGNITION_ASSET=/\/assets\/(?:text|smart|ink)\//;
 const INK_MODEL=/\/assets\/ink\/[^?]*\.onnx$/;
@@ -51,7 +54,7 @@ self.addEventListener('install',event=>event.waitUntil((async()=>{
   const page=await cache.match(pageKey);
   if(page)await (await caches.open('notas-launch-v1')).put(pageKey,page);
 
-  // Activate after existing tabs close, so their code and cached assets stay together.
+  // Wait for tabs to close unless an update is explicitly applied.
 })()));
 // The stroke reader (18 MB) and the ONNX runtime are lazy-cached on first
 // use rather than during install, so deleting the previous build's cache
@@ -89,7 +92,7 @@ self.addEventListener('activate',event=>event.waitUntil((async()=>{
   try{await keepRecognitionAssets(await caches.open(CACHE));}catch(e){}
   const old=(await caches.keys()).filter(k=>k.startsWith('notas-local-')&&k!==CACHE).sort((a,b)=>version(b)-version(a));
   for(const key of old.slice(1))await caches.delete(key);
-  // Existing tabs keep their current controller until they close.
+  // Do not force other tabs to reload when an update is applied.
 })()));
 // an exact request any kept build holds: the current one first
 async function held(request){

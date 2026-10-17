@@ -2,6 +2,16 @@
 // recognition code, weights, vocabulary or runtime has changed since stamping.
 import {readFileSync,writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
+// The visible app version and its offline worker must identify the same
+// release, including when a deployment stamps the contract automatically.
+const release=/const CACHE='notas-local-(v\d+)'/.exec(readFileSync('sw.js','utf8'))?.[1];
+const page=readFileSync('notas.html','utf8');
+if(!release||!/<meta name="notas-version" content="v\d+">/.test(page))throw Error('App release metadata is missing.');
+const stamped=page.replace(/<meta name="notas-version" content="v\d+">/,'<meta name="notas-version" content="'+release+'">');
+if(stamped!==page){
+  if(process.argv.includes('--check'))throw Error('App release metadata is stale. Run node scripts/model-contract.mjs.');
+  writeFileSync('notas.html',stamped);
+}
 const common=['local-recognition.js','notas.html'];
 // the ONNX runtime shared by the workers still lives in assets/smart/
 const runtime=['assets/smart/ort.wasm.min.js','assets/smart/ort-wasm-simd-threaded.js','assets/smart/ort-wasm-simd-threaded.wasm'];

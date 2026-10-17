@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="notas-version" content="v142">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -7922,6 +7923,17 @@ function menuSheet(){
     const within=(work,ms)=>Promise.race([Promise.resolve().then(work),new Promise(r=>setTimeout(r,ms))]).catch(()=>{});
     C.flushView();
     if(S.dirty)await within(()=>C.save(),4000);
+    try{
+      if('serviceWorker' in navigator){
+        const registration=await navigator.serviceWorker.getRegistration('./');
+        if(registration){
+          // Keep complete build caches intact. Reload only after the worker
+          // supplying the new page and its scripts has actually activated.
+          await N.boot.activateUpdate(registration,true);
+          location.reload();return;
+        }
+      }
+    }catch(error){C.toast('the update did not finish. try again in a moment.',6000);return;}
     await within(async()=>{
       const model=/[/]assets[/](?:text|smart|ink)[/]/;
       if(!('caches' in window))return;
@@ -7934,11 +7946,6 @@ function menuSheet(){
         for(const request of await cache.keys())if(request.url!==pageKey&&!model.test(new URL(request.url).pathname))await cache.delete(request);
       }
     },6000);
-    await within(async()=>{
-      if(!('serviceWorker' in navigator))return;
-      const registration=await navigator.serviceWorker.getRegistration('./');
-      if(registration)await registration.update();
-    },3000);
     location.reload();
   };
   const rn = box.querySelector('#rename');
@@ -10376,7 +10383,7 @@ function loadCAS(){
   }
   return casLoad;
 }
-N.boot={loadLib,loadCAS};
+N.boot={loadLib,loadCAS,activateUpdate};
 
 function finishPreparing(){
   window.notasLaunch.open();
@@ -10403,6 +10410,31 @@ function loadLib(name){
     document.head.appendChild(script);
   });
 }
+async function activateUpdate(registration,check=false){
+  let timer,expired=false,cleanup=()=>{};
+  try{
+    await Promise.race([(async()=>{
+      if(check)await registration.update();
+      if(expired)return;
+      const worker=registration.waiting||registration.installing||registration.active;
+      if(!worker)throw Error('no app worker');
+      if(worker.state==='activated')return;
+      await new Promise((resolve,reject)=>{
+        let requested=false;
+        const changed=()=>{
+          if(worker.state==='activated')return resolve();
+          if(worker.state==='redundant')return reject(Error('app update interrupted'));
+          if(worker.state==='installed'&&!requested){
+            requested=true;
+            try{worker.postMessage({type:'SKIP_WAITING'});}catch(error){reject(error);}
+          }
+        };
+        cleanup=()=>worker.removeEventListener('statechange',changed);
+        worker.addEventListener('statechange',changed);changed();
+      });
+    })(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('app update timed out')),30000);})]);
+  }finally{expired=true;clearTimeout(timer);cleanup();}
+}
 async function prepareOffline(){
   const el=document.getElementById('offline-status');
   const tell=(phase,detail)=>N.downloads&&N.downloads.set('offline',phase,detail,prepareOffline);
@@ -10416,13 +10448,21 @@ async function prepareOffline(){
     const worker=registration.installing||registration.waiting||registration.active;
     if(registration.active?.state==='activated')done();
     const announced=new Set();
+    const pageVersion=Number(document.querySelector('meta[name="notas-version"]')?.content.slice(1))||0;
     const updateNotice=w=>{
       if(!w||!registration.active)return;
       const channel=new MessageChannel();
       const timeout=setTimeout(()=>channel.port1.close(),5000);
       channel.port1.onmessage=({data})=>{
         clearTimeout(timeout);channel.port1.close();
-        if(!/^v[0-9]+$/.test(data?.version)||announced.has(data.version))return;
+        if(!/^v[0-9]+$/.test(data?.version)||w.state!=='installed'||w===registration.active)return;
+        // Older update buttons could load this page while its worker still
+        // waited. Finish that handoff quietly instead of announcing it again.
+        if(Number(data.version.slice(1))<=pageVersion){
+          if(Number(data.version.slice(1))===pageVersion)activateUpdate(registration).catch(()=>{});
+          return;
+        }
+        if(announced.has(data.version))return;
         announced.add(data.version);
         C.toast('notas '+data.version+' is available. open … → update whenever you’re ready.',12000);
       };
