@@ -333,7 +333,7 @@ function animate(){
       const q=queue[0],st=q.st,p=st.pts;
       while(q.at<p.length/3&&budget>0){
         const i=q.at;
-        const seg=i?Math.hypot(p[i*3]-p[i*3-3],p[i*3+1]-p[i*3-2]):0;
+        const seg=i?Math.hypot(p[i*3]-p[i*3-3],p[i*3+1]-p[i*3-2])*q.pace:0;
         if(seg>budget){debt=seg-budget;budget=0;q.left-=seg;q.at++;st._show=q.at;break;}
         budget-=seg;q.left-=seg;q.at++;st._show=q.at;
       }
@@ -513,7 +513,7 @@ function Writer(anchor){
   startRow(anchor.y+gap-CAP*unit);
   const newRow=()=>{startRow(Math.max(cursor.y+rowPx,rowBottom));rowBottom=0;};
   const t=N.ink.now();
-  const place=(st)=>{
+  const place=(st,pace=1)=>{
     /* a save that forked this page into a conflict copy keeps the page as
        it was, under the copy's id: the answer carries on there */
     if(S.id!==noteId&&S.forkedFrom&&S.forkedFrom.from===noteId&&S.forkedFrom.to===S.id)noteId=S.id;
@@ -527,11 +527,24 @@ function Writer(anchor){
     if(!st)return;
     list.push(st);S.strokes.push(st);
     if(anchor.instant||C.reducedMotion()){N.ink.render();}
-    else{st._show=0;queue.push({st,at:0,left:lengthOf(st.pts)});animate();}
+    else{st._show=0;queue.push({st,at:0,pace,left:lengthOf(st.pts)*pace});animate();}
     C.growDoc(st.bbox[3]);C.markDirty();
   };
   const glyph=(ch)=>{
     const g=penGlyph(ch,font);if(!g)return;
+    // A filled face travels back and forth through its ink. That coverage
+    // is rendering work, not extra handwriting: budget the same character
+    // as the original hand, regardless of how dense the chosen face is.
+    // Only the animation queue carries this scale; saved ink stays intact.
+    let pace=1;
+    if(font&&g.raster){
+      if(g.pace===undefined){
+        const travel=paths=>{let n=0;for(const path of paths)for(let i=2;i<path.length;i+=2)n+=Math.hypot(path[i]-path[i-2],path[i+1]-path[i-1]);return n;};
+        const original=GLYPHS.get(ch),effort=original?travel(original.strokes):Math.max(12,g.w*2);
+        g.pace=Math.min(1,Math.max(1,effort)/Math.max(1,travel(g.strokes)));
+      }
+      pace=g.pace;
+    }
     const base=cursor.y+(g.raster?0:rnd()*0.8*unit);
     for(const s of g.strokes){
       const pts=[];
@@ -542,7 +555,7 @@ function Writer(anchor){
       }
       const st={id:C.uid(),author:'ai',tool:'pen',w:g.raster?0.85*unit:3,pts,t0:t,t1:t,...(anchor.color?{color:anchor.color}:{})};
       st.bbox=N.ink.bboxOf(pts);
-      place(st);
+      place(st,pace);
     }
     cursor.x+=g.w*unit;
   };
