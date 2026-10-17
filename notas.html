@@ -111,9 +111,11 @@ function open(){
   art.replaceWith(space);
   screen.dataset.appReady='true';
   screen.classList.add('done');screen.setAttribute('aria-hidden','true');screen.inert=true;
-  if(fast){screen.hidden=true;dock();start();return;}
   const hide=()=>{screen.hidden=true;};
   screen.addEventListener('transitionend',hide,{once:true});setTimeout(hide,360);
+  // Quick starts reveal the notebook with the same fade, without playing
+  // the loading film. Input is already available beneath the fading paper.
+  if(fast){complete();dock();if(motionOff())hide();return;}
   if(!art.animate||!from.width||!target.width){dock();return;}
   // The mark travels above the fading loader, outside the header's glass
   // containing block. It becomes a normal responsive header child on arrival.

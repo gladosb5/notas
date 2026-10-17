@@ -9,15 +9,22 @@ const errors=[];
 async function setup(options={}){
   const context=await browser.newContext({serviceWorkers:'block',...options});
   await context.addInitScript(()=>{
-    localStorage.setItem('notas.tut','done');window.launchFrames=[];window.loadingWasShown=false;
+    localStorage.setItem('notas.tut','done');window.launchFrames=[];window.launchFade=[];window.loadingWasShown=false;
     new MutationObserver(records=>{
       for(const r of records){
         if(r.target.id==='preparing'&&r.attributeName==='data-revealed')window.loadingWasShown=true;
+        if(r.target.id==='preparing'&&r.attributeName==='class'&&r.target.classList.contains('done')){
+          const sample=()=>{
+            window.launchFade.push({opacity:+getComputedStyle(r.target).opacity,hidden:r.target.hidden});
+            if(!r.target.hidden)requestAnimationFrame(sample);
+          };
+          requestAnimationFrame(sample);
+        }
         if(r.target.id==='prep-art'){
           const n=+r.target.dataset.frame;if(window.launchFrames.at(-1)!==n)window.launchFrames.push(n);
         }
       }
-    }).observe(document,{subtree:true,attributes:true,attributeFilter:['data-frame','data-revealed']});
+    }).observe(document,{subtree:true,attributes:true,attributeFilter:['data-frame','data-revealed','class']});
   });
   await context.route(/\/assets\/(?:ink|text|smart)\//,r=>r.abort());
   const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
@@ -28,35 +35,37 @@ async function ready(page){
   assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('#preparing')).pointerEvents),'none');
   await page.evaluate(()=>{N.core.S.settings.aiOn=false;N.ai.toggle();});
 }
-async function typeWhileAnimating(page,text){
+async function typeInNotebook(page,text,animating=true){
   await page.evaluate(()=>{N.ink.setTool('text');N.text.add(120,true);});
   await page.locator('.line .txt').last().evaluate(el=>el.focus());
   await page.keyboard.insertText(text);
   assert.ok(await page.evaluate(text=>N.core.S.lines.some(l=>l.text===text),text),'typing works during the intro');
-  assert.ok(+await page.locator('#prep-art').getAttribute('data-frame')<111,'typing did not wait for the animation');
+  if(animating)assert.ok(+await page.locator('#prep-art').getAttribute('data-frame')<111,'typing did not wait for the animation');
 }
 try{
-  // Warm/local startup: the app releases early, with the same drawing
-  // continuing as the header's logo and all ordinary controls available.
+  // Warm/local startup: fade the notebook in with a static header logo,
+  // without showing the loader or playing any intermediate film frames.
   {
     const {context,page}=await setup();
     await page.goto(base+'/notas.html',{waitUntil:'domcontentloaded'});await ready(page);
     assert.equal(await page.evaluate(()=>window.loadingWasShown),false,'a quick start never reveals the loader');
     const frame=+await page.locator('#prep-art').getAttribute('data-frame');
-    assert.ok(frame<41,'app ready before the spirit finishes');
+    assert.equal(frame,111,'a quick start uses the final static logo');
     await page.waitForFunction(()=>document.querySelector('#preparing').dataset.handoff==='header');
     assert.equal(await page.locator('#brand #prep-art').count(),1);
-    await typeWhileAnimating(page,'ready while the logo draws');
+    await typeInNotebook(page,'ready as the notebook fades in',false);
     await page.locator('#brand').click();
-    assert.equal(await page.locator('#brand').getAttribute('aria-expanded'),'true','logo opens the library while drawing');
+    assert.equal(await page.locator('#brand').getAttribute('aria-expanded'),'true','static logo opens the library');
     await page.evaluate(()=>N.library.close());
     await page.evaluate(()=>window.notasLaunch.finished);
-    assert.deepEqual(await page.evaluate(()=>window.launchFrames.slice(0,41)),Array.from({length:41},(_,n)=>n));
+    assert.ok(await page.evaluate(()=>window.launchFrames.every(n=>n===0||n===111)),'quick starts skip the film entirely');
+    await page.waitForFunction(()=>document.querySelector('#preparing').hidden);
+    assert.ok(await page.evaluate(()=>window.launchFade.some(s=>!s.hidden&&s.opacity>0&&s.opacity<1)),'the paper overlay fades out to reveal the ready notebook');
     const last=await page.locator('#prep-art').getAttribute('data-frame');
     await page.waitForTimeout(200);assert.equal(await page.locator('#prep-art').getAttribute('data-frame'),last,'completed logo stays static');
     await page.screenshot({path:'test-results/launch-handoff-fast.png'});
     await context.close();
-    console.log('Fast startup: early interactive notebook, uninterrupted animation in header, working logo button.');
+    console.log('Fast startup: notebook fades in, no loading indicator or film, static logo button works.');
   }
   // Slower startup: release storage midway through the drawing. Its frame
   // sequence and cadence must continue through the 300 ms transfer.
@@ -78,7 +87,7 @@ try{
     assert.equal(active.duration,300);
     const cdp=await context.newCDPSession(page);
     await writeFile('test-results/launch-handoff-moving.png',Buffer.from((await cdp.send('Page.captureScreenshot')).data,'base64'));
-    await typeWhileAnimating(page,'no waiting for the moving logo');
+    await typeInNotebook(page,'no waiting for the moving logo');
     await page.waitForFunction(()=>document.querySelector('#preparing').dataset.handoff==='header');
     const then=+await page.locator('#prep-art').getAttribute('data-frame');
     await page.waitForTimeout(500);
