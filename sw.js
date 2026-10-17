@@ -1,5 +1,5 @@
 'use strict';
-const CACHE='notas-local-v135';
+const CACHE='notas-local-v136';
 self.addEventListener('message',event=>{
   if(event.data?.type==='GET_VERSION')event.ports[0]?.postMessage({version:CACHE.replace('notas-local-','')});
 });
@@ -15,7 +15,7 @@ const SHELL=['./notas.html','./model-contract.js','./local-recognition.js','./in
   // controls the page, so "available offline" came with neither reader
   // able to start offline. scripts/model-contract.mjs checks these hashes.
   './assets/smart/ort.wasm.min.js?v=4043d2de','./assets/smart/ort-wasm-simd-threaded.js?v=5687566b','./assets/smart/ort-wasm-simd-threaded.wasm?v=be0e1299',
-  './local-math-help.js','./diagram.js','./nota.js','./collab.js','./manifest.webmanifest','./asset-manifest.json',
+  './local-math-help.js','./diagram.js','./nota.js','./nota-fonts.js','./collab.js','./manifest.webmanifest','./asset-manifest.json',
   './assets/icon-16.png','./assets/icon-32.png','./assets/icon-192.png','./assets/icon-512.png',
   './assets/icon-maskable-512.png','./assets/apple-touch-icon.png',
   // the wordmark is drawn through a CSS mask on the launch screen and top bar
@@ -47,6 +47,10 @@ self.addEventListener('install',event=>event.waitUntil((async()=>{
     }
   };
   await Promise.all([worker(),worker(),worker(),worker()]);
+  const pageKey=new URL('./notas.html',self.location).href;
+  const page=await cache.match(pageKey);
+  if(page)await (await caches.open('notas-launch-v1')).put(pageKey,page);
+
   // Activate after existing tabs close, so their code and cached assets stay together.
 })()));
 // The stroke reader (18 MB) and the ONNX runtime are lazy-cached on first
@@ -127,6 +131,10 @@ self.addEventListener('fetch',event=>{
        older tab still asks for may come from the build before */
     const stored=event.request.mode==='navigate'||!url.search?await cache.match(key):await held(key);
     if(stored)return stored;
+    if(event.request.mode==='navigate'){
+      const launch=await (await caches.open('notas-launch-v1')).match(new URL('./notas.html',self.location).href);
+      if(launch)return launch;
+    }
     // A missing entry means it was either explicitly invalidated or never
     // cached. Revalidate past the browser HTTP cache before using it again.
     const response=await fetch(new Request(event.request,{cache:'reload'}));

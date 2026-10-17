@@ -288,7 +288,8 @@ function spell(text){
 // Rare Unicode characters stay ink. Rasterize the system font into short
 // pen runs instead of replacing the entire answer with an editable text line.
 const EXTRA_GLYPHS=new Map();
-function penGlyph(ch){
+function penGlyph(ch,font=""){
+  if(font&&N.notaFonts){const selected=N.notaFonts.glyph(ch,font);if(selected)return selected;}
   if(GLYPHS.has(ch))return GLYPHS.get(ch);
   if(EXTRA_GLYPHS.has(ch))return EXTRA_GLYPHS.get(ch);
   const canvas=document.createElement('canvas');canvas.width=80;canvas.height=64;
@@ -305,9 +306,9 @@ function penGlyph(ch){
   const glyph={l:0,w:(width+3)*.75,strokes,raster:true};
   EXTRA_GLYPHS.set(ch,glyph);return glyph;
 }
-function wordWidth(word,unit){
+function wordWidth(word,unit,font=""){
   let w=0;
-  for(const ch of word){ const g=penGlyph(ch); w+=(g?g.w:SPACE_W)*unit; }
+  for(const ch of word){ const g=penGlyph(ch,font); w+=(g?g.w:SPACE_W)*unit; }
   return w;
 }
 /* a small, repeatable wobble so the hand is not a plotter */
@@ -454,6 +455,7 @@ function Writer(anchor){
   /* anchor: {x,y,right,rowH,skip} - the question's left edge, its bottom,
      its right edge, the height of its handwriting and the stroke ids that
      are the question */
+  const font=anchor.tutor===false?"":(S.settings.notaFont||"");
   const unit=Math.max(0.7,Math.min(1.25,(anchor.rowH*0.62)/(BASE-CAP)));
   const rowPx=ROW*unit,gap=Math.max(6,anchor.rowH*0.3),padX=10*unit;
   /* The answer is as wide as the question was written, and at least as wide
@@ -529,14 +531,14 @@ function Writer(anchor){
     C.growDoc(st.bbox[3]);C.markDirty();
   };
   const glyph=(ch)=>{
-    const g=penGlyph(ch);if(!g)return;
-    const base=cursor.y+rnd()*0.8*unit;
+    const g=penGlyph(ch,font);if(!g)return;
+    const base=cursor.y+(g.raster?0:rnd()*0.8*unit);
     for(const s of g.strokes){
       const pts=[];
       for(let i=0;i<s.length;i+=2){
-        pts.push(Math.round((cursor.x+(s[i]-g.l)*unit+rnd()*0.5*unit)*10)/10,
-                 Math.round((base+s[i+1]*unit+rnd()*0.5*unit)*10)/10,
-                 Math.round((0.5+rnd()*0.16)*100)/100);
+        pts.push(Math.round((cursor.x+(s[i]-g.l)*unit+(g.raster?0:rnd()*0.5*unit))*10)/10,
+                 Math.round((base+s[i+1]*unit+(g.raster?0:rnd()*0.5*unit))*10)/10,
+                 g.raster?0.5:Math.round((0.5+rnd()*0.16)*100)/100);
       }
       const st={id:C.uid(),author:'ai',tool:'pen',w:g.raster?0.85*unit:3,pts,t0:t,t1:t,...(anchor.color?{color:anchor.color}:{})};
       st.bbox=N.ink.bboxOf(pts);
@@ -547,10 +549,10 @@ function Writer(anchor){
   let raw='',written=0;
   const word=(w)=>{
     if(!w)return;
-    const width=wordWidth(w,unit);
+    const width=wordWidth(w,unit,font);
     if(cursor.x>row.l&&cursor.x+width>row.r)newRow();
     for(const ch of w){
-      const width=wordWidth(ch,unit);
+      const width=wordWidth(ch,unit,font);
       const p=roomAt(cursor.y);
       if(p.y!==cursor.y||cursor.x<p.l){startRow(p.y);}
       else if(cursor.x+width>p.r){newRow();}
@@ -581,7 +583,7 @@ function Writer(anchor){
     if(display){newRow();afterDisplay=true;}
   };
   const prose=text=>{
-    for(const piece of spell(tidy(text)).split(/(\n| )/)){
+    for(const piece of (font?tidy(text):spell(tidy(text))).split(/(\n| )/)){
       if(piece==='\n'){if(!afterDisplay)newRow();afterDisplay=false;}
       else if(piece===' '){if(cursor.x>row.l)cursor.x+=SPACE_W*unit;}
       else if(piece){afterDisplay=false;word(piece);}
