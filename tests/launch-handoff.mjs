@@ -9,12 +9,15 @@ const errors=[];
 async function setup(options={}){
   const context=await browser.newContext({serviceWorkers:'block',...options});
   await context.addInitScript(()=>{
-    localStorage.setItem('notas.tut','done');window.launchFrames=[];
+    localStorage.setItem('notas.tut','done');window.launchFrames=[];window.loadingWasShown=false;
     new MutationObserver(records=>{
-      for(const r of records)if(r.target.id==='prep-art'){
-        const n=+r.target.dataset.frame;if(window.launchFrames.at(-1)!==n)window.launchFrames.push(n);
+      for(const r of records){
+        if(r.target.id==='preparing'&&r.attributeName==='data-revealed')window.loadingWasShown=true;
+        if(r.target.id==='prep-art'){
+          const n=+r.target.dataset.frame;if(window.launchFrames.at(-1)!==n)window.launchFrames.push(n);
+        }
       }
-    }).observe(document,{subtree:true,attributes:true,attributeFilter:['data-frame']});
+    }).observe(document,{subtree:true,attributes:true,attributeFilter:['data-frame','data-revealed']});
   });
   await context.route(/\/assets\/(?:ink|text|smart)\//,r=>r.abort());
   const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
@@ -38,6 +41,7 @@ try{
   {
     const {context,page}=await setup();
     await page.goto(base+'/notas.html',{waitUntil:'domcontentloaded'});await ready(page);
+    assert.equal(await page.evaluate(()=>window.loadingWasShown),false,'a quick start never reveals the loader');
     const frame=+await page.locator('#prep-art').getAttribute('data-frame');
     assert.ok(frame<41,'app ready before the spirit finishes');
     await page.waitForFunction(()=>document.querySelector('#preparing').dataset.handoff==='header');
@@ -60,6 +64,11 @@ try{
     const {context,page}=await setup();let release;const held=new Promise(r=>release=r);
     await context.route('**/assets/idb.js',async r=>{await held;await r.continue();});
     await page.goto(base+'/notas.html',{waitUntil:'domcontentloaded'});
+    await page.waitForFunction(()=>performance.now()>=650);
+    assert.equal(await page.locator('.prep-card').isVisible(),false,'no loading indicator during the first second');
+    assert.equal(await page.locator('#prep-art').getAttribute('data-frame'),'0','hidden animation has not consumed any drawings');
+    await page.waitForFunction(()=>document.querySelector('#preparing').hasAttribute('data-revealed'));
+    assert.ok(await page.evaluate(()=>performance.now())>=1000,'loading indicator appears only after one second');
     await page.waitForFunction(()=>+document.querySelector('#prep-art').dataset.frame>=20);
     assert.equal(await page.locator('#preparing').isVisible(),true);
     const before=+await page.locator('#prep-art').getAttribute('data-frame');release();await ready(page);

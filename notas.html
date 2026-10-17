@@ -22,7 +22,8 @@ html[data-launch-theme="dark"],html[data-launch-theme="dark"] body{background:#1
 html[data-launch-theme="dark"] #preparing{background:#151517;color:#F2F2F4}
 #preparing.done{opacity:0;visibility:hidden;pointer-events:none}
 #preparing[hidden]{display:none}
-.prep-card{display:grid;justify-items:center;gap:14px;text-align:center}
+.prep-card{display:grid;justify-items:center;gap:14px;text-align:center;visibility:hidden}
+#preparing[data-revealed] .prep-card{visibility:visible}
 #prep-art{display:block;width:min(232px,70vw);aspect-ratio:464/134;background:currentColor;mask-image:var(--launch-atlas);-webkit-mask-image:var(--launch-atlas);mask-size:1000% 1200%;-webkit-mask-size:1000% 1200%;mask-repeat:no-repeat;-webkit-mask-repeat:no-repeat;pointer-events:none}
 .prep-word{font-weight:500;opacity:.7}
 .prep-detail{max-width:280px;font-size:13px;opacity:.7}
@@ -36,6 +37,16 @@ try{
   const pref=JSON.parse(localStorage.getItem('notas.prefs')||'{}')||{};
   document.documentElement.dataset.launchTheme=pref.theme==='dark'||(pref.theme!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';
 }catch(e){}
+{
+  // This timer runs from the first HTML chunk, even before the atlas arrives.
+  const launch=window.notasLaunch={};
+  launch.reveal=()=>{
+    const screen=document.getElementById('preparing');
+    if(!screen||screen.classList.contains('done'))return;
+    screen.dataset.revealed='true';launch.start?.();
+  };
+  launch.timer=setTimeout(launch.reveal,Math.max(0,Math.ceil(1000-performance.now())));
+}
 </script>
 <div id="preparing" aria-label="preparing notas" data-launch="playing">
   <div class="prep-card">
@@ -50,18 +61,17 @@ try{
    App readiness releases the page; the drawing has its own lifetime. */
 (function(){
 'use strict';
-const screen=document.getElementById('preparing'),art=document.getElementById('prep-art');
+const screen=document.getElementById('preparing'),art=document.getElementById('prep-art'),launch=window.notasLaunch;
 let prefs={};try{prefs=JSON.parse(localStorage.getItem('notas.prefs')||'{}')||{};}catch(e){}
 const dark=prefs.theme==='dark'||(prefs.theme!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);
 document.documentElement.dataset.launchTheme=dark?'dark':'light';
 document.documentElement.dataset.motion=prefs.animations===false?'off':'on';
 const reduced=matchMedia('(prefers-reduced-motion: reduce)');
 const motionOff=()=>reduced.matches||document.documentElement.dataset.motion==='off';
-const started=performance.now();
-let resolve,frame=0,last=0,elapsed=0,raf,opened=false,finishMove=()=>{};
+let resolve,frame=0,last=0,elapsed=0,raf,opened=false,running=false,completed=false,finishMove=()=>{};
 const finished=new Promise(r=>resolve=r);
 const show=n=>{art.style.maskPosition=art.style.webkitMaskPosition=(n%10/9*100)+'% '+(Math.floor(n/10)/11*100)+'%';art.dataset.frame=String(n);};
-const complete=()=>{cancelAnimationFrame(raf);show(111);screen.dataset.launch='complete';if(motionOff())finishMove();resolve();};
+const complete=()=>{completed=true;cancelAnimationFrame(raf);show(111);screen.dataset.launch='complete';if(motionOff())finishMove();resolve();};
 const step=now=>{
   if(motionOff()){complete();return;}
   if(last)elapsed+=Math.min(50,now-last);last=now;
@@ -69,15 +79,22 @@ const step=now=>{
   if(frame>=111){setTimeout(complete,180);return;}
   raf=requestAnimationFrame(step);
 };
+function start(){
+  if(running||completed)return;
+  if(motionOff()){complete();return;}
+  running=true;raf=requestAnimationFrame(step);
+}
+launch.start=start;
 show(0);
-if(motionOff())complete();else raf=requestAnimationFrame(step);
+if(motionOff())complete();
+if(performance.now()>=1000)launch.reveal();
 reduced.addEventListener('change',e=>{if(e.matches)complete();});
 
 function open(){
-  if(opened)return;opened=true;
+  if(opened)return;opened=true;clearTimeout(launch.timer);
   const brand=document.getElementById('brand'),slot=brand.querySelector('.brand-mark');
   const from=art.getBoundingClientRect(),target=slot.getBoundingClientRect();
-  const fast=motionOff()||performance.now()-started<600;
+  const fast=motionOff()||!screen.hasAttribute('data-revealed');
   let transfer=null;
   const dock=()=>{
     slot.appendChild(art);
@@ -94,7 +111,7 @@ function open(){
   art.replaceWith(space);
   screen.dataset.appReady='true';
   screen.classList.add('done');screen.setAttribute('aria-hidden','true');screen.inert=true;
-  if(fast){screen.hidden=true;dock();return;}
+  if(fast){screen.hidden=true;dock();start();return;}
   const hide=()=>{screen.hidden=true;};
   screen.addEventListener('transitionend',hide,{once:true});setTimeout(hide,360);
   if(!art.animate||!from.width||!target.width){dock();return;}
@@ -129,7 +146,7 @@ const cacheReady=(async()=>{
     }
   }catch(e){}
 })();
-window.notasLaunch={open,finished,stylesReady,cacheReady};
+Object.assign(launch,{open,finished,stylesReady,cacheReady});
 })();
 </script>
 <style>
@@ -10430,6 +10447,7 @@ async function prepareOffline(){
    empty notebook, and the first thing written replaced the list of notes
    with a list of one, while the others were still on the device. */
 function cannotOpen(detail, goOn){
+  window.notasLaunch.reveal();
   const word=document.getElementById('prep-word'),text=document.getElementById('prep-detail');
   if(word)word.textContent='not opened';
   if(text){

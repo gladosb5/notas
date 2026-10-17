@@ -55,14 +55,14 @@ Rebuild and embed in notas.html with Python and Pillow:
 
     python scripts/build-launch.py --source D:/notas-launch-work/film
 
-The atlas is lossless WebP, embedded immediately after the launch markup so launch never waits for another request. The launch runtime shows every frame once at its natural pace. App readiness immediately releases the notebook: a quick start puts the animation in the header, while a slower start moves it there over 300 ms. The drawing finishes as a static header wordmark. Reduced motion and the saved animations-off preference skip motion.
+The atlas is lossless WebP, embedded immediately after the launch markup so launch never waits for another request. The launch runtime shows every frame once at its natural pace. The loading indicator appears only after one second, and quick starts never reveal it. App readiness immediately releases the notebook: a quick start puts the animation in the header, while a slower start moves it there over 300 ms. The drawing finishes as a static header wordmark. Reduced motion and the saved animations-off preference skip motion.
 ''',encoding='utf-8')
 page=options.project/'notas.html'
 html=page.read_text(encoding='utf-8')
 data=base64.b64encode((dest/'spirit-v1.webp').read_bytes()).decode()
 html,n=re.subn(r'--launch-atlas:url\(data:image/webp;base64,[A-Za-z0-9+/=]+\)',lambda _:f'--launch-atlas:url(data:image/webp;base64,{data})',html)
 if n!=1:raise RuntimeError('Expected exactly one embedded launch atlas')
-html=re.sub(r'(const complete=\(\)=>\{cancelAnimationFrame\(raf\);show\()\d+',lambda m:m[1]+str(count-1),html)
+html=re.sub(r'(const complete=\(\)=>\{(?:completed=true;)?cancelAnimationFrame\(raf\);show\()\d+',lambda m:m[1]+str(count-1),html)
 html=re.sub(r'if\(frame>=\d+\)',f'if(frame>={count-1})',html)
 page.write_text(html,encoding='utf-8',newline='\n')
 print(count,w,h,(dest/'spirit-v1.webp').stat().st_size)
