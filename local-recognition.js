@@ -52,6 +52,7 @@ function clearUnconfirmedReadings(){
   for(const cl of S.clusters||[])if(!cl.confirmed){
     cl.latex='';cl.ascii='';cl.alternatives=[];cl.confidence=0;cl.pending=false;cl.review=false;cl.error='';
   }
+  N.nota?.restoreInk?.();
   S.textTranscripts=[];
   attempted.clear();textAttempted.clear();
   lineReadings.clear();lineRequests.clear();inkRoutes.clear();
@@ -1328,6 +1329,7 @@ function rebuild(){
   // A neighbor can change expression completeness without changing this
   // cluster's own hash. Recheck cached readings after every grouping rebuild.
   for(const cl of S.clusters)if(!cl.confirmed&&ambiguousGrouping(cl))cl.needsConfirmation=true;
+  N.nota?.restoreInk?.(textGroups());
   syncTextTranscripts(textGroups());schedule();scheduleText();
 }
 function schedule(){

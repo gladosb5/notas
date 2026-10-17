@@ -133,6 +133,7 @@ function cleanStroke(v,id){
 }
 function cleanLineAttrs(a){
   const o=plainFields(a&&typeof a==='object'?a:{},['id','text','wait','h']);
+  if(typeof a?.notaAsked==='string'&&a.notaAsked.length<=5000000)o.notaAsked=a.notaAsked;
   if(!num(o.y)||o.y<0)o.y=120;
   if(o.x!==undefined&&(!num(o.x)||o.x<0))delete o.x;
   return o;

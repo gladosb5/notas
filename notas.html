@@ -7639,6 +7639,7 @@ async function settle(){
   }
 }
 function blank(id){
+  N.nota?.reset();
   N.recog.reset();
   S.id = id || C.uid(); S.title = 'untitled'; S.created = Date.now();
   S.strokes = []; S.lines = []; S.images = []; S.annos = []; S.clusters = []; S.nodes = []; S.textTranscripts = [];
@@ -8461,12 +8462,13 @@ function validateImportedNote(doc){
         ?{quickGroup:st.quickGroup,quickCount:st.quickCount,...(typeof st.quickMath==='string'&&st.quickMath.length<=8192?{quickMath:st.quickMath}:{})}:{}),
       ...(typeof st.notaGroup==='string'&&st.notaGroup.length<=160&&Number.isInteger(st.notaCount)&&st.notaCount>0&&st.notaCount<=200000
         ?{notaGroup:st.notaGroup,notaCount:st.notaCount,...(typeof st.notaText==='string'&&st.notaText.length<=32000?{notaText:st.notaText}:{})}:{}),
+      ...(st.notaAsked===true?{notaAsked:true}:{}),
       ...(typeof st.color==='string'&&/^#[0-9a-f]{6}$/i.test(st.color)?{color:st.color}:{})};
   });
   const lines=doc.lines.map(l=>{
     if(!l||!coord(l.y)||typeof l.text!=='string'||l.text.length>5000000)throw new Error('this note contains invalid typed text.');
     const h=Number(l.h||C.LINE_H);if(!Number.isFinite(h)||h<C.LINE_H||h>200000)throw new Error('this note contains invalid text layout.');
-    return {id:safeId(l.id),y:Number(l.y),...(coord(l.x)?{x:Number(l.x)}:{}),text:l.text,h,...(l.tutor?{tutor:true}:{}),...(typeof l.answerPrefix==='string'&&l.text.startsWith(l.answerPrefix)?{answerPrefix:l.answerPrefix}:{}),...(l.suppressAnswer===l.text?{suppressAnswer:l.text}:{})};
+    return {id:safeId(l.id),y:Number(l.y),...(coord(l.x)?{x:Number(l.x)}:{}),text:l.text,h,...(typeof l.notaAsked==='string'&&l.notaAsked.length<=5000000?{notaAsked:l.notaAsked}:{}),...(l.tutor?{tutor:true}:{}),...(typeof l.answerPrefix==='string'&&l.text.startsWith(l.answerPrefix)?{answerPrefix:l.answerPrefix}:{}),...(l.suppressAnswer===l.text?{suppressAnswer:l.text}:{})};
   });
   let imageChars=0;
   const images=doc.images.map(im=>{
