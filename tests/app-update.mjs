@@ -20,7 +20,7 @@ const server=createServer(async(req,res)=>{
     }
     if(pathname==='/notas.html'){
       res.setHeader('Content-Type','text/html');
-      res.end(html.replace(/name="notas-version" content="v\d+"/,`name="notas-version" content="v${version}"`));return;
+      res.end(html.replace(/name="notas-version" content="v\d+"/,`name="notas-version" content="v${version}"`).replace('aiOn:true','aiOn:false'));return;
     }
     if(pathname==='/asset-manifest.json'){res.setHeader('Content-Type','application/json');res.end('[]');return;}
     const response=await fetch(sourceBase+req.url);
@@ -40,6 +40,8 @@ await context.addInitScript(()=>{
     if(/notas v\d+ is available/.test(text)&&window.updateNotices.at(-1)!==text)window.updateNotices.push(text);
   }).observe(document,{subtree:true,childList:true,characterData:true});
 });
+// Keep recognition disabled before boot: this test exercises app updates,
+// and aborting model downloads races worker startup against page reloads.
 await context.route(/\/assets\/(?:ink|text|smart)\//,route=>route.abort());
 const ready=async p=>{
   await p.waitForFunction(()=>window.N?.ui&&document.querySelector('#preparing').classList.contains('done'));
@@ -98,7 +100,7 @@ try{
     for(const name of await caches.keys())if(name.startsWith('notas-local-')||name==='notas-launch-v1')await (await caches.open(name)).put(key,fresh.clone());
   });
   await page.reload();await ready(page);
-  await page.waitForFunction(async()=>!(await navigator.serviceWorker.getRegistration('./')).waiting);
+  await page.waitForFunction(async()=>{const reg=await navigator.serviceWorker.getRegistration('./');return !reg.waiting&&reg.active?.state==='activated';});
   await page.waitForTimeout(300);
   assert.deepEqual(await page.evaluate(()=>window.updateNotices),[],'legacy updater handoff does not advertise the page already loaded');
   await page.reload();await ready(page);

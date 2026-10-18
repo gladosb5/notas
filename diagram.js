@@ -100,6 +100,11 @@ function boxPathDist(b,path){
 }
 function boxPointDist(b,p){return hyp(Math.max(b[0]-p[0],p[0]-b[2],0),Math.max(b[1]-p[1],p[1]-b[3],0));}
 
+function isStraight(pts,len){
+  if(pts.length<2||len<=0)return false;
+  const first=pts[0],last=pts[pts.length-1],chord=dist(first,last);
+  return chord>=len*.92&&pts.every(p=>segDist(p,first,last)<=Math.max(3,.03*chord));
+}
 /* ---- a stroke, measured ---- */
 function measure(st){
   const pts=pointsOf(st),b=st.bbox&&st.bbox.length===4?st.bbox:boxOf(pts);
@@ -108,7 +113,7 @@ function measure(st){
   const v=simplify(pts,Math.max(2,size*.05));
   return {st,id:st.id,pts,b,w,h,size,len,chord,v,
     closed:pts.length>=6&&chord<=Math.max(8,size*.22)&&len>=size*1.9,
-    straight:pts.length>1&&len>0&&chord>=len*.92};
+    straight:isStraight(pts,len)};
 }
 /* back-and-forth in x and y: a word in joined-up writing turns back on
    itself again and again; a drawn curve, bend or arc hardly ever */
@@ -326,7 +331,7 @@ function find(strokes,opts={}){
     const heads=headInStroke(m.v,H);
     const shaft=heads.start||heads.end?heads.shaft:unhook(heads.shaft,H),shaftLen=pathLength(shaft);
     const sb=boxOf(shaft),sw=sb[2]-sb[0],sh=sb[3]-sb[1];
-    const straight=shaftLen>0&&dist(shaft[0],shaft[shaft.length-1])>=shaftLen*.92;
+    const straight=isStraight(shaft,shaftLen);
     const smooth=reversals(shaft,Math.max(3,.4*H))<=2&&m.len<=1.6*(m.w+m.h)+2*H;
     const headed=!!(heads.start||heads.end);
     let kind=null;

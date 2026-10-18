@@ -1,11 +1,12 @@
 'use strict';
-const CACHE='notas-local-v142';
+const CACHE='notas-local-v143';
 self.addEventListener('message',event=>{
   if(event.data?.type==='GET_VERSION')event.ports[0]?.postMessage({version:CACHE.replace('notas-local-','')});
   // The update button explicitly applies this installed build. Only the
   // page requesting the update reloads its notebook.
   if(event.data?.type==='SKIP_WAITING')event.waitUntil(self.skipWaiting());
 });
+const ASSET_HASHES={"assets/smart/ort.wasm.min.js":"4043d2deda6a2e2fc783afc2b06d984068808181b88d451862c1230c433fce7a","assets/smart/ort-wasm-simd-threaded.js":"5687566b1bc1c8cf628d76c2ddb16b2a3b81a7997273d4666564880495088e57","assets/smart/ort-wasm-simd-threaded.wasm":"be0e129949062ad50290ef94683fac8be5bb6156f709e030b7a5f1661a2f6c17","assets/text/ppocrv6-small.onnx":"5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634","assets/text/ppocrv6_dict.txt":"b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d"};
 const RECOGNITION_ASSET=/\/assets\/(?:text|smart|ink)\//;
 const INK_MODEL=/\/assets\/ink\/[^?]*\.onnx$/;
 const SHELL=['./notas.html','./model-contract.js','./local-recognition.js','./ink-worker.js','./ink-features.js','./model-store.js','./text-worker.js','./bg-worker.js','./slide-surface.js','./assets/slide/model.js',
@@ -25,6 +26,17 @@ const SHELL=['./notas.html','./model-contract.js','./local-recognition.js','./in
   './assets/logo.png',
   // nota's waiting animation, a CSS mask on the reply and drawn on the page
   './assets/nota-thinking.png'];
+async function validAsset(request,response){
+  if(!response?.ok)return false;
+  const url=new URL(typeof request==='string'?request:request.url,self.location),version=url.searchParams.get('v');
+  if(!version||!RECOGNITION_ASSET.test(url.pathname))return true;
+  if(!/^[0-9a-f]{8,64}$/.test(version))return false;
+  const file=Object.keys(ASSET_HASHES).find(key=>url.pathname.endsWith('/'+key)),expected=file?ASSET_HASHES[file]:null;
+  if(expected&&!expected.startsWith(version))return false;
+  const hash=await crypto.subtle.digest('SHA-256',await response.clone().arrayBuffer());
+  const actual=Array.from(new Uint8Array(hash),b=>b.toString(16).padStart(2,'0')).join('');
+  return expected?actual===expected:actual.startsWith(version);
+}
 self.addEventListener('install',event=>event.waitUntil((async()=>{
   const response=await fetch('./asset-manifest.json',{cache:'no-store'});
   if(!response.ok)throw new Error('Offline asset list unavailable');
@@ -41,11 +53,11 @@ self.addEventListener('install',event=>event.waitUntil((async()=>{
       // on every version of this file, or after the app is reloaded from
       // the menu.
       if(RECOGNITION_ASSET.test(request.url)){
-        const kept=await caches.match(request);
+        const kept=await held(request);
         if(kept){await cache.put(request,kept);continue;}
       }
       const result=await fetch(request);
-      if(!result.ok)throw new Error('Offline asset unavailable: '+url);
+      if(!await validAsset(request,result))throw new Error('Offline asset unavailable or corrupt: '+url);
       await cache.put(request,result);
     }
   };
@@ -80,7 +92,7 @@ async function keepRecognitionAssets(cache){
       if(!wanted.has(request.url))continue;
       if(await cache.match(request))continue;
       const response=await old.match(request);
-      if(response)try{await cache.put(request,response);}catch(e){}
+      if(response)try{if(await validAsset(request,response))await cache.put(request,response);else await old.delete(request);}catch(e){}
     }
   }
 }
@@ -98,11 +110,11 @@ self.addEventListener('activate',event=>event.waitUntil((async()=>{
 async function held(request){
   const cache=await caches.open(CACHE);
   const own=await cache.match(request);
-  if(own)return own;
+  if(own){if(await validAsset(request,own))return own;await cache.delete(request);}
   for(const key of await caches.keys()){
     if(!key.startsWith('notas-local-')||key===CACHE)continue;
-    const hit=await (await caches.open(key)).match(request);
-    if(hit)return hit;
+    const old=await caches.open(key),hit=await old.match(request);
+    if(hit){if(await validAsset(request,hit))return hit;await old.delete(request);}
   }
   return null;
 }
@@ -112,11 +124,12 @@ self.addEventListener('fetch',event=>{
   // the room and its status check are live answers, never a cached one
   if(url.pathname.includes('/collab/'))return;
   event.respondWith((async()=>{
+    if(url.searchParams.has('update'))return fetch(new Request(event.request,{cache:'no-store'}));
     const cache=await caches.open(CACHE);
     // The stroke reader and the ONNX runtime are lazy-cached on first use.
     // The PP-OCRv6 search model is part of SHELL above so "Available
     // offline" also means handwritten-text search is available offline.
-    if(url.pathname.includes('/assets/smart/')||url.pathname.includes('/assets/ink/')){
+    if(RECOGNITION_ASSET.test(url.pathname)){
       const stored=await held(event.request);
       if(stored)return stored;
       const response=await fetch(new Request(event.request,{cache:'reload'}));
@@ -126,7 +139,10 @@ self.addEventListener('fetch',event=>{
       // this session either; the asset simply downloads again next time.
       // The stroke model's own files are not stored here: ink-worker.js
       // keeps them in IndexedDB (model-store.js), one copy on the device.
-      if(response.ok&&!INK_MODEL.test(url.pathname))event.waitUntil(cache.put(event.request,response.clone()).catch(()=>{}));
+      if(response.ok&&!INK_MODEL.test(url.pathname)){
+        if(!await validAsset(event.request,response))return new Response('offline asset failed integrity verification',{status:502});
+        event.waitUntil(cache.put(event.request,response.clone()).catch(()=>{}));
+      }
       return response;
     }
     const key=event.request.mode==='navigate'?new URL('./notas.html',self.location).href:event.request;
@@ -141,7 +157,7 @@ self.addEventListener('fetch',event=>{
     // A missing entry means it was either explicitly invalidated or never
     // cached. Revalidate past the browser HTTP cache before using it again.
     const response=await fetch(new Request(event.request,{cache:'reload'}));
-    if(response.ok)try{await cache.put(event.request,response.clone());}catch(e){}
+    if(response.ok&&!url.search)try{await cache.put(event.request,response.clone());}catch(e){}
     return response;
   })());
 });

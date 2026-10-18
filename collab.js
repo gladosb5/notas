@@ -18,6 +18,7 @@ if(!N||!N.core)return;
 const C=N.core,S=C.S;
 
 const NAME_KEY='notas.collab.name',SHARED_KEY='notas.collab.shared',HOST_KEY='notas.collab.host.';
+const GEN_KEY='notas.collab.gen.',SHARE_MAX=24*1024*1024;
 const LOCAL='local';                /* origin of the page's own transactions */
 let room=null,lib=null,flushQueued=false,applying=false;
 const strokeSigs=new WeakMap();
@@ -42,7 +43,7 @@ function hostToken(id,make){
    cryptographic randomness, 128 bits as lowercase hex */
 function secret(){ return Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join(''); }
 function isHost(){ return !!(room&&hostToken(room.id)); }
-function linkFor(id){ const u=new URL(location.href); u.search=''; u.hash=''; u.searchParams.set('share',id); const gen=room?.id===id?genOf(room):'';if(gen)u.searchParams.set('gen',gen);return u.href; }
+function linkFor(id){ const u=new URL(location.href); u.search=''; u.hash=''; u.searchParams.set('share',id); const gen=room?.id===id?genOf(room):savedGen(id);if(gen)u.searchParams.set('gen',gen);return u.href; }
 /* the same link with the host's token on it: for the host's own other
    devices, so they are the host there too rather than a guest of their own
    note; never the link that is sent to others */
@@ -135,7 +136,7 @@ function cleanLineAttrs(a){
   const o=plainFields(a&&typeof a==='object'?a:{},['id','text','wait','h']);
   if(typeof a?.notaAsked==='string'&&a.notaAsked.length<=5000000)o.notaAsked=a.notaAsked;
   if(!num(o.y)||o.y<0)o.y=120;
-  if(o.x!==undefined&&(!num(o.x)||o.x<0))delete o.x;
+  if(o.x!==undefined&&!num(o.x))delete o.x;
   return o;
 }
 
@@ -164,6 +165,7 @@ function probe(){
 function setBusy(on){ if(busy===on)return; busy=on; paintButton(); }
 
 function loadLib(){
+  if(N.core.S.buildChanged)return Promise.reject(new Error('notas was updated in another tab. reload before sharing.'));
   if(window.Yjs)return Promise.resolve(window.Yjs);
   return lib||(lib=new Promise((resolve,reject)=>{
     const s=document.createElement('script'); s.src='./assets/collab.js';
@@ -216,7 +218,11 @@ function editText(ytext,base,mine){
       /* overlapping: keep what they wrote, remove only what this device
          removed outside their span */
       const end=at+del;
-      if(at<r.at){ del=r.at-at; }
+      if(at<r.at){
+        const right=Math.max(0,end-(r.at+r.del)),rightAt=r.at+r.ins.length;
+        if(right)ytext.delete(rightAt,Math.min(right,now.length-rightAt));
+        del=r.at-at;
+      }
       else{ at=r.at+r.ins.length; del=Math.max(0,end-(r.at+r.del)); }
     }
   }
@@ -246,11 +252,12 @@ function flush(){
       seen.add(ln.id);
       const attrs=JSON.stringify(lineAttrs(ln)),text=ln.text||'';
       let k=known.lines.get(ln.id),ym=r.lines.get(ln.id);
-      if(!ym){ ym=new Y.Map(); r.lines.set(ln.id,ym); ym.set('attrs',JSON.parse(attrs)); ym.set('text',new Y.Text(text)); known.lines.set(ln.id,{attrs,text}); continue; }
-      if(!k){ k={attrs:'',text:ym.get('text')?ym.get('text').toString():''}; known.lines.set(ln.id,k); }
+      if(!(ym instanceof Y.Map)){ ym=new Y.Map(); r.lines.set(ln.id,ym); ym.set('attrs',JSON.parse(attrs)); ym.set('text',new Y.Text(text)); known.lines.set(ln.id,{attrs,text}); continue; }
+      if(!k){ k={attrs:'',text:ym.get('text') instanceof Y.Text?ym.get('text').toString():''}; known.lines.set(ln.id,k); }
       if(k.attrs!==attrs){ ym.set('attrs',JSON.parse(attrs)); k.attrs=attrs; }
+      if(!(ym.get('text') instanceof Y.Text)){ym.set('text',new Y.Text(text));k.text=text;}
       if(k.text!==text&&composing!==ln.id){
-        let yt=ym.get('text'); if(!yt){ yt=new Y.Text(); ym.set('text',yt); }
+        const yt=ym.get('text');
         editText(yt,k.text,text);
         k.text=yt.toString();
         /* someone else's letters were already in it: the line becomes both */
@@ -328,13 +335,13 @@ function changed(hint){
 /* ---- and back out: someone else wrote ---- */
 function lineFrom(id,ym){
   const attrs=ym.get('attrs'),yt=ym.get('text');
-  const ln={id,...cleanLineAttrs(attrs),text:yt&&typeof yt.toString==='function'?String(yt.toString()).slice(0,5000000):''};
+  const ln={id,...cleanLineAttrs(attrs),text:yt instanceof window.Yjs.Y.Text?yt.toString().slice(0,5000000):''};
   if(typeof ln.answerPrefix==='string'&&!ln.text.startsWith(ln.answerPrefix))delete ln.answerPrefix;
   return ln;
 }
 function takeLine(id){
   const r=room,ym=r.lines.get(id);
-  if(!ym||typeof ym.get!=='function'){ S.lines=S.lines.filter(l=>l.id!==id); r.known.lines.delete(id); return; }
+  if(!(ym instanceof window.Yjs.Y.Map)){ S.lines=S.lines.filter(l=>l.id!==id); r.known.lines.delete(id); return; }
   const fresh=lineFrom(id,ym),was=r.known.lines.get(id);
   const ln=S.lines.find(l=>l.id===id);
   /* a word still being composed here: its text waits (see compositionend) */
@@ -358,7 +365,7 @@ function pullAll(){
   applying=true;
   try{
     S.strokes=[];
-    for(const [id,v] of r.strokes.entries()){ const st=takeStroke(id,v); r.known.strokes.set(id,st?strokeSig(st):''); if(st)S.strokes.push(st); }
+    for(const [id,v] of r.strokes.entries()){ const st=takeStroke(id,v); r.known.strokes.set(id,st?strokeSig(st):''); if(st){st._peer=!N.nota?.ownsInk?.(id);S.strokes.push(st);} }
     orderStrokes();
     S.lines=[]; for(const id of r.lines.keys())takeLine(id);
     S.images=[];
@@ -389,7 +396,7 @@ function orderImages(){ S.images.sort(imageOrder); }
    deletes what the page no longer has */
 function adopt(r){
   for(const id of r.strokes.keys())r.known.strokes.set(id,'');
-  for(const [id,ym] of r.lines.entries())r.known.lines.set(id,{attrs:'',text:ym&&ym.get&&ym.get('text')?ym.get('text').toString():''});
+  for(const [id,ym] of r.lines.entries())r.known.lines.set(id,{attrs:'',text:ym instanceof window.Yjs.Y.Map&&ym.get('text') instanceof window.Yjs.Y.Text?ym.get('text').toString():''});
   for(const id of r.images.keys())r.known.images.set(id,'');
   r.known.title=null;
   flush();
@@ -426,6 +433,7 @@ function observe(){
     applying=true;
     try{
       for(const [id,ch] of e.changes.keys){
+        N.nota?.forgetLocalInk?.(id);
         if(ch.action==='delete'){ S.strokes=S.strokes.filter(s=>s.id!==id); r.known.strokes.delete(id); N.ink.peerShift.delete(id); continue; }
         const st=takeStroke(id,r.strokes.get(id));
         if(!st){ r.known.strokes.set(id,''); continue; }
@@ -437,7 +445,8 @@ function observe(){
         if(at<0)S.strokes.push(st);
         else{ const moved=translationOf(S.strokes[at],st); S.strokes[at]=st; if(moved)landed(id,moved); }
       }
-      S.selection=S.selection.filter(id=>S.strokes.some(s=>s.id===id));
+      S.strokes=S.strokes.slice();
+      const existing=new Set([...S.strokes,...S.lines].map(s=>s.id));S.selection=S.selection.filter(id=>existing.has(id));
     }finally{ applying=false; }
     dirty.ink=true; refresh();
   });
@@ -468,7 +477,6 @@ function observe(){
     if(txn.origin===LOCAL)return;
     const meta=takeMeta(r);
     if(e.keysChanged.has('title')&&meta.title){ S.title=meta.title; r.known.title=meta.title; N.ui.refreshTitle(); }
-    if(e.keysChanged.has('gen')&&r.provider)r.provider.params.gen=genOf(r);
     refresh();
   });
 }
@@ -512,14 +520,43 @@ async function start(id,seed,gen){
      room simply failed to start is not: the others' edits since are in the
      device's copy of the room and must not be written over */
   const fresh=seed&&!isShared(id);
-  const ticket=++startSeq;
+  const ticket=++startSeq,baseline=pageState();
   starting=id;
-  try{ await startNow(id,seed,fresh,ticket,gen); }
+  try{ await startNow(id,seed,fresh,ticket,gen,baseline); }
   finally{ if(starting===id&&ticket===startSeq)starting=null; }
 }
 /* the share this device's copy belongs to ('' for a copy yet to arrive) */
-function genOf(r){ const g=r.meta.get('gen'); return typeof g==='string'&&/^[a-z0-9]{8,40}$/.test(g)?g:''; }
-async function startNow(id,seed,fresh,ticket,gen){
+function savedGen(id){try{return localStorage.getItem(GEN_KEY+id)||'';}catch{return '';}}
+function genOf(r){return r.gen||'';}
+function pageState(){
+  return {strokes:new Map(S.strokes.map(st=>[st.id,strokeSig(st)])),
+    lines:new Map(S.lines.map(ln=>[ln.id,{attrs:JSON.stringify(lineAttrs(ln)),text:ln.text||''}])),
+    images:new Map(S.images.map(im=>[im.id,JSON.stringify(im)])),title:S.title,docH:S.docH};
+}
+// Apply only edits made while libraries / IndexedDB loaded; retain unrelated
+// edits already in the durable collaboration copy, including remote IME text.
+function mergeDuringLoad(r,before,after){
+  const {Y}=window.Yjs;
+  r.doc.transact(()=>{
+    for(const kind of ['strokes','images']){
+      for(const id of before[kind].keys())if(!after[kind].has(id))r[kind].delete(id);
+      for(const [id,value] of after[kind])if(before[kind].get(id)!==value)r[kind].set(id,JSON.parse(value));
+    }
+    for(const id of before.lines.keys())if(!after.lines.has(id))r.lines.delete(id);
+    for(const [id,line] of after.lines){
+      const old=before.lines.get(id);if(old&&old.attrs===line.attrs&&old.text===line.text)continue;
+      let ym=r.lines.get(id);
+      if(!(ym instanceof Y.Map)){ym=new Y.Map();r.lines.set(id,ym);}
+      if(!old||old.attrs!==line.attrs)ym.set('attrs',JSON.parse(line.attrs));
+      let yt=ym.get('text');
+      if(!(yt instanceof Y.Text)){yt=new Y.Text(line.text);ym.set('text',yt);}
+      else if(!old||old.text!==line.text)editText(yt,old?.text||'',line.text);
+    }
+    if(after.title!==before.title)r.meta.set('title',after.title);
+    if(after.docH>before.docH)r.meta.set('docH',after.docH);
+  },LOCAL);
+}
+async function startNow(id,seed,fresh,ticket,gen,baseline){
   const {Y,WebsocketProvider,IndexeddbPersistence}=await loadLib();
   /* a later start (the note opened twice, a link opened on a known note)
      has taken over: this one leaves no second document behind */
@@ -527,7 +564,7 @@ async function startNow(id,seed,fresh,ticket,gen){
   if(room)stop();
   const doc=new Y.Doc();
   const r=room={id,doc,strokes:doc.getMap('strokes'),lines:doc.getMap('lines'),images:doc.getMap('images'),meta:doc.getMap('meta'),
-    known:{strokes:new Map(),lines:new Map(),images:new Map(),title:seed?null:S.title},status:'connecting',peers:[],synced:false,ready:false,early:[]};
+    gen:gen||savedGen(id),known:{strokes:new Map(),lines:new Map(),images:new Map(),title:seed?null:S.title},status:'connecting',peers:[],synced:false,ready:false,early:[]};
   r.idb=new IndexeddbPersistence('notas-collab-'+id,doc);
   await r.idb.whenSynced;
   if(room!==r)return;
@@ -541,19 +578,23 @@ async function startNow(id,seed,fresh,ticket,gen){
      and everything written, erased or renamed since came undone. */
   if(stored&&fresh){ adopt(r); observe(); }
   else if(stored){
-    const early=r.early.map(sid=>S.strokes.find(s=>s.id===sid)).filter(Boolean);
-    pullAll(); observe();
-    if(early.length){ for(const st of early)if(!S.strokes.some(s=>s.id===st.id))S.strokes.push(st); orderStrokes(); N.ink.render(); flush(); }
+    mergeDuringLoad(r,baseline,pageState());pullAll();observe();
   }
-  else if(seed){ flush(); observe(); }
-  if(gen&&!stored&&genOf(r)!==gen)r.doc.transact(()=>r.meta.set('gen',gen),LOCAL);
-  else if(gen&&seed&&fresh)r.doc.transact(()=>r.meta.set('gen',gen),LOCAL);
+  else if(seed){flush();observe();}
+  else{mergeDuringLoad(r,baseline,pageState());}
+  if(!r.gen&&hostToken(id)){
+    const opened=await openRoom(id);if(room!==r)return;
+    if(!opened||opened==='taken'){stop();throw new Error('open the current invitation to reconnect this shared note.');}r.gen=opened;
+  }
+  if(!r.gen&&served()){stop();throw new Error('open the current invitation to reconnect this shared note.');}
+  if(r.gen)try{localStorage.setItem(GEN_KEY+id,r.gen);}catch{}
+  if(Y.encodeStateAsUpdate(doc).byteLength>SHARE_MAX){stop();throw new Error('this note is too big to share. remove some pictures or export a file.');}
   if(!served()){ r.status='disconnected'; setShared(id,true); paintButton(); return; }
-  const params={name:name(),gen:genOf(r)};
+  const params={name:name(),gen:genOf(r),session:secret()};
   const token=hostToken(id,false);
   /* the host's token goes as a websocket subprotocol, out of the address
      and so out of the request logs */
-  r.provider=new WebsocketProvider(socketUrl(),id,doc,{params,protocols:token?['notas','h'+token]:['notas']});
+  r.provider=new WebsocketProvider(socketUrl(),id,doc,{params,shouldReconnect:event=>event?.code!==1009&&!(event?.code>=4400&&event?.code<=4499),protocols:token?['notas','h'+token]:['notas']});
   announce();
   r.provider.on('status',({status})=>{
     if(room!==r)return; r.status=status;
@@ -581,7 +622,7 @@ async function startNow(id,seed,fresh,ticket,gen){
   r.provider.on('closed',({code})=>{
     if(room!==r)return;
     if(code===4410)ended();
-    else if(code===4413){ r.status='disconnected'; paintButton(); C.toast('this shared note is too big to open here. ask whoever shared it to make it smaller, or to send it as a file.',8000); }
+    else if(code===4413||code===1009){ r.status='disconnected'; paintButton(); C.toast('this shared note is too big to open here. ask whoever shared it to make it smaller, or to send it as a file.',8000); }
   });
   r.provider.awareness.on('change',()=>{ if(room===r)peers(); });
   /* a quarter second pulse: sends what this device is doing when that
@@ -1199,7 +1240,8 @@ async function openRoom(id){
     if(res.status===429){ setBusy(true); C.toast(BUSY_TEXT,6000); return false; }
     if(!res.ok)throw new Error(String(res.status));
     const j=await res.json().catch(()=>null);
-    return j&&typeof j.gen==='string'?j.gen:gen;
+    const actual=j&&typeof j.gen==='string'?j.gen:gen;
+    localStorage.setItem(GEN_KEY+id,actual);return actual;
   }catch(e){ C.toast('sharing could not start. check the connection and try again.',6000); return false; }
 }
 
@@ -1212,7 +1254,7 @@ async function claimNota(line,question){
   if(!r)return isShared(S.id)?{state:'offline'}:{state:'claimed',finish:async()=>{}};
   /* the room is out of its day's allowance: not a wait that ends soon */
   if(r.status!=='connected'||!r.synced)return {state:busy?'overloaded':'offline'};
-  const token=crypto.randomUUID(),url='./collab/'+r.id+'/nota';
+  const token=crypto.randomUUID(),url='./collab/'+r.id+'/nota?gen='+encodeURIComponent(genOf(r));
   const send=async action=>{
     const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({line,question,token,action}),signal:AbortSignal.timeout(5000)});
     if(res.status===429)return {state:'overloaded'};
@@ -1243,7 +1285,7 @@ async function openLink(){
   /* A link naming a note this device already has, but has never shared or
      joined, is not an invitation into it: joining would replace the note
      with whatever that room holds. The note simply opens, as it is. */
-  if(known&&!isShared(id)&&!hostToken(id)&&!t){
+  if(known&&!isShared(id)){
     history.replaceState(null,'',location.pathname);
     await N.ui.openNote(id);
     C.toast('that link names a note you already have here, which is not shared. it opened as it is.',7000);
@@ -1268,6 +1310,26 @@ async function openLink(){
 /* this tab is in the note's room, or joining it: its edits are merged with
    everyone's (a tab still joining takes the room's copy when it arrives) */
 function isLive(id){ return (!!room&&room.id===id)||starting===id; }
-N.collab={claimNota,share,changed,noteChanged,openLink,linkedRoom,isShared,isLive,isHost,name,get room(){ return room; }};
+
+// Stop providers in other tabs before deleting their local collaboration DB.
+const purgeChannel=typeof BroadcastChannel==='function'?new BroadcastChannel('notas-collab-lifecycle'):null;
+if(purgeChannel)purgeChannel.onmessage=({data})=>{if(data?.purge&&room?.id===data.id)stop();};
+async function purge(id){
+  const token=hostToken(id);
+  if(token&&isShared(id)){
+    if(offline())throw new Error('connect before deleting this shared note so sharing can end for everyone.');
+    const res=await fetch('./collab/'+id+'/close',{method:'POST',headers:{'X-Notas-Host':token},signal:AbortSignal.timeout(10000)});
+    if(!res.ok)throw new Error('sharing could not end. the note and host key have been kept. try again.');
+  }
+  if(room?.id===id)stop();purgeChannel?.postMessage({purge:true,id});
+  await new Promise((resolve,reject)=>{
+    const req=indexedDB.deleteDatabase('notas-collab-'+id);
+    const timer=setTimeout(()=>reject(new Error('close other tabs using this shared note, then delete it again.')),5000);
+    req.onsuccess=()=>{clearTimeout(timer);resolve();};
+    req.onerror=()=>{clearTimeout(timer);reject(req.error);};
+  });
+  setShared(id,false);localStorage.removeItem(HOST_KEY+id);localStorage.removeItem(GEN_KEY+id);
+}
+N.collab={purge,claimNota,share,changed,noteChanged,openLink,linkedRoom,isShared,isLive,isHost,name,get room(){ return room; }};
 N.collab._test={cleanStroke,cleanLineAttrs,safeImage,pictureSize,textDiff,editText,liveOf};
 })();

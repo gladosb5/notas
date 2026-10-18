@@ -16,13 +16,13 @@ const source=(await readFile(new URL('../deploy/cloudflare/room.js',import.meta.
 const {NoteRoom}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
 
 function host(t){
-  const db=new DatabaseSync(':memory:'),sockets=[],kv=new Map();
+  const db=new DatabaseSync(':memory:'),sockets=[],kv=new Map([['gen','testgen1']]);
   t.after(()=>db.close());
   const stats={writes:0,selects:0};
   const pending=[];
   const ctx={waitUntil:p=>pending.push(p),getWebSockets:()=>sockets,blockConcurrencyWhile:fn=>fn(),autoResponse:null,
     setWebSocketAutoResponse(pair){this.autoResponse=pair;},storage:{
-    get:async key=>kv.get(key),put:async(key,value)=>kv.set(key,value),
+    get:async key=>kv.get(key),put:async(key,value)=>kv.set(key,value),delete:async key=>kv.delete(key),
     sql:{exec(query,...args){
       const stmt=db.prepare(query);
       const rows=stmt.columns().length?stmt.all(...args):[];
@@ -36,11 +36,11 @@ function host(t){
   }};
   const rooms=[];
   t.after(()=>rooms.forEach(r=>{r.doc?.destroy();r.presenceDoc?.destroy();}));
-  return {db,stats,ctx,sockets,room(){const r=new NoteRoom(ctx,{});rooms.push(r);return r;}};
+  return {db,stats,ctx,sockets,room(){const r=new NoteRoom(ctx,{});r.gen='testgen1';r.closed=false;rooms.push(r);return r;}};
 }
 globalThis.WebSocketRequestResponsePair??=class{constructor(request,response){this.request=request;this.response=response;}};
 function socket(){
-  return {messages:[],saved:null,send(bytes){this.messages.push(bytes);},close(){},
+  return {messages:[],readyState:1,saved:{gen:'testgen1',clients:[]},send(bytes){this.messages.push(bytes);},close(code){this.readyState=3;this.code=code;},
     serializeAttachment(value){this.saved=structuredClone(value);},
     deserializeAttachment(){return structuredClone(this.saved);}};
 }
@@ -54,6 +54,50 @@ function presenceMessage(id,clock,state){
   const outer=encoding.createEncoder();encoding.writeVarUint(outer,1);
   encoding.writeVarUint8Array(outer,encoding.toUint8Array(inner));return encoding.toUint8Array(outer);
 }
+
+test('F15/F18: retired generations cannot write or reserve questions, even after reopen',async t=>{
+  const h=host(t),room=h.room(),a=socket();h.sockets.push(a);
+  const doc=new Y.Doc();t.after(()=>doc.destroy());doc.getText('text').insert(0,'private');
+  a.saved.gen='retired1';room.webSocketMessage(a,documentMessage(Y.encodeStateAsUpdate(doc)));
+  assert.equal(room.doc,null);assert.equal(h.stats.writes,0);
+  const request=gen=>new Request('https://notas.test/collab/abcdefgh/nota?gen='+gen,{method:'POST',body:JSON.stringify({line:'line',question:'question',token:'token',action:'claim'})});
+  assert.equal((await room.fetch(request('retired1'))).status,410);
+  await h.ctx.storage.put('host','hosttokenhosttoken');
+  assert.equal((await room.fetch(request('testgen1'))).status,200);
+  a.saved.gen='testgen1';await room.end();room.webSocketMessage(a,documentMessage(Y.encodeStateAsUpdate(doc)));
+  assert.equal(h.db.prepare('SELECT count(*) AS n FROM updates').get().n,0);
+  const res=await room.fetch(new Request('https://notas.test/collab/abcdefgh/open?gen=newgen12',{method:'POST',headers:{'X-Notas-Host':'hosttokenhosttoken'}}));
+  assert.equal(res.status,200);assert.equal(room.gen,'newgen12');assert.equal(a.saved.retired,true);
+  room.webSocketMessage(a,documentMessage(Y.encodeStateAsUpdate(doc)));assert.equal(room.doc,null);
+});
+
+test('F79/F80: oversized frames, presence id floods and rapid messages are bounded',t=>{
+  const h=host(t),room=h.room(),large=socket(),flood=socket(),fast=socket();h.sockets.push(large,flood,fast);
+  room.webSocketMessage(large,new Uint8Array(24*1024*1024+1025));assert.equal(large.code,4413);
+  const inner=encoding.createEncoder();encoding.writeVarUint(inner,9000);
+  const outer=encoding.createEncoder();encoding.writeVarUint(outer,1);encoding.writeVarUint8Array(outer,encoding.toUint8Array(inner));
+  room.webSocketMessage(flood,encoding.toUint8Array(outer));assert.equal(flood.code,1008);
+  for(let i=0;i<300;i++)room.webSocketMessage(fast,new Uint8Array([3]));assert.equal(fast.code,4429);
+  assert.equal(room.doc,null);assert.equal(h.db.prepare('SELECT count(*) AS n FROM updates').get().n,0);
+});
+
+test('F86: a small valid update after hibernation relays and persists without materializing the note',t=>{
+  const h=host(t),first=h.room();first.load();first.doc.getText('text').insert(0,'base');first.flush();
+  const local=new Y.Doc();t.after(()=>local.destroy());Y.applyUpdate(local,Y.encodeStateAsUpdate(first.doc));
+  const a=socket(),b=socket();h.sockets.push(a,b);const awake=h.room();
+  local.on('update',u=>awake.webSocketMessage(a,documentMessage(u)));local.getText('text').insert(4,' tail');
+  assert.equal(awake.doc,null);assert.equal(b.messages.length,1);awake.flush();
+  const check=h.room();check.load();assert.equal(check.doc.getText('text').toString(),'base tail');
+});
+
+test('F87: reconnect ownership requires the same private session and a newer clock',t=>{
+  const h=host(t),room=h.room(),a=socket(),reconnected=socket(),intruder=socket();h.sockets.push(a,reconnected,intruder);
+  a.saved.session='a'.repeat(32);reconnected.saved.session=a.saved.session;intruder.saved.session='b'.repeat(32);
+  room.webSocketMessage(a,presenceMessage(42,1,{user:{name:'Ana'}}));
+  room.webSocketMessage(intruder,presenceMessage(42,999,{user:{name:'intruder'}}));assert.equal(room.awareness.states.get(42).user.name,'Ana');
+  room.webSocketMessage(reconnected,presenceMessage(42,2,{user:{name:'Ana again'}}));assert.deepEqual(a.saved.clients,[]);
+  room.webSocketClose(a);assert.equal(room.awareness.states.get(42).user.name,'Ana again');
+});
 
 test('a single author with a large image syncs in bounded frames',t=>{
   const h=host(t),room=h.room(),peer=socket();room.load();

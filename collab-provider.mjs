@@ -30,13 +30,17 @@ export class WebsocketProvider extends Provider {
     // "pong" is text, so it is taken off here and counts as a sign of life
     const Base=options.WebSocketPolyfill||globalThis.WebSocket;
     class Socket extends Base {
+      send(data){
+        if(typeof data!=='string'&&data.byteLength>24*1024*1024){this.close(1009,'this note is too big to share');return;}
+        return super.send(data);
+      }
       set onmessage(fn){
         super.onmessage=fn&&(event=>{
           if(typeof event.data!=='string'){
             const bytes=new Uint8Array(event.data);
             if(bytes.length>=12&&bytes[0]===255&&bytes[1]===78&&bytes[2]===84&&bytes[3]===1){
               const header=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),total=header.getUint32(4),at=header.getUint32(8);
-              if(total<1||total>128*1024*1024||at+bytes.length-12>total){this.close(4413,'invalid document chunks');return;}
+              if(total<1||total>24*1024*1024+1024||at+bytes.length-12>total){this.close(4413,'invalid document chunks');return;}
               if(at===0){this.notasChunk=new Uint8Array(total);this.notasAt=0;}
               if(!this.notasChunk||this.notasChunk.length!==total||this.notasAt!==at){this.close(4413,'incomplete document chunks');return;}
               this.notasChunk.set(bytes.subarray(12),at);this.notasAt+=bytes.length-12;
@@ -53,6 +57,17 @@ export class WebsocketProvider extends Provider {
     }
     super(url,room,doc,{maxBackoffTime:30000,...options,WebSocketPolyfill:Socket});
     self=this;
+    // A tab owns only its own awareness id. Stock y-websocket echoes every
+    // peer state it receives, including an entire room's hello; those echoes
+    // are neither ownership claims nor local presence changes.
+    const sendAwareness=this._awarenessUpdateHandler;
+    this.awareness.off('update',sendAwareness);
+    this._awarenessUpdateHandler=(changes,origin)=>{
+      const own={added:[],updated:[],removed:[]};
+      for(const kind of Object.keys(own))own[kind]=changes[kind].filter(id=>id===this.awareness.clientID);
+      if(own.added.length||own.updated.length||own.removed.length)sendAwareness(own,origin);
+    };
+    this.awareness.on('update',this._awarenessUpdateHandler);
     this.batch=[];
     this.batchBytes=0;
     this.batchTimer=null;

@@ -235,7 +235,7 @@ async function handleMessage(data){
   const {id,type}=data;
   try{
     if(!['setup','recognize'].includes(type))throw Error('Unknown stroke handwriting request.');
-    if(type==='recognize'&&(!Array.isArray(data.strokes)||!data.strokes.length||data.strokes.length>10000||data.strokes.some(s=>!s||!Array.isArray(s.pts)||!s.pts.length||s.pts.length%3||s.pts.some(v=>!Number.isFinite(v)))||data.strokes.reduce((n,s)=>n+s.pts.length,0)>300000))throw Error('Invalid pen strokes.');
+    if(type==='recognize'&&(!Array.isArray(data.strokes)||!data.strokes.length||data.strokes.length>512||data.strokes.some(s=>!s||!Array.isArray(s.pts)||!s.pts.length||s.pts.length%3||s.pts.some(v=>!Number.isFinite(v)))||data.strokes.reduce((n,s)=>n+s.pts.length/3,0)>12000))throw Error('Invalid pen strokes.');
     await setup(id);
     if(type==='setup')self.postMessage({id,ready:true});
     else if(type==='recognize')self.postMessage({id,...await recognizeInk(data.strokes)});

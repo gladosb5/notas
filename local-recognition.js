@@ -153,9 +153,9 @@ function send(name,payload,transfer=[],timeout=15000){
   const e=state(name);
   return new Promise((resolve,reject)=>{
     const id=++serial;
-    const expire=()=>{stop('handwriting took too long. tap retry to try again.',name);report('handwriting paused, retry.',true);};
+    const expire=()=>{stop(Object.assign(new Error('handwriting took too long. select a smaller expression or retry.'),{requestError:payload.type==='recognize',timeout:true}),name);report('handwriting paused, retry.',true);};
     if(!e.worker){reject(new Error('Handwriting stopped'));return;}
-    e.requests.set(id,{resolve,reject,expire,timeout,timer:setTimeout(expire,timeout)});
+    e.requests.set(id,{resolve,reject,expire,timeout,kind:payload.type,timer:setTimeout(expire,timeout)});
     try{e.worker.postMessage({...payload,id},transfer);}catch(error){stop(readerError(error),name);}
   });
 }
@@ -178,6 +178,7 @@ function persistStorage(){
 // The stroke reader is about 44 MB, fetched once and kept on the device;
 // small enough to fetch unasked.
 async function setup(name=preferred()){
+  if(S.buildChanged)throw new DOMException('notas was updated in another tab. reload to start handwriting.','AbortError');
   if(memoryPaused)throw new DOMException('Handwriting paused while processing your image','AbortError');
   const e=state(name),spec=ENGINES[name];
   if(!spec)throw new Error('unknown handwriting engine.');
@@ -203,7 +204,7 @@ async function setup(name=preferred()){
       }
       if(!request)return;
       clearTimeout(request.timer);e.requests.delete(data.id);
-      data.error?request.reject(readerError(new Error(data.error))):request.resolve(data);
+      data.error?request.reject(Object.assign(readerError(new Error(data.error)),{requestError:request.kind==='recognize'})):request.resolve(data);
     };
     // An uncaught error inside a worker is re-reported on window unless the
     // event is cancelled here. That is what turned a failure this code already
@@ -214,7 +215,7 @@ async function setup(name=preferred()){
       // A worker that throws at top level reports "Uncaught Error: <message>";
       // only the message is worth showing.
       const why=String((event&&event.message)||'').replace(/^Uncaught (?:\w*Error: )?/,'')||'handwriting could not start. reconnect and retry.';
-      stop(why,name);report('handwriting unavailable, retry.',true,true);
+      e.broken=true;stop(why,name);report('handwriting unavailable, retry.',true,true);
     };
     await send(name,{type:'setup'},[],spec.setup);
     // Everything past here belongs to the newest boot only. A boot that an
@@ -222,7 +223,7 @@ async function setup(name=preferred()){
     // engine is ready, and must not hand back the status line the new one holds.
     if(!mine())return;
     preparing=false;inkError='';status.title='handwriting is read on this device.';
-    e.ready=true;
+    e.ready=true;e.broken=false;
     report('handwriting ready.',false,true);
     progress('ready','');
   })().catch(error=>{error=readerError(error);if(mine()){preparing=false;progress('error',error?.message||'');stop(error.message,name);}throw error;});
@@ -232,9 +233,9 @@ function textSend(payload,transfer=[],timeout=45000){
   if(memoryPaused)return Promise.reject(new DOMException('Handwriting paused while processing your image','AbortError'));
   return new Promise((resolve,reject)=>{
     const id=++serial;
-    const expire=()=>{textBroke();stopText('Handwriting search took too long.');reject(new Error('Handwriting search took too long.'));};
+    const expire=()=>{const error=Object.assign(new Error('Handwriting search took too long.'),{requestError:payload.type==='recognize',timeout:true});if(!error.requestError)textBroke(error);stopText(error);reject(error);};
     if(!textState.worker){reject(new Error('Handwriting search stopped'));return;}
-    const request={resolve,reject,timer:setTimeout(expire,timeout),expire,timeout};
+    const request={resolve,reject,kind:payload.type,timer:setTimeout(expire,timeout),expire,timeout};
     textState.requests.set(id,request);
     try{textState.worker.postMessage({...payload,id},transfer);}catch(error){stopText(readerError(error));}
   });
@@ -247,15 +248,16 @@ const TEXT_RETRY_AFTER=45000;
 // the text reader reads a line this long after the last change, and only
 // once the pen has been up this long (see readText)
 const TEXT_SETTLE=2000,TEXT_REST=900;
-function textBroke(error){textState.broken=true;textState.brokeAt=Date.now();textState.memoryBlocked=!!(error?.memory||memoryFailure(error));}
+function textBroke(error){if(!textState.broken)textState.brokeAt=Date.now();textState.broken=true;textState.memoryBlocked=!!(textState.memoryBlocked||error?.memory||memoryFailure(error));}
 function textHealable(){return textState.broken&&!textState.memoryBlocked&&Date.now()-(textState.brokeAt||0)>=TEXT_RETRY_AFTER;}
 function healText(){textState.broken=false;textState.brokeAt=0;textState.memoryBlocked=false;}
 window.addEventListener('online',()=>{if(textState.broken){healText();scheduleText();}});
 async function setupText(){
+  if(S.buildChanged)throw new DOMException('notas was updated in another tab. reload to start handwriting.','AbortError');
   if(memoryPaused)throw new DOMException('Handwriting paused while processing your image','AbortError');
   if(textState.ready)return;
   if(textHealable())healText();
-  if(textState.broken)throw new Error('Handwriting search is unavailable.');
+  if(textState.broken)throw Object.assign(new Error('Handwriting search is unavailable.'),{unavailable:true});
   if(textState.booting)return textState.booting;
   const gen=++textState.gen,mine=()=>textState.gen===gen;
   textState.booting=(async()=>{
@@ -272,7 +274,7 @@ async function setupText(){
         return;
       }
       clearTimeout(request.timer);textState.requests.delete(data.id);
-      data.error?request.reject(readerError(new Error(data.error))):request.resolve(data);
+      data.error?request.reject(Object.assign(readerError(new Error(data.error)),{requestError:request.kind==='recognize'})):request.resolve(data);
     };
     textState.worker.onerror=event=>{
       event&&event.preventDefault&&event.preventDefault();
@@ -446,6 +448,11 @@ function frameInfo(strokes){
       (s.closed&&Math.min(s.w,s.h)>=Math.max(40,2.5*H)&&inside(st,2));
     if(wall){ids.add(st.id);walls.push(st);}
   }
+  const vertical=strokes.filter(st=>st.bbox).slice().sort((a,b)=>a.bbox[1]-b.bbox[1]);
+  const below=(lo,hi)=>{
+    let a=0,b=vertical.length;while(a<b){const m=(a+b)>>>1;if(vertical[m].bbox[1]<lo)a=m+1;else b=m;}
+    const out=[];for(let i=a;i<vertical.length&&vertical[i].bbox[1]<=hi;i++)out.push(vertical[i]);return out;
+  };
   const near=(x,y,b,r)=>x>=b[0]-r&&x<=b[2]+r&&y>=b[1]-r&&y<=b[3]+r;
   for(const st of strokes){
     if(ids.has(st.id)||!Array.isArray(st.pts)||st.pts.length<6||!st.bbox)continue;
@@ -455,7 +462,8 @@ function frameInfo(strokes){
     const a=[p[0],p[1]],z=[p[p.length-3],p[p.length-2]];
     const meets=walls.some(f=>near(a[0],a[1],f.bbox,H*1.2))&&walls.some(f=>near(z[0],z[1],f.bbox,H*1.2));
     const m0=b[0]+s.w*.2,m1=b[2]-s.w*.2;
-    const under=strokes.some(o=>o!==st&&!ids.has(o.id)&&o.bbox&&o.bbox[3]>b[3]+2&&o.bbox[1]>=b[1]-2&&o.bbox[1]-b[3]<=1.6*H&&o.bbox[0]<m1&&o.bbox[2]>m0);
+    if(s.w>=10*H||meets){ids.add(st.id);if(meets)walls.push(st);continue;}
+    const under=below(b[1]-2,b[3]+1.6*H).some(o=>o!==st&&!ids.has(o.id)&&o.bbox&&o.bbox[3]>b[3]+2&&o.bbox[1]>=b[1]-2&&o.bbox[1]-b[3]<=1.6*H&&o.bbox[0]<m1&&o.bbox[2]>m0);
     if(s.w>=10*H||meets||!under){ids.add(st.id);if(meets)walls.push(st);}
   }
   /* the walls that touch make up a box; its inside is a region of the page
@@ -484,7 +492,15 @@ let pageFrames={ids:new Set(),boxes:[]};
 // be merged back into a whole handwriting line so spaces survive OCR. A row
 // is not merged across a box's side, though: two boxes side by side are two
 // columns of writing, not one line.
+let textGroupCache=null;
 function textGroups(clusters,byId,frames){
+  if(arguments.length)return buildTextGroups(clusters,byId,frames);
+  if(textGroupCache?.clusters===S.clusters&&textGroupCache.frames===pageFrames)return textGroupCache.groups;
+  const groups=buildTextGroups(),byStroke=new Map();
+  for(const group of groups)for(const id of group.strokeIds)byStroke.set(id,group);
+  textGroupCache={clusters:S.clusters,frames:pageFrames,groups,byStroke};return groups;
+}
+function buildTextGroups(clusters,byId,frames){
   frames=frames||(clusters?null:pageFrames);
   clusters=clusters||S.clusters;byId=byId||C.strokeById;
   const ink=clusters.filter(c=>c.source==='ink').slice().sort((a,b)=>
@@ -555,10 +571,11 @@ function classifyHandwriting(out){
   return /[\p{L}\p{N}]/u.test(src)&&!/[!?;:"'@#]/.test(src)?'math':'uncertain';
 }
 function groupForInk(cl){
-  const ids=new Set(cl.strokeIds||[]);
-  return textGroups().find(g=>g.strokeIds.some(id=>ids.has(id)));
+  const groups=textGroups();if(textGroupCache?.clusters===S.clusters)return textGroupCache.byStroke.get(cl.strokeIds?.[0]);
+  const ids=new Set(cl.strokeIds||[]);return groups.find(g=>g.strokeIds.some(id=>ids.has(id)));
 }
 function handwritingKind(cl){
+  if(textState.broken&&cl.ascii&&hasWrittenEquals(cl)&&classifyHandwriting({text:cl.ascii,confidence:1})==='math')return 'math';
   const group=groupForInk(cl);if(!group)return 'uncertain';
   const route=inkRoutes.get(cl.hash);
   if(route?.groupHash===group.hash)return route.kind;
@@ -1323,7 +1340,7 @@ function rebuild(){
     const inherited=!prior.hash&&!stored.asked&&list.some(s=>askedStrokes.has(s.id));
     return {id:'cl_'+list[0].id,hash,strokeIds:list.map(s=>s.id),
       bbox:[Math.min(...list.map(s=>s.bbox[0])),Math.min(...list.map(s=>s.bbox[1])),Math.max(...list.map(s=>s.bbox[2])),Math.max(...list.map(s=>s.bbox[3]))],
-      latex:saved.latex||'',ascii:saved.ascii||'',kind:saved.kind||'expression',confidence:saved.confidence||0,
+      latex:saved.latex||'',ascii:saved.latex?N.mathcore.latexToMath(saved.latex):(saved.ascii||''),kind:saved.kind||'expression',confidence:saved.confidence||0,
       needsConfirmation:!!saved.needsConfirmation,modelVersion:saved.modelVersion,alternatives:saved.alternatives||[],confirmed:!!saved.confirmed,review:false,pending:prior.pending||false,asked:!!(stored.asked||prior.asked||inherited),...(stored.dismissed||prior.dismissed?{dismissed:true}:{}),_plotVals:stored.plotVals||prior._plotVals||{},source:'ink'};
   });
   // A neighbor can change expression completeness without changing this
@@ -1332,18 +1349,23 @@ function rebuild(){
   N.nota?.restoreInk?.(textGroups());
   syncTextTranscripts(textGroups());schedule();scheduleText();
 }
+let scheduleGen=0;
 function schedule(){
-  clearTimeout(timer);
+  const gen=++scheduleGen;clearTimeout(timer);
   if(memoryPaused||!enabled()||document.hidden)return;
   timer=setTimeout(async()=>{
     const todo=S.clusters.filter(c=>c.source==='ink'&&!c.latex&&!c.ascii&&!c.pending&&!attempted.has(c.hash));
-    for(const cl of todo){if(!enabled()||document.hidden)break;await recognize(cl);}
+    for(const old of todo){
+      if(gen!==scheduleGen||!enabled()||document.hidden)break;
+      const cl=S.clusters.find(c=>c.hash===old.hash);
+      if(cl&&!cl.pending&&!cl.latex&&!cl.ascii&&!attempted.has(cl.hash))await recognize(cl);
+    }
   },800);
 }
 function scheduleText(){
   clearTimeout(textTimer);
   if(memoryPaused||!enabled()||document.hidden)return;
-  if(textState.broken){if(textHealable())healText();else{if(!textState.memoryBlocked)textTimer=setTimeout(scheduleText,TEXT_RETRY_AFTER);return;}}
+  if(textState.broken){if(textHealable())healText();else{if(!textState.memoryBlocked)textTimer=setTimeout(scheduleText,Math.max(1,TEXT_RETRY_AFTER-(Date.now()-(textState.brokeAt||0))));return;}}
   textTimer=setTimeout(readText,TEXT_SETTLE);
 }
 // The grouping after a stroke waits for the hand to rest, so writing on
@@ -1388,7 +1410,7 @@ function crop(cl){
   if(!strokes.length||strokes.some(st=>!st.pts?.length||st.pts.length%3!==0||!Array.from(st.pts).every(Number.isFinite)||!Number.isFinite(st.w)||st.w<=0))throw new Error('invalid or empty strokes');
   const pad=12,w=Math.max(12,cl.bbox[2]-cl.bbox[0])+pad*2,h=Math.max(12,cl.bbox[3]-cl.bbox[1])+pad*2;
   const scale=Math.min(2,1000/w,500/h);
-  const cv=document.createElement('canvas');cv.width=Math.ceil(w*scale);cv.height=Math.ceil(h*scale);
+  const cv=document.createElement('canvas');cv.width=Math.max(1,Math.min(1000,Math.round(w*scale)));cv.height=Math.max(1,Math.min(500,Math.round(h*scale)));
   const ctx=cv.getContext('2d',{willReadFrequently:true});ctx.fillStyle='white';ctx.fillRect(0,0,cv.width,cv.height);
   ctx.scale(scale,scale);ctx.translate(-cl.bbox[0]+pad,-cl.bbox[1]+pad);ctx.strokeStyle='#111';ctx.fillStyle='#111';ctx.lineCap='round';ctx.lineJoin='round';
   for(const id of cl.strokeIds){const st=C.strokeById(id);if(!st)continue;
@@ -1452,7 +1474,7 @@ function linearizedCrop(cl){
     maxX=Math.max(...ordered.flatMap(b=>b.strokes.map(st=>st.bbox[2]+(offsets.get(st.id)||0)))),pad=12,
     minY=cl.bbox[1],maxY=cl.bbox[3],w=Math.max(12,maxX-minX)+pad*2,h=Math.max(12,maxY-minY)+pad*2,
     scale=Math.min(2,1000/w,500/h),cv=document.createElement('canvas');
-  cv.width=Math.ceil(w*scale);cv.height=Math.ceil(h*scale);
+  cv.width=Math.max(1,Math.min(1000,Math.round(w*scale)));cv.height=Math.max(1,Math.min(500,Math.round(h*scale)));
   const ctx=cv.getContext('2d',{willReadFrequently:true});ctx.fillStyle='white';ctx.fillRect(0,0,cv.width,cv.height);
   ctx.scale(scale,scale);ctx.translate(-minX+pad,-minY+pad);ctx.strokeStyle='#111';ctx.fillStyle='#111';ctx.lineCap='round';ctx.lineJoin='round';
   for(const bundle of ordered)for(const st of bundle.strokes){
@@ -1470,7 +1492,7 @@ function textCrop(group,byId){
   const w=Math.max(12,group.bbox[2]-group.bbox[0])+pad*2;
   const h=Math.max(12,group.bbox[3]-group.bbox[1])+pad*2;
   const scale=Math.min(2,1800/w,500/h);
-  const cv=document.createElement('canvas');cv.width=Math.ceil(w*scale);cv.height=Math.ceil(h*scale);
+  const cv=document.createElement('canvas');cv.width=Math.max(1,Math.min(1800,Math.round(w*scale)));cv.height=Math.max(1,Math.min(500,Math.round(h*scale)));
   const ctx=cv.getContext('2d',{willReadFrequently:true});ctx.fillStyle='white';ctx.fillRect(0,0,cv.width,cv.height);
   ctx.scale(scale,scale);ctx.translate(-group.bbox[0]+pad,-group.bbox[1]+pad);
   ctx.strokeStyle='#111';ctx.fillStyle='#111';ctx.lineCap='round';ctx.lineJoin='round';
@@ -1496,6 +1518,7 @@ function textInfer(canvas,valid){
           const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height);
           return await textSend({type:'recognize',width:canvas.width,height:canvas.height,buffer:pixels.data.buffer},[pixels.data.buffer],45000);
         }catch(error){
+          if(error.unavailable||(error.requestError&&!error.memory&&!memoryFailure(error)))throw error;
           if(error.name==='AbortError'||restart!==textRestartSeq)throw new DOMException('Handwriting search restarted','AbortError');
           textBroke(error);stopText(readerError(error).message);
           if(attempt||!(error.memory||memoryFailure(error)))throw readerError(error);
@@ -1603,6 +1626,24 @@ function textGroupsOfDoc(doc){
   const clusters=splitAtBoxes(mathStrokeGroups(ink),frames.boxes).map(list=>({source:'ink',strokeIds:list.map(s=>s.id),bbox:boxOf(list)}));
   return {groups:textGroups(clusters,byId,frames),byId};
 }
+async function backgroundGroups(doc){
+  if(S.buildChanged)throw new DOMException('Reload before indexing','AbortError');
+  const functions=[fnv,hashOf,simplify,strokeShape,frameInfo,boxAt,buildTextGroups,boxOf,boxMetrics,overlap,gap,median,typicalHeight,sequenceGap,temporalGap,temporalBounds,straightStroke,chordsCross,segmentsCross,selfCrossing,edgeOperator,mathStrokeGroups,splitAtBoxes,inkOf,textGroupsOfDoc];
+  const source='"use strict";const hashMemo=new Map(),shapeMemo=new Map();const textGroups=buildTextGroups;'+functions.map(fn=>fn.toString()).join('\n')+
+    ';self.onmessage=({data})=>{try{self.postMessage({groups:textGroupsOfDoc(data).groups});}catch(e){self.postMessage({error:e.message});}};';
+  const url=URL.createObjectURL(new Blob([source],{type:'text/javascript'}));
+  const worker=new Worker(url);URL.revokeObjectURL(url);
+  const strokes=(doc.strokes||[]).filter(st=>st?.author==='user');
+  try{
+    const groups=await new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>reject(new Error('background grouping timed out')),30000);
+      worker.onmessage=({data})=>{clearTimeout(timer);data.error?reject(new Error(data.error)):resolve(data.groups);};
+      worker.onerror=event=>{event.preventDefault();clearTimeout(timer);reject(new Error(event.message));};
+      worker.postMessage({strokes});
+    });
+    const map=new Map(strokes.map(st=>[st.id,st]));return {groups,byId:id=>map.get(id)};
+  }finally{worker.terminate();}
+}
 async function indexOthers(){
   if(indexing)return;
   const generation=++indexEpoch;
@@ -1620,7 +1661,8 @@ async function indexOthers(){
       await idle();if(!live())break;
       const key='notas.note.'+row.id,doc=await C.Store.get(key);
       if(!doc||row.id===S.id){continue;}
-      const {groups,byId}=textGroupsOfDoc(doc);
+      const {groups,byId}=await backgroundGroups(doc);
+      if(!live())break;
       const have=new Map((doc.textTranscripts||[]).filter(t=>t&&t.hash&&t.modelVersion===TEXT_VERSION&&validText(t.text,t.confidence)).map(t=>[t.hash,t]));
       const todo=groups.filter(g=>!have.has(g.hash));
       const read=new Map();
@@ -1680,6 +1722,7 @@ function inferInk(cl,valid){
       }
     }catch(error){
       if(error.name==='AbortError'||!valid()||at!==restartSeq)throw new DOMException('Writing changed','AbortError');
+      if(error.requestError&&!error.memory&&!memoryFailure(error))throw error;
       e.broken=true;stop('handwriting unavailable','ink');
       error=readerError(error);
       inkError=error?.message||'handwriting could not run.';
@@ -2072,7 +2115,7 @@ function switchEngine(name){
 // explicit: asked for from the selection bar, so read even with handwriting
 // reading turned off in settings
 async function recognize(cl,explicit){
-  if(!explicit&&!enabled())return;
+  if(!explicit&&(!enabled()||attempted.has(cl.hash)))return;
   if(cl.pending){if(explicit)cl._explicitRetry=true;return;}
   const generation=epoch,note=S.id,hash=cl.hash;
   const valid=()=>generation===epoch&&S.id===note&&(explicit||enabled())&&S.clusters.some(c=>c.hash===hash&&!c.confirmed);
@@ -2140,7 +2183,7 @@ function solveSelection(){
   C.markDirty();recognize(cl,true);N.ink.clearSelection();
 }
 function reset(){
-  epoch++;indexEpoch++;clearTimeout(timer);clearTimeout(textTimer);clearTimeout(indexTimer);
+  textGroupCache=null;scheduleGen++;epoch++;indexEpoch++;clearTimeout(timer);clearTimeout(textTimer);clearTimeout(indexTimer);
   attempted.clear();textAttempted.clear();cache.clear();hashMemo.clear();grouped=null;
   lineReadings.clear();lineRequests.clear();inkRoutes.clear();
 }
@@ -2148,7 +2191,7 @@ function reset(){
 // they are (IndexedDB, the service worker's cache): a refresh is about the
 // readings, and a stored model is only ever replaced by a newer version.
 async function refreshModels(){
-  epoch++;indexEpoch++;clearTimeout(timer);clearTimeout(textTimer);clearTimeout(indexTimer);
+  textGroupCache=null;scheduleGen++;epoch++;indexEpoch++;clearTimeout(timer);clearTimeout(textTimer);clearTimeout(indexTimer);
   stop('Refreshing handwriting models');stopText('Refreshing handwriting search');
   clearUnconfirmedReadings();
   textState.broken=false;warned=false;inkError='';
@@ -2168,7 +2211,7 @@ function toggle(){
     attempted.clear();textAttempted.clear();textState.broken=false;
     boot().then(schedule).catch(()=>{});scheduleText();
   }else{
-    epoch++;indexEpoch++;clearTimeout(timer);clearTimeout(textTimer);clearTimeout(indexTimer);stop();stopText();
+    textGroupCache=null;scheduleGen++;epoch++;indexEpoch++;clearTimeout(timer);clearTimeout(textTimer);clearTimeout(indexTimer);stop();stopText();
     for(const c of S.clusters)c.pending=false;report('handwriting off.');N.mathcore.run();
   }
 }

@@ -270,6 +270,7 @@ try{
   await b.page.waitForFunction(()=>document.getElementById('leave-go'),null,{timeout:20000});
   assert.equal(await b.page.evaluate(()=>N.core.S.lines.some(l=>l.text.includes('Ahello'))),false);
   await b.page.click('#leave-go');
+  await gone(b.page);
 
   await b.page.goto(renewed.replace(/^https?:\/\/[^/]+/,base));await ready(b.page);
   await b.page.waitForFunction(()=>N.core.S.lines.some(l=>l.text==='Ahello benB21'),null,{timeout:20000});

@@ -2,7 +2,7 @@
 // assets and never reach this script; only what assets cannot serve arrives
 // here: the room's websocket and the "hey nota" forward.
 export { NoteRoom } from './room.js';
-import { notaBody, bodyTokens, MAX_BODY, CLOUDFLARE_MODEL } from '../../server/nota-body.mjs';
+import { textBudgetExceeded,notaBody, bodyTokens, MAX_BODY, CLOUDFLARE_MODEL } from '../../server/nota-body.mjs';
 const UPSTREAM='https://api.cerebras.ai/v1/chat/completions';
 // /collab/<note id>: the websocket of the note's room. Ids are what the page
 // makes with uid(): lowercase base 36.
@@ -43,6 +43,11 @@ export default {
         const {success}=await env.COLLAB_LIMIT.limit({key:request.headers.get('cf-connecting-ip')||'unknown'});
         if(!success)return new Response('too many requests. try again in a minute.',{status:429,headers:{'Content-Type':'text/plain','Retry-After':'60'}});
       }
+      if(request.method==='POST'){
+        const body=await limitedBody(request,32*1024);
+        if(body===null)return new Response('request is too large',{status:413});
+        request=new Request(request,{body});
+      }
       try{
         return await env.ROOMS.get(env.ROOMS.idFromName(room[1])).fetch(request);
       }catch(e){
@@ -68,10 +73,14 @@ export default {
       // tests) sends none and is forwarded only with a key of its own.
       const origin=request.headers.get('origin');
       if(origin&&origin!==url.origin)return new Response('nota answers its own page only.',{status:403,headers:{'Content-Type':'text/plain'}});
-      if(+request.headers.get('content-length')>MAX_BODY)return new Response('the question is too long.',{status:413,headers:{'Content-Type':'text/plain'}});
-      const text=await request.text();
-      if(new TextEncoder().encode(text).byteLength>MAX_BODY)return new Response('the question is too long.',{status:413,headers:{'Content-Type':'text/plain'}});
+      if(env.NOTA_LIMIT){
+        const {success}=await env.NOTA_LIMIT.limit({key:request.headers.get('cf-connecting-ip')||'unknown'});
+        if(!success)return new Response('nota is busy. try again in a minute.',{status:429,headers:{'Retry-After':'60'}});
+      }
+      const text=await limitedBody(request,MAX_BODY);
+      if(text===null)return new Response('the question is too long.',{status:413,headers:{'Content-Type':'text/plain'}});
       let json;try{json=JSON.parse(text);}catch{json=null;}
+      if(textBudgetExceeded(json))return new Response('the question and notes are too long.',{status:413,headers:{'Content-Type':'text/plain','X-Notas-Error':'text-budget'}});
       const clean=notaBody(json);
       if(!clean)return new Response('invalid request',{status:400,headers:{'Content-Type':'text/plain'}});
       const cloudflare=clean.model===CLOUDFLARE_MODEL;
@@ -84,10 +93,6 @@ export default {
       const target=cloudflare?`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(env.CLOUDFLARE_ACCOUNT_ID)}/ai/v1/chat/completions`:UPSTREAM;
       const body=JSON.stringify(clean);
       if(siteKey){
-        if(env.NOTA_LIMIT){
-          const {success}=await env.NOTA_LIMIT.limit({key:request.headers.get('cf-connecting-ip')||'unknown'});
-          if(!success)return new Response('nota is busy. try again in a minute.',{status:429,headers:{'Content-Type':'text/plain','Retry-After':'60'}});
-        }
         // Each provider attempt reserves its maximum spend in the same site budget.
         const tokens=bodyTokens(clean);
         let budget;
@@ -115,4 +120,18 @@ export default {
 function overQuota(e){ return /free tier|exceeded allowed|daily limit|quota/i.test(String(e&&e.message||e)); }
 function quotaResponse(){
   return Response.json({quota:true},{status:429,headers:{'Cache-Control':'no-store','Retry-After':'3600'}});
+}
+
+// Count transport bytes before decoding, including requests without Content-Length.
+async function limitedBody(request,limit){
+  if(+request.headers.get('content-length')>limit){await request.body?.cancel();return null;}
+  if(!request.body)return '';
+  const reader=request.body.getReader(),chunks=[];let size=0;
+  try{
+    for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;
+      if(size>limit){await reader.cancel();return null;}chunks.push(value);
+    }
+  }finally{reader.releaseLock();}
+  const bytes=new Uint8Array(size);let at=0;for(const chunk of chunks){bytes.set(chunk,at);at+=chunk.length;}
+  return new TextDecoder().decode(bytes);
 }

@@ -44,7 +44,7 @@ function verifyPair(a,b){
     }
     if(m.freeVars(A).length||m.freeVars(B).length)return null;
     const x=m.evalRaw(A,m.baseScope()),y=m.evalRaw(B,m.baseScope());
-    return typeof x==='number'&&typeof y==='number'&&Number.isFinite(x)&&Number.isFinite(y)?Math.abs(x-y)<=Number.EPSILON*8*Math.max(1,Math.abs(x),Math.abs(y)):null;
+    return typeof x==='number'&&typeof y==='number'&&Number.isFinite(x)&&Number.isFinite(y)?m.sameValue(x,y,A,B,m.baseScope()):null;
   }catch{return null;}
 }
 function help(question,level,nodes){
@@ -74,7 +74,7 @@ function help(question,level,nodes){
   const src=m.normalize(target.src);
   if(src.includes('='))return {say:'Step-by-step hints currently cover linear equations in one variable. You can still use the calculator for supported equations.',ops};
   try{
-    const result=m.evalRaw(src,N.core.S.scope||m.baseScope());
+    const result=m.finiteValue(m.evalRaw(src,N.core.S.scope||m.baseScope()));
     if(typeof result==='function'||typeof result==='boolean')throw new Error('Unsupported');
     const text=[
       'Which part should you calculate first: brackets, powers, or an operation?',

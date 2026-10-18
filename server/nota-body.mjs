@@ -116,3 +116,15 @@ export function bodyTokens(body){
   }
   return n;
 }
+
+export function textBudgetExceeded(json){
+  if(!Array.isArray(json?.messages))return false;
+  let chars=0;
+  for(const m of json.messages){
+    if(!m||typeof m!=='object')continue;
+    if(typeof m.content==='string')chars+=m.content.length;
+    else if(Array.isArray(m.content))for(const p of m.content)if(p?.type==='text'&&typeof p.text==='string')chars+=p.text.length;
+    if(Array.isArray(m.tool_calls))for(const call of m.tool_calls)if(typeof call?.function?.arguments==='string')chars+=call.function.arguments.length;
+    if(chars>MAX_CHARS)return true;
+  }return false;
+}

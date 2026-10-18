@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v142">
+<meta name="notas-version" content="v143">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -1812,7 +1812,7 @@ function getActive(){
    afford it; it is now coalesced and written once the view settles. */
 let viewTimer = null, viewPending = null;
 function saveView(id,top,left,zoom){
-  if(!id) return;
+  if(!id||id===S.id&&!S.savedRev&&isBlank())return;
   viewPending = {id, view:{scrollTop:top||0, scrollLeft:left||0, zoom:zoom||M.zoom||1}};
   if(viewTimer) return;
   viewTimer = setTimeout(flushView, 250);
@@ -1976,13 +1976,13 @@ function serialize(){
     rev:S.savedRev||0, settings:noteSettings(), docH:S.docH,
     view:{scrollTop:sc?sc.scrollTop:0,scrollLeft:sc?sc.scrollLeft:0},
     /* a stroke nota is still writing is saved whole: the reveal is not ink */
-    strokes:S.strokes.map(st=>st._show===undefined?st:(({_show,...rest})=>rest)(st)),
+    strokes:S.strokes.map(({_show,...st})=>({...st,pts:st.pts.slice(),bbox:st.bbox?.slice(),...(st.times?{times:st.times.slice()}:{} )})),
     /* a reply line still waiting for its first word is saved as plain text */
-    lines:S.lines.filter(l=>!l.wait), images:S.images,
+    lines:S.lines.filter(l=>!l.wait).map(l=>({...l})),images:S.images.map(im=>({...im,...(im.crop?{crop:{...im.crop}}:{})})),
     /* transcriptions are persisted so search can reach handwriting offline */
     localVersion:2,
     answers:N.mathcore ? N.mathcore.savedAnswers() : (S.savedAnswers||[]),
-    transcripts:S.clusters.filter(c=>c.latex||c.ascii||c.asked).map(c=>({hash:c.hash, bbox:c.bbox, latex:c.latex, ascii:c.ascii, kind:c.kind, modelVersion:c.modelVersion, alternatives:c.alternatives||[], confirmed:!!c.confirmed, needsConfirmation:!!c.needsConfirmation, confidence:c.confidence||0, asked:!!c.asked, ...(c.dismissed?{dismissed:true}:{}), plotVals:c._plotVals||null})),
+    transcripts:S.clusters.filter(c=>c.latex||c.ascii||c.asked).map(c=>({hash:c.hash, bbox:c.bbox?.slice(), latex:c.latex, ascii:c.ascii, kind:c.kind, modelVersion:c.modelVersion, alternatives:(c.alternatives||[]).slice(), confirmed:!!c.confirmed, needsConfirmation:!!c.needsConfirmation, confidence:c.confidence||0, asked:!!c.asked, ...(c.dismissed?{dismissed:true}:{}), plotVals:c._plotVals?{...c._plotVals}:null})),
     /* PP-OCRv6 prose readings are hidden search metadata. They never replace
        ink or feed the maths evaluator, and the raw reading is kept so search
        can show exactly what the text recogniser saw. */
@@ -1997,23 +1997,36 @@ function exportText(v){ const flat=JSON.stringify(v); const pretty=flat.length<8
 let saveTimer = null, saveIdle = false, saveQueue = Promise.resolve(), revision = 0;
 const locallyWrittenRevs=new Map();
 const rescueOwner=uid(), rescueKey='notas.rescue.'+rescueOwner;
+if(navigator.locks?.request)navigator.locks.request('notas-rescue-'+rescueOwner,()=>new Promise(()=>{})).catch(()=>{});
 function rescueSave(){
-  if(!S.id||!S.dirty)return;
+  if(!S.id||!S.dirty||!S.savedRev&&isBlank())return;
   try{localStorage.setItem(rescueKey,JSON.stringify(serialize()));}catch(e){setSaveError();}
 }
 function clearRescue(){try{localStorage.removeItem(rescueKey);}catch(e){}}
 async function recoverRescues(){
-  let keys=[];try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k.startsWith('notas.rescue.'))keys.push(k);}}catch(e){return;}
+  let keys=[];
+  try{
+    const ids=new Set((await Store.index()).map(r=>r.id));
+    for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k.startsWith('notas.rescue.'))keys.push(k);}
+    const views=[];for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k.startsWith('notas.view.')&&!ids.has(k.slice(11)))views.push(k);}for(const key of views)localStorage.removeItem(key);
+  }catch{return;}
   for(const key of keys){
-    try{
-      const raw=localStorage.getItem(key),doc=JSON.parse(raw);if(!doc?.id)continue;
-      await withNoteLock(doc.id,async()=>{
-        const current=await Store.read('notas.note.'+doc.id);
-        const content=d=>JSON.stringify([d.title,d.strokes,d.lines,d.images,d.transcripts,d.textTranscripts,d.answers,d.settings]);
-        if(!current||content(current)!==content(doc))await writeCopy(doc,(doc.title||'untitled')+' (recovered copy)');
-        if(localStorage.getItem(key)===raw)localStorage.removeItem(key);
-      });
-    }catch(e){}
+    const recover=async lock=>{
+      if(navigator.locks?.request&&!lock)return;
+      try{
+        const raw=localStorage.getItem(key),doc=JSON.parse(raw);if(!doc?.id)return;
+        const blank=!(doc.strokes||[]).length&&!(doc.images||[]).length&&!(doc.lines||[]).some(l=>l.text?.trim());
+        if(blank){if(localStorage.getItem(key)===raw)localStorage.removeItem(key);return;}
+        await withNoteLock(doc.id,async()=>{
+          const current=await Store.read('notas.note.'+doc.id);
+          const content=d=>JSON.stringify([d.title,d.strokes,d.lines,d.images,d.transcripts,d.textTranscripts,d.answers,d.settings]);
+          if(!current||content(current)!==content(doc))await writeCopy(doc,(doc.title||'untitled')+' (recovered copy)');
+          if(localStorage.getItem(key)===raw)localStorage.removeItem(key);
+        });
+      }catch{}
+    };
+    if(navigator.locks?.request)await navigator.locks.request('notas-rescue-'+key.slice('notas.rescue.'.length),{ifAvailable:true},recover);
+    else await recover(true);
   }
 }
 /* Web Locks is the simplest cross-tab mutex. Browsers without it still have
@@ -2058,18 +2071,20 @@ function withNoteLock(id, fn){
 function withIndexLock(fn){ return withNoteLock(':index', fn); }
 async function deleteStoredNote(id){
   try{
+    if(N.collab?.purge)await N.collab.purge(id);
     return await withNoteLock(id,async()=>{
       const key='notas.note.'+id,current=await Store.read(key);
-      if(!current)return true;
       const gone=await withIndexLock(async()=>{
         const ix=await Store.index(),next=ix.filter(r=>r.id!==id);
-        if(!await Store.del(key))return false;
-        if(!await Store.putIndex(next)){ await Store.set(key,current); return false; }
+        if(!await Store.putIndex(next))return false;
+        if(current&&!await Store.del(key)){await Store.putIndex(ix);return false;}
         return true;
       });
       if(!gone)return false;
       await Store.del('notas.thumb.'+id);
-      sync?.postMessage({id,deleted:true,rev:(current.rev||0)+1});
+      if(viewPending?.id===id)viewPending=null;
+      try{localStorage.removeItem('notas.view.'+id);}catch{}
+      sync?.postMessage({id,deleted:true,rev:(current?.rev||0)+1});
       return true;
     });
   }catch(e){ return false; }
@@ -2212,9 +2227,9 @@ async function save(opts){
      blank page listed an "untitled" note for every glance at an empty one,
      so a note that has never been stored waits for its first mark. A
      shared note is the exception: the room is the reason it exists. */
-  if(!S.savedRev && isBlank() && !(N.collab && N.collab.isShared(S.id))){ S.dirty = false; return true; }
+  if(!S.savedRev && isBlank() && !(N.collab && N.collab.isShared(S.id))){ S.dirty = false;clearRescue();return true; }
   let doc;
-  try{ doc = JSON.parse(JSON.stringify(serialize())); }
+  try{ doc = serialize(); }
   catch(e){
     /* said, like any other failed save: returning quietly left the note
        unsaved with nothing on screen, and a note change silently refused */
@@ -2398,24 +2413,33 @@ function act(label, redo, undo, collabHint){
   Undo.fwd.length = 0;
   markDirty(collabHint); paintUndo();
 }
+function pruneSelection(){
+  const ids=new Set([...S.strokes,...S.lines].map(x=>x.id));S.selection=S.selection.filter(id=>ids.has(id));
+  if(S.imageSelection&&!S.images.some(im=>im.id===S.imageSelection))S.imageSelection=null;
+  N.ink?.showSelBar();
+}
 function undo(){
+  if(N.ink?.busy())return;
   sealTyping();
   const e = Undo.back.pop(); if(!e) return;
-  e.undo(); Undo.fwd.push(e); markDirty(); paintUndo();
+  e.undo();pruneSelection(); Undo.fwd.push(e); markDirty(); paintUndo();
   N.text && N.text.render(); N.recog && N.recog.rebuild();
   N.ink && N.ink.render(); N.mathcore && N.mathcore.run();
 }
 function redo(){
+  if(N.ink?.busy())return;
   sealTyping();
   const e = Undo.fwd.pop(); if(!e) return;
-  e.redo(); Undo.back.push(e); markDirty(); paintUndo();
+  e.redo();pruneSelection(); Undo.back.push(e); markDirty(); paintUndo();
   N.text && N.text.render(); N.recog && N.recog.rebuild();
   N.ink && N.ink.render(); N.mathcore && N.mathcore.run();
 }
 
 /* ---- layout ---- */
-function layout(){
-  const sc = $('#scroller'); const r = sc.getBoundingClientRect();
+let cachedExtent=M.colW;
+function layout(light=false,rect){
+  light=light===true;
+  const sc = $('#scroller'); const r = rect||sc.getBoundingClientRect();
   M.vw = r.width; M.vh = r.height; M.dpr = Math.min(window.devicePixelRatio||1, 2);
   /* The sheet is a fixed size on anything wide enough to hold it. Below that
      - a phone, a split window - it narrows to the screen instead, because a
@@ -2451,19 +2475,24 @@ function layout(){
   /* A narrowed column must not strand what a wider screen already wrote: the
      paper stays as wide as its furthest ink or picture, so old coordinates
      are still reachable by panning even though new lines wrap before them. */
-  $('#doc').style.width = Math.max(M.vw,M.colLeft+Math.round(docExtent()*z)+12)+'px';
+  if(!light)cachedExtent=docExtent();
+  $('#doc').style.width = Math.max(M.vw,M.colLeft+Math.round(cachedExtent*z)+12)+'px';
   if(M.contentW !== was){ N.text && N.text.relayout && N.text.relayout(); }
-  else N.text && N.text.reflow && N.text.reflow();
+  else if(!light)N.text && N.text.reflow && N.text.reflow();
   N.ink && N.ink.resize();
   /* the answers hang off the right of the text column, so a column that
      changed width has to place them again */
   if(M.contentW !== was) N.mathcore && N.mathcore.run();
 }
 /* how far right the note actually reaches, in page pixels */
+function imageBounds(im,dx=0,dy=0){
+  const c=Math.abs(Math.cos(im.rot||0)),s=Math.abs(Math.sin(im.rot||0)),hx=(im.w*c+im.h*s)/2,hy=(im.w*s+im.h*c)/2,cx=im.x+dx+im.w/2,cy=im.y+dy+im.h/2;
+  return [cx-hx,cy-hy,cx+hx,cy+hy];
+}
 function docExtent(){
   let x = M.colW;
   for(const st of S.strokes) if(st.bbox && st.bbox[2] > x) x = st.bbox[2];
-  for(const im of S.images) if(im.x + im.w > x) x = im.x + im.w;
+  for(const im of S.images)x=Math.max(x,imageBounds(im)[2]);
   return Math.ceil(x);
 }
 /* The paper only ever grows. It used to be set to whatever the caller
@@ -2476,14 +2505,14 @@ function growDoc(y){
 }
 /* Zoom about a screen point: the bit of paper under the fingers stays under
    the fingers. cx/cy are client coordinates; omitted means the viewport centre. */
-function setZoom(z, cx, cy){
+function setZoom(z,cx,cy,light=false,rect){
   z = clamp(+z || 1, ZOOM_MIN, ZOOM_MAX);
   if(Math.abs(z - M.zoom) < 0.0005) return false;
-  const sc = $('#scroller'), r = sc.getBoundingClientRect();
+  const sc = $('#scroller'), r = rect||sc.getBoundingClientRect();
   const px = cx === undefined ? r.width/2 : cx - r.left, py = cy === undefined ? r.height/2 : cy - r.top;
   const wx = (px - M.colLeft + sc.scrollLeft)/M.zoom, wy = (py + sc.scrollTop)/M.zoom;
   M.zoom = z;
-  layout();
+  layout(light,rect);
   sc.scrollLeft = Math.round(wx*z + M.colLeft - px);
   sc.scrollTop = Math.round(wy*z - py);
   N.ink && N.ink.render();
@@ -2631,8 +2660,13 @@ function anonId(){
   return v;
 }
 
+function watchDpr(){
+  const media=matchMedia('(resolution: '+(window.devicePixelRatio||1)+'dppx)');
+  media.addEventListener('change',()=>{layout();watchDpr();},{once:true});
+}
+watchDpr();
 applyPrefs();
-N.core = { S, M, Store, uid, clamp, $, layout, growDoc, setZoom, firstLine, displayTitle, cleanTitle, whenLabel, ZOOM_MIN, ZOOM_MAX, markDirty, save, serialize,
+N.core = { imageBounds,S, M, Store, uid, clamp, $, layout, growDoc, setZoom, firstLine, displayTitle, cleanTitle, whenLabel, ZOOM_MIN, ZOOM_MAX, markDirty, save, serialize,
            act, undo, redo, Undo, paintUndo, typed, toast, status, anonId, LINE_H, CONTENT_MAX, strokeById, reducedMotion, smoothWheel, glideTarget,
            FEEDBACK_URL, savePrefs, applyPrefs, setActive, getActive, saveView, getView, flushView, setSaveError, clearSaveError, withNoteLock, withIndexLock, deleteStoredNote, repairIndex, recoverRescues, rescueSave, patchIndexRows, exportText, isBlank, swipeAway,
            /* counts every edit to the page, so a picture of it can be reused until the next one */
@@ -2717,7 +2751,8 @@ function liveFrame(){
   const k = M.dpr*M.zoom;
   xInk.setTransform(k,0,0,k, M.dpr*(M.colLeft-sc.scrollLeft), -M.dpr*sc.scrollTop);
 }
-function clearLive(){ xInk.setTransform(1,0,0,1,0,0); xInk.clearRect(0,0,cInk.width,cInk.height); }
+let eraserCursor=null;
+function clearLive(){if(eraserCursor)eraserCursor.hidden=true;xInk.setTransform(1,0,0,1,0,0); xInk.clearRect(0,0,cInk.width,cInk.height); }
 function visible(bbox){
   const z = M.zoom;
   const top = sc.scrollTop/z - 60, bot = (sc.scrollTop + M.vh)/z + 60;
@@ -2779,7 +2814,8 @@ function drawImages(ctx){
   }
   for(const im of S.images){
     if(cropping&&cropping.id===im.id) continue;
-    if(!visible([im.x, im.y, im.x+im.w, im.y+im.h])) continue;
+    const offset=peerShift.get(im.id),dx=(moving&&S.imageSelection===im.id?moving.dx:0)+(offset?.dx||0),dy=(moving&&S.imageSelection===im.id?moving.dy:0)+(offset?.dy||0);
+    if(!visible(C.imageBounds(im,dx,dy)))continue;
     let el = imgCache.get(im.id);
     if(!el){
       el = new Image(); el._src = im.src; el.onload = ()=>render(); el.src = im.src;
@@ -2879,11 +2915,8 @@ function toWorld(ev){
 /* the world point at the top left of what is on screen, for placing things */
 function viewOrigin(){ return { x: (sc.scrollLeft - M.colLeft)/M.zoom, y: sc.scrollTop/M.zoom, w: M.vw/M.zoom, h: M.vh/M.zoom }; }
 function bboxOf(pts){
-  let a=1e9,b=1e9,c=-1e9,d=-1e9;
-  for(let i=0;i<pts.length;i+=3){
-    if(pts[i]<a)a=pts[i]; if(pts[i]>c)c=pts[i];
-    if(pts[i+1]<b)b=pts[i+1]; if(pts[i+1]>d)d=pts[i+1];
-  }
+  let a=Infinity,b=Infinity,c=-Infinity,d=-Infinity;
+  for(let i=0;i<pts.length;i+=3){a=Math.min(a,pts[i]);c=Math.max(c,pts[i]);b=Math.min(b,pts[i+1]);d=Math.max(d,pts[i+1]);}
   return [a,b,c,d];
 }
 function segDist(px,py,x1,y1,x2,y2){
@@ -3126,10 +3159,11 @@ function holdShape(ev){
 }
 
 function beginStroke(ev, tool){
+  if(cur)commitStroke();
   resetShapeHold();
   /* the eraser's reach is a size on the glass, not on the paper: zoomed in it
      should still cover about a fingertip */
-  cur = { id:C.uid(), author:'user', tool:'pen', w:pen.w, pts:[], times:[], t0:inkNow(), _eventT0:Number(ev.timeStamp), erase:(tool==='eraser'),
+  cur = { id:C.uid(), author:'user', tool:'pen', w:pen.w, pts:[], times:[], t0:inkNow(), _pointerType:ev.pointerType,_eventT0:Number(ev.timeStamp), erase:(tool==='eraser'),
           eraseR:(ERASE_R[kindOf(ev)] || 9)/M.zoom, drawn:0 };
   if(cur.erase && eraseMode === 'pixel') cur.pixel = true;
   if(pen.color) cur.color = pen.color;
@@ -3145,8 +3179,14 @@ function drawLive(){
   if(!cur) return;
   if(tapChip) return; // Keep tentative chip taps off the ink canvas.
   if(cur.erase){
-    xInk.clearRect(-1e5,-1e5,2e5,2e5);
-    drawEraser(xInk, cur);
+    const p=cur.pts,n=p.length/3,r=cur.eraseR||9;
+    xInk.save();xInk.strokeStyle=colors.quiet;xInk.globalAlpha=.22;xInk.lineCap='round';xInk.lineJoin='round';xInk.lineWidth=r*2;
+    if(n>1){const from=Math.max(1,cur.drawn||1);xInk.beginPath();xInk.moveTo(p[(from-1)*3],p[(from-1)*3+1]);for(let i=from;i<n;i++)xInk.lineTo(p[i*3],p[i*3+1]);xInk.stroke();}
+    else{xInk.beginPath();xInk.arc(p[0],p[1],r,0,Math.PI*2);xInk.fillStyle=colors.quiet;xInk.fill();}
+    xInk.restore();cur.drawn=n;
+    if(!eraserCursor){eraserCursor=document.createElement('div');eraserCursor.style.cssText='position:fixed;pointer-events:none;z-index:20;border:1.25px solid;border-radius:50%;box-sizing:border-box';document.body.appendChild(eraserCursor);}
+    const rect=sc.getBoundingClientRect(),screenR=r*M.zoom;
+    Object.assign(eraserCursor.style,{borderColor:colors.quiet,width:screenR*2+'px',height:screenR*2+'px',left:rect.left+M.colLeft+p[p.length-3]*M.zoom-sc.scrollLeft-screenR+'px',top:rect.top+p[p.length-2]*M.zoom-sc.scrollTop-screenR+'px'});eraserCursor.hidden=false;
     return;
   }
   const n = cur.pts.length/3;
@@ -3159,7 +3199,7 @@ function commitStroke(){
   if(!cur){ TRACE && trace('commit', {pointerType:'-',pointerId:'-',button:'-',buttons:'-'}, 'NO STROKE to commit'); return; }
   const st = cur; cur = null;
   if(st.pts.length < 3){ clearLive(); TRACE && trace('commit', {pointerType:'-',pointerId:'-',button:'-',buttons:'-'}, 'DROPPED: too few points'); return; }
-  st.t1 = inkNow(); delete st._eventT0; st.bbox = bboxOf(st.pts);
+  st.t1 = inkNow(); delete st._eventT0;delete st._pointerType; st.bbox = bboxOf(st.pts);
 
   if(st.erase){ clearLive(); TRACE && trace('commit', {pointerType:'pen',pointerId:'-',button:'-',buttons:'-'}, 'ERASE stroke, no ink drawn'); eraseAlong(st); return; }
   delete st.drawn;
@@ -3170,6 +3210,7 @@ function commitStroke(){
      lose. The eraser is one tap away and never guesses. */
   pendingLive = true;
   C.growDoc(st.bbox[3]);
+  N.nota?.localStroke(st);
   C.act('draw', ()=>{ if(!S.strokes.some(s=>s.id===st.id))S.strokes.push(st); }, ()=>{ S.strokes = S.strokes.filter(s=>s.id!==st.id); }, {stroke:st});
   const stamped=stampStroke(st);
   N.mathcore && N.mathcore.inkLanded(st.id);
@@ -3234,11 +3275,24 @@ function putBack(list, gone, order){
 function eraseAlong(st){
   const before = S.strokes, afterStrokes = [];
   const p = st.pts, radius = st.eraseR || 9, bounds=bboxOf(p);
+  // Index every grid cell a segment crosses (including interior cells of
+  // long segments); queries expand by the stroke's effective eraser radius.
+  const cell=Math.max(12,radius*2),grid=new Map(),segments=[];
+  const add=(x,y,index)=>{const key=x+','+y;let bucket=grid.get(key);if(!bucket)grid.set(key,bucket=[]);bucket.push(index);};
+  for(let j=3;j<p.length;j+=3){
+    const a=p[j-3],b=p[j-2],c=p[j],d=p[j+1],index=segments.length;segments.push([a,b,c,d]);
+    let x=Math.floor(a/cell),y=Math.floor(b/cell),endX=Math.floor(c/cell),endY=Math.floor(d/cell);
+    const dx=c-a,dy=d-b,sx=Math.sign(dx),sy=Math.sign(dy),tx=dx?cell/Math.abs(dx):Infinity,ty=dy?cell/Math.abs(dy):Infinity;
+    let mx=dx?((sx>0?(x+1)*cell:x*cell)-a)/dx:Infinity,my=dy?((sy>0?(y+1)*cell:y*cell)-b)/dy:Infinity;
+    for(;;){add(x,y,index);if(x===endX&&y===endY)break;if(mx<my){x+=sx;mx+=tx;}else{y+=sy;my+=ty;}}
+  }
   const touched = (x,y,r)=>{
     if(x<bounds[0]-r||x>bounds[2]+r||y<bounds[1]-r||y>bounds[3]+r)return false;
     if(p.length===3)return Math.hypot(x-p[0],y-p[1])<=r;
-    for(let j=3;j<p.length;j+=3)if(segDist(x,y,p[j-3],p[j-2],p[j],p[j+1])<=r)return true;
-    return false;
+    const seen=new Set();
+    for(let cx=Math.floor((x-r)/cell);cx<=Math.floor((x+r)/cell);cx++)for(let cy=Math.floor((y-r)/cell);cy<=Math.floor((y+r)/cell);cy++){
+      for(const i of grid.get(cx+','+cy)||[]){if(seen.has(i))continue;seen.add(i);const [a,b,c,d]=segments[i];if(segDist(x,y,a,b,c,d)<=r)return true;}
+    }return false;
   };
   /* the pixel eraser cuts a stroke where it passes and keeps the pieces
      either side, each a stroke of its own */
@@ -3260,7 +3314,7 @@ function eraseAlong(st){
     }
     if(!hit)afterStrokes.push(stroke);
   }
-  const edits=N.text ? N.text.eraseCharacters(touched,radius) : [];
+  const edits=N.text ? N.text.eraseCharacters(touched,radius,bounds) : [];
   if(!edits.length&&afterStrokes.length===before.length&&afterStrokes.every((s,i)=>s===before[i]))return;
   /* the lines are looked up when the step runs: a split or join since then
      restores copies of them, and the objects held here would be edited in
@@ -3287,6 +3341,10 @@ function eraseAlong(st){
    touched and not at its nearest recorded points. */
 function cutStroke(stroke,touched){
   const p=stroke.pts,times=Array.isArray(stroke.times)&&stroke.times.length===p.length/3?stroke.times:null;
+  // A miss does not allocate one array per interpolated sample.
+  let hit=touched(p[0],p[1]);
+  for(let i=3;i<p.length&&!hit;i+=3){const n=Math.max(1,Math.ceil(Math.hypot(p[i]-p[i-3],p[i+1]-p[i-2])/1.2));for(let k=1;k<=n&&!hit;k++)hit=touched(p[i-3]+(p[i]-p[i-3])*k/n,p[i-2]+(p[i+1]-p[i-2])*k/n);}
+  if(!hit)return null;
   const walk=[];   /* x, y, pressure, time, erased */
   const push=(x,y,pr,t)=>walk.push([x,y,pr,t,touched(x,y)]);
   push(p[0],p[1],p[2],times?times[0]:0);
@@ -3405,6 +3463,8 @@ addEventListener('resize', ()=>{ if(textPopOpen()) placeTextPop(); });
 addEventListener('resize', ()=>{ if(penPopOpen()) placePenPop(); });
 
 /* ---- selection ---- */
+let selectionFor=null,selectionSize=-1,selectionIds=new Set(),geometryRev=0,selectionBoundsCache=null;
+function selSet(){if(selectionFor!==S.selection||selectionSize!==S.selection.length){selectionFor=S.selection;selectionSize=S.selection.length;selectionIds=new Set(S.selection);}return selectionIds;}
 function selectedLineBox(ln){
   const node=(S.nodes||[]).find(n=>n.id===ln.id),extra=node?.result?node.result.length*11+48:24;
   return [ln.x||0,ln.y,Math.min(M.contentW,(ln.x||0)+Math.max(80,ln.text.length*10+extra)),ln.y+Math.max(C.LINE_H,ln.h||0)];
@@ -3419,14 +3479,16 @@ function selectionBox(){
     const im=S.images.find(i=>i.id===S.imageSelection);
     if(im)return [im.x,im.y,im.x+im.w,im.y+im.h];
   }
+  const cached=selectionBoundsCache;
+  if(cached&&cached.sel===S.selection&&cached.len===S.selection.length&&cached.rev===C.revision&&cached.geometry===geometryRev&&cached.strokes===S.strokes&&cached.lines===S.lines&&cached.width===M.contentW)return cached.box.slice();
   let a=1e9,b=1e9,c=-1e9,d=-1e9;
-  for(const ln of S.lines)if(S.selection.includes(ln.id)){const q=selectedLineBox(ln);a=Math.min(a,q[0]);b=Math.min(b,q[1]);c=Math.max(c,q[2]);d=Math.max(d,q[3]);}
+  for(const ln of S.lines)if(selSet().has(ln.id)){const q=selectedLineBox(ln);a=Math.min(a,q[0]);b=Math.min(b,q[1]);c=Math.max(c,q[2]);d=Math.max(d,q[3]);}
   for(const id of S.selection){
     const st = C.strokeById(id); if(!st) continue;
     a=Math.min(a,st.bbox[0]); b=Math.min(b,st.bbox[1]);
     c=Math.max(c,st.bbox[2]); d=Math.max(d,st.bbox[3]);
   }
-  return [a,b,c,d];
+  const box=[a,b,c,d];selectionBoundsCache={sel:S.selection,len:S.selection.length,rev:C.revision,geometry:geometryRev,strokes:S.strokes,lines:S.lines,width:M.contentW,box};return box.slice();
 }
 /* Inside the selection means grab it; outside starts a new lasso. The padding
    matches the marquee so the dashed box you can see is the box you can grab. */
@@ -3454,7 +3516,7 @@ function frameOf(im,dx=0,dy=0){
 }
 function framePoint(f,lx,ly){ const c=Math.cos(f.rot), s=Math.sin(f.rot); return {x:f.cx+lx*c-ly*s, y:f.cy+lx*s+ly*c}; }
 function frameHandles(f){
-  if(!S.imageSelection&&S.lines.some(l=>S.selection.includes(l.id)))return [];
+  if(!S.imageSelection&&S.lines.some(l=>selSet().has(l.id)))return [];
   const hw=f.w/2, hh=f.h/2;
   return [{k:'nw',...framePoint(f,-hw,-hh)},{k:'ne',...framePoint(f,hw,-hh)},{k:'sw',...framePoint(f,-hw,hh)},{k:'se',...framePoint(f,hw,hh)},
           {k:'rot',...framePoint(f,0,-hh-KNOB_REACH/M.zoom)}];
@@ -3509,7 +3571,8 @@ function pickImage(id){
   S.selection=[];S.imageSelection=id;render();showSelBar();return true;
 }
 function moveStrokes(ids, dx, dy){
-  for(const ln of S.lines)if(ids.includes(ln.id)){ln.x=(ln.x||0)+dx;ln.y+=dy;}
+  geometryRev++;const idSet=new Set(ids);
+  for(const ln of S.lines)if(idSet.has(ln.id)){ln.x=(ln.x||0)+dx;ln.y+=dy;}
   N.text.render();
   carryReadings(()=>{
     for(const id of ids){
@@ -3530,6 +3593,7 @@ function grabStrokes(ids){
   return m;
 }
 function layStrokes(orig, map, wf){
+  geometryRev++;
   for(const [id, o] of orig){
     const st = C.strokeById(id); if(!st) continue;
     const p = o.pts.slice();
@@ -3692,6 +3756,7 @@ function cutoutStop(err){
   cutoutJobs.clear();
 }
 function cutoutPort(){
+  if(N.core?.S.buildChanged)throw new Error('notas was updated in another tab. reload to remove backgrounds.');
   clearTimeout(cutoutIdle);
   if(cutoutWorker) return cutoutWorker;
   const w=cutoutWorker=new Worker('./bg-worker.js');
@@ -3699,7 +3764,7 @@ function cutoutPort(){
     if(cutoutWorker!==w)return;
     const d=e.data||{}, job=cutoutJobs.get(d.id);
     if(d.progress){
-      if(job){clearTimeout(job.timer);job.timer=setTimeout(job.expire,120000);}
+      for(const waiting of cutoutJobs.values()){clearTimeout(waiting.timer);waiting.timer=setTimeout(waiting.expire,120000);if(d.phase==='download'&&waiting!==job)waiting.progress?.(d);}
       if(d.phase==='download') N.downloads&&N.downloads.set('cutout','download','',null,d.loaded,d.total);
       if(job&&job.progress) job.progress(d);
       return;
@@ -4114,7 +4179,7 @@ function snapTurn(rot){
 }
 function startTwin(){
   const ids=[...pointers.entries()].filter(([,r])=>r.type==='touch').map(([id])=>id).slice(0,2);
-  if(ids.length<2||S.lines.some(l=>S.selection.includes(l.id))) return false;
+  if(ids.length<2||S.lines.some(l=>selSet().has(l.id))) return false;
   if(moving){ moving=null; }
   if(cropDrag){ if(cropDrag.from) Object.assign(cropping,{l:cropDrag.from.l,t:cropDrag.from.t,r:cropDrag.from.r,b:cropDrag.from.b,F:{...cropDrag.from.F}}); cropDrag=null; }
   twin={ids};
@@ -4176,10 +4241,12 @@ function selectAll(){
   render(); showSelBar(); return true;
 }
 function deleteSelection(){
-  const ids=S.selection.slice(); if(!ids.length) return false;
-  const gone=S.strokes.filter(s=>ids.includes(s.id)),lines=S.lines.filter(l=>ids.includes(l.id));
-  C.act('delete', ()=>{ S.strokes=S.strokes.filter(s=>!ids.includes(s.id));S.lines=S.lines.filter(l=>!ids.includes(l.id));N.text.render(); }, ()=>{ S.strokes=S.strokes.concat(gone.filter(g=>!S.strokes.some(s=>s.id===g.id)));S.lines=S.lines.concat(lines.filter(g=>!S.lines.some(l=>l.id===g.id)));N.text.render(); });
-  clearSelection(); after(); return true;
+  const ids=new Set(S.selection),gone=S.strokes.filter(s=>ids.has(s.id)),lines=S.lines.filter(l=>ids.has(l.id));
+  if(!gone.length&&!lines.length)return false;
+  C.act('delete',()=>{S.strokes=S.strokes.filter(s=>!ids.has(s.id));S.lines=S.lines.filter(l=>!ids.has(l.id));N.text.render();},()=>{
+    const inkIds=new Set(S.strokes.map(s=>s.id)),lineIds=new Set(S.lines.map(l=>l.id));
+    S.strokes=S.strokes.concat(gone.filter(s=>!inkIds.has(s.id)));S.lines=S.lines.concat(lines.filter(l=>!lineIds.has(l.id)));N.text.render();
+  });clearSelection();after();return true;
 }
 /* Strokes stored relative to the group's top-left, so they can land anywhere. */
 function penColor(c){ return typeof c==='string'&&/^#[0-9a-f]{6}$/i.test(c)?c:undefined; }
@@ -4239,7 +4306,8 @@ function placeStrokes(clip,at,verb){
   x=C.clamp(Math.round(x),0,maxX);y=Math.max(0,Math.round(y));
   for(let i=0;i<=S.strokes.length&&S.strokes.some(s=>Math.abs(s.bbox[0]-(x+rel[0]))<2&&Math.abs(s.bbox[1]-(y+rel[1]))<2);i++){x=Math.min(x+24,maxX);y+=24;}
   const strokes=unpackStrokes(clip,x,y),ids=strokes.map(s=>s.id);
-  C.act(verb,()=>{S.strokes=S.strokes.concat(strokes.filter(st=>!S.strokes.some(s=>s.id===st.id)));},()=>{S.strokes=S.strokes.filter(s=>!ids.includes(s.id));});
+  const idSet=new Set(ids);
+  C.act(verb,()=>{const have=new Set(S.strokes.map(st=>st.id));S.strokes=S.strokes.concat(strokes.filter(st=>!have.has(st.id)));},()=>{S.strokes=S.strokes.filter(s=>!idSet.has(s.id));});
   C.growDoc(y+clip.h);
   setTool('select');S.selection=ids;S.imageSelection=null;
   after();showSelBar();
@@ -4270,23 +4338,24 @@ function duplicateSelection(){
 /* The bar's buttons are built once per selection kind and only moved
    afterwards. Rebuilding four buttons and measuring them on every pointermove
    was DOM churn in the middle of a drag. */
-let selBarKind = '';
+let selBarKind='',selBarMemo=null,selBarSize=null;
 function showSelBar(){
   const bar = $('#selbar');
   if(!S.selection.length&&!S.imageSelection){ bar.hidden = true; selBarKind = ''; return; }
   /* ink the reader made nothing of gets a way to ask nota about it */
-  const unread = !S.imageSelection && !!(N.nota && N.nota.askSelection && N.recog && N.recog.selectionUnread && N.recog.selectionUnread(S.selection));
+  if(!selBarMemo||selBarMemo.sel!==S.selection||selBarMemo.rev!==C.revision||selBarMemo.clusters!==S.clusters){selBarMemo={sel:S.selection,rev:C.revision,clusters:S.clusters,unread:!S.imageSelection&&!!(N.nota?.askSelection&&N.recog?.selectionUnread(S.selection)),text:S.lines.some(l=>selSet().has(l.id))};}
+  const unread=selBarMemo.unread;
   const picked = S.imageSelection && S.images.find(i=>i.id===S.imageSelection) || {};
   const busy = S.imageSelection && cutoutBusy===S.imageSelection;
   const turned = S.imageSelection && !!picked.rot, cutout = S.imageSelection && !!picked.bg;
   if(cropping && cropping.id !== S.imageSelection){ cropping = null; cropDrag = null; }
-  const textSelected=S.lines.some(l=>S.selection.includes(l.id));
+  const textSelected=selBarMemo.text;
   const kind = textSelected ? 'text' : cropping ? 'crop' : S.imageSelection ? 'image' + (turned ? '-turned' : '') + (cutout ? '-cutout' : '') + (busy ? '-busy' : '') : (unread ? 'ink-unread' : 'ink');
   if(kind !== selBarKind || !bar.childElementCount){
     bar.innerHTML = '';
     const mk = (label, fn, aria)=>{ const b=document.createElement('button'); b.textContent=label; b.onclick=fn;if(aria)b.setAttribute('aria-label',aria);bar.appendChild(b); };
     if(kind === 'text'){
-      mk('edit text',()=>{const id=S.lines.find(l=>S.selection.includes(l.id))?.id;clearSelection();setTool('text');if(id)N.text.focusLine(id);});
+      mk('edit text',()=>{const id=S.lines.find(l=>selSet().has(l.id))?.id;clearSelection();setTool('text');if(id)N.text.focusLine(id);});
       mk('delete',deleteSelection);
     }else if(kind === 'crop'){
       mk('done', ()=>applyCrop());
@@ -4308,7 +4377,7 @@ function showSelBar(){
       mk('duplicate', duplicateSelection);
       mk('delete', deleteSelection);
     }
-    selBarKind = kind;
+    selBarKind = kind;selBarSize=null;
   }
   const bb = selectionBox(); const r = sc.getBoundingClientRect(), z = M.zoom;
   if(moving){ bb[0]+=moving.dx; bb[1]+=moving.dy; bb[2]+=moving.dx; bb[3]+=moving.dy; }
@@ -4318,7 +4387,8 @@ function showSelBar(){
      knob that turns the selection stands off its top edge, so the bar sits
      under the selection, flips above only when the page ends there, and
      clamps sideways so it cannot leave the page. */
-  const w = bar.offsetWidth, h = bar.offsetHeight, gap = 12;
+  if(!selBarSize||selBarSize.viewport!==innerWidth)selBarSize={w:bar.offsetWidth,h:bar.offsetHeight,viewport:innerWidth};
+  const {w,h}=selBarSize,gap=12;
   const left = r.left + M.colLeft - sc.scrollLeft + bb[0]*z;
   bar.style.left = Math.round(Math.min(Math.max(r.left + 8, left), r.right - w - 8)) + 'px';
   const above = r.top + bb[1]*z - sc.scrollTop - h - gap - KNOB_REACH;
@@ -4411,6 +4481,7 @@ function sweepStale(){
        settling then take over the stroke. The pen drawing gets longer; a
        phantom one is cleared by the next pen down in any case. */
     const limit = id === activeId && rec.type === 'pen' ? 10000 : 2000;
+    if(id===activeId&&cInk.hasPointerCapture(id))continue;
     if(now - (rec.seen || rec.t) > limit) pointers.delete(id);
   }
 }
@@ -4462,37 +4533,20 @@ function touchSpread(){
   return Math.hypot(t[0].x - t[1].x, t[0].y - t[1].y);
 }
 
+function abandonGesture(){
+  if(resizing){const im=S.images.find(i=>i.id===resizing.id);if(im)Object.assign(im,resizing.box);}
+  if(turning){const t=turning;if(t.id){const im=S.images.find(i=>i.id===t.id);if(im){if(t.rot0)im.rot=t.rot0;else delete im.rot;}}else layStrokes(t.orig,(x,y)=>[x,y],1);}
+  if(scaling)layStrokes(scaling.orig,(x,y)=>[x,y],1);
+  if(cropDrag?.from&&cropping)Object.assign(cropping,{...cropDrag.from,F:{...cropDrag.from.F}});
+  if(twin){if(twin.kind==='image')setPicture(twin.id,twin.was);else if(twin.kind==='ink')layStrokes(twin.orig,(x,y)=>[x,y],1);else if(twin.crop&&cropping)Object.assign(cropping,{...twin.crop,F:{...twin.crop.F}});}
+  moving=resizing=turning=scaling=twin=twinIgnore=cropDrag=lasso=null;panning=false;gesture=null;
+  cancelAnimationFrame(gestureFrame);gestureFrame=0;delete cInk.dataset.pan;pan.samples.length=0;
+  clearLive();render();showSelBar();
+}
 function penTakesOver(){
-  const owner = activeId !== null ? pointers.get(activeId) : null;
-  /* a palm that landed while the pen was only hovering has already begun a
-     stroke of its own; the pen arriving means that line was never wanted */
-  if(cur && owner && owner.type !== 'pen'){
-    cur = null; activeId = null;
-    clearLive();
-  }
-  /* The same palm can have started something other than a stroke. In pen-only
-     mode one finger scrolls, so a hand settling on the glass a moment before
-     the nib was a scroll in progress: the pen's moves then went to panBy and
-     its stroke was never drawn or committed, with nothing on screen to say
-     why. Whatever a non-pen pointer began is abandoned here, the way its
-     stroke is. A picture being resized goes back to where it was. */
-  if(owner && owner.type !== 'pen'){
-    if(panning){ panning = false; delete cInk.dataset.pan; pan.samples.length = 0; }
-    if(lasso){ lasso = null; clearLive(); }
-    if(moving){ moving = null; render(); }
-    if(resizing){
-      const im = S.images.find(i=>i.id===resizing.id);
-      if(im) Object.assign(im, resizing.box);
-      resizing = null; render();
-    }
-    if(turning){ const t = turning; turning = null; if(t.id){ const im = S.images.find(i=>i.id===t.id); if(im){ if(t.rot0) im.rot = t.rot0; else delete im.rot; } } else layStrokes(t.orig, (x,y)=>[x,y]); render(); }
-    if(scaling){ const t = scaling; scaling = null; layStrokes(t.orig, (x,y)=>[x,y]); render(); }
-    activeId = null;
-  }
-  /* a scroll nobody owns any more is not the pen's to continue */
-  if(!owner && panning && !spaceDown){ panning = false; delete cInk.dataset.pan; tapImage = null; }
-  pointers.clear();
-  gesture = null;
+  const owner=activeId!==null?pointers.get(activeId):null;
+  if(cur){if(owner?.raw==='pen'||cur._pointerType==='pen'||strokeLength(cur)>12)commitStroke();else{cur=null;clearLive();}}
+  abandonGesture();activeId=null;pointers.clear();
 }
 
 /* Palm rejection is a setting, not a guess.
@@ -4718,6 +4772,12 @@ cInk.addEventListener('pointerdown', ev=>{
 
 function avgPoint(){ let x=0,y=0,n=0; pointers.forEach(p=>{ x+=p.x;y+=p.y;n++; }); return n?{x:x/n,y:y/n}:{x:0,y:0}; }
 
+let gestureFrame=0;
+function flushGesture(){
+  cancelAnimationFrame(gestureFrame);gestureFrame=0;
+  const p=gesture?.pending;if(!p)return;gesture.pending=null;
+  if(p.z)C.setZoom(p.z,p.x,p.y,true,gesture.rect);panBy(p.dx,p.dy);
+}
 cInk.addEventListener('pointermove', ev=>{
   const rec = pointers.get(ev.pointerId);
   if(rec){ rec.moved += Math.hypot(ev.clientX-rec.x, ev.clientY-rec.y); rec.x=ev.clientX; rec.y=ev.clientY; rec.seen=Date.now(); }
@@ -4726,13 +4786,12 @@ cInk.addEventListener('pointermove', ev=>{
 
   if(gesture){
     const a=avgPoint(),dx=a.x-gesture.lastX,dy=a.y-gesture.lastY;
-    gesture.moved += Math.hypot(dx,dy);
-    if(gesture.n === 2 && gesture.d0){
-      const d = touchSpread();
-      if(d) C.setZoom(gesture.z0 * d/gesture.d0, a.x, a.y);
-    }
-    panBy(dx, dy);
-    gesture.lastX=a.x;gesture.lastY=a.y;
+    gesture.moved+=Math.hypot(dx,dy);gesture.lastX=a.x;gesture.lastY=a.y;
+    const pending=gesture.pending||(gesture.pending={dx:0,dy:0});pending.dx+=dx;pending.dy+=dy;
+    pending.x=a.x;pending.y=a.y;const spread=touchSpread();
+    if(gesture.n===2&&gesture.d0&&spread)pending.z=gesture.z0*spread/gesture.d0;
+    if(!gesture.rect)gesture.rect=sc.getBoundingClientRect();
+    if(!gestureFrame)gestureFrame=requestAnimationFrame(flushGesture);
     return;
   }
   if(activeId !== null && ev.pointerId !== activeId) return;
@@ -4782,13 +4841,10 @@ cInk.addEventListener('pointermove', ev=>{
     return;
   }
   if(lasso){
-    const w = toWorld(ev); lasso.pts.push(w.x, w.y);
-    clearLive(); liveFrame();
-    xInk.strokeStyle = colors.blue;
-    xInk.setLineDash([5/M.zoom,4/M.zoom]); xInk.lineWidth = 1/M.zoom; xInk.beginPath();
-    xInk.moveTo(lasso.pts[0], lasso.pts[1]);
-    for(let i=2;i<lasso.pts.length;i+=2) xInk.lineTo(lasso.pts[i], lasso.pts[i+1]);
-    xInk.stroke(); xInk.setLineDash([]);
+    const w=toWorld(ev),p=lasso.pts,lx=p[p.length-2],ly=p[p.length-1],distance=Math.hypot(w.x-lx,w.y-ly);
+    if(distance*M.zoom<3)return;
+    p.push(w.x,w.y);liveFrame();xInk.save();xInk.strokeStyle=colors.blue;xInk.lineWidth=1/M.zoom;
+    xInk.setLineDash([5/M.zoom,4/M.zoom]);xInk.lineDashOffset=-(lasso.distance||0);xInk.beginPath();xInk.moveTo(lx,ly);xInk.lineTo(w.x,w.y);xInk.stroke();xInk.restore();lasso.distance=(lasso.distance||0)+distance;
     return;
   }
   if(!cur) return;
@@ -4823,6 +4879,7 @@ function drawEraser(ctx, st){
 }
 
 function endPointer(ev){
+  if(gesture)flushGesture();
   const rec = pointers.get(ev.pointerId);
   pointers.delete(ev.pointerId);
   trace(ev.type === 'pointercancel' ? 'CANCEL' : 'up', ev);
@@ -4900,12 +4957,15 @@ function endPointer(ev){
 
   if(lasso){
     const poly = lasso.pts; lasso = null;
+    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    for(let i=0;i<poly.length;i+=2){minX=Math.min(minX,poly[i]);minY=Math.min(minY,poly[i+1]);maxX=Math.max(maxX,poly[i]);maxY=Math.max(maxY,poly[i+1]);}
+    const inBounds=b=>b[2]>=minX&&b[0]<=maxX&&b[3]>=minY&&b[1]<=maxY;
     clearLive();
     if(poly.length > 8){
       S.imageSelection=null;
-      S.selection = S.strokes.filter(s=>(s.author==='user' || s.author==='ai') &&
+      S.selection = S.strokes.filter(s=>(s.author==='user' || s.author==='ai')&&inBounds(s.bbox)&&
         pointInPoly((s.bbox[0]+s.bbox[2])/2, (s.bbox[1]+s.bbox[3])/2, poly)).map(s=>s.id);
-      for(const ln of S.lines){const b=selectedLineBox(ln);if(ln.text&&pointInPoly((b[0]+b[2])/2,(b[1]+b[3])/2,poly))S.selection.push(ln.id);}
+      for(const ln of S.lines){const b=selectedLineBox(ln);if(ln.text&&inBounds(b)&&pointInPoly((b[0]+b[2])/2,(b[1]+b[3])/2,poly))S.selection.push(ln.id);}
       /* a loop round a picture and no ink selects the picture (the topmost
          one whose centre it encloses), with its own bar: remove background,
          delete. Ink and a picture are never one selection. */
@@ -4931,10 +4991,8 @@ cInk.addEventListener('lostpointercapture', ev=>{ if(pointers.has(ev.pointerId))
 window.addEventListener('pointerup', ev=>{ if(pointers.has(ev.pointerId)) endPointer(ev); });
 window.addEventListener('pointercancel', ev=>{ if(pointers.has(ev.pointerId)) endPointer(ev); });
 function finishInput(){
-  commitStroke(); flush();
-  pointers.clear(); activeId=null; notesSwipe=null; gesture=null; lasso=null; panning=false;
-  tapImage=null; tapChip=null; moving=null; resizing=null; turning=null; twin=null; twinIgnore=null; cropDrag=null;
-  stopCoast(); delete cInk.dataset.pan; clearLive();
+  commitStroke();abandonGesture();flush();pointers.clear();activeId=null;notesSwipe=null;
+  tapImage=null;tapChip=null;stopCoast();clearLive();
 }
 window.addEventListener('blur', finishInput);
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden)finishInput(); });
@@ -5078,7 +5136,7 @@ pill.addEventListener('wheel', ev=>{
 }, { passive:false });
 pill.addEventListener('keydown', ev=>{ if(ev.key === 'Escape' && pillOpen()){ setPillOpen(false); moreBtn.focus(); } });
 
-N.ink = { render, renderAI, pasteCut, resize, finishInput, setTool, setPen, pen, setPillOpen, setPenPop, setTextPop, setTextColor, toWorld, viewOrigin, bboxOf, hitStroke, drawStroke,
+N.ink = { busy:()=>!!(cur||lasso||moving||scaling||turning||resizing||twin||cropDrag||panning||gesture),render, renderAI, pasteCut, resize, finishInput, setTool, setPen, pen, setPillOpen, setPenPop, setTextPop, setTextColor, toWorld, viewOrigin, bboxOf, hitStroke, drawStroke,
           clearSelection, showSelBar, inkColor, colors, refreshColors, isTyping, after, flush, selectImage, nudgeImage, resizeImage, deleteImage, straightenImage, removeBackground, undoBackground, prefetchCutout, startCrop, applyCrop, cancelCrop, cropping:()=>cropping&&{...cropping}, frameOf, frameHandles,
           copySelection, duplicateSelection, deleteSelection, pasteInk, readClip, clipMarker, selectAll, imageAt, pickImage,
           now:inkNow, drawing:()=>!!cur, peerShift, drag:()=>moving?{dx:moving.dx,dy:moving.dy}:null,
@@ -5902,10 +5960,11 @@ function focusLast(){
   const last = S.lines.slice().sort((a,b)=>a.y-b.y).pop();
   if(last) focusLine(last.id, true, true); else add(120);
 }
-function eraseCharacters(touched,radius){
+function eraseCharacters(touched,radius,bounds){
   const edits=[];
   for(const ln of S.lines){
     const d=els.get(ln.id);if(!d||!ln.text)continue;
+    if(bounds&&(ln.y+(ln.h||C.LINE_H)<bounds[1]-radius||ln.y>bounds[3]+radius||(ln.x||0)>bounds[2]+radius||Math.max(M.contentW,(ln.x||0)+80)<bounds[0]-radius))continue;
     const mirror=document.createElement('div');mirror.className='ghost-layer';
     const text=document.createTextNode(ln.text);mirror.appendChild(text);d.appendChild(mirror);
     const range=document.createRange();let after='';
@@ -5969,6 +6028,28 @@ function harden(){
 function latexToMath(s){
   if(!s) return '';
   let t = String(s);
+  // Consume function notation before digit whitespace or brace flattening can
+  // erase the boundary between a logarithm's base and its argument.
+  function notation(text){
+    let out='',i=0;
+    const argument=()=>{
+      while(i<text.length&&/\s/.test(text[i]))i++;
+      const open=text[i],close=open==='{'?'}':open==='('?')':null;
+      if(close){let depth=1,start=++i;while(i<text.length&&depth){if(text[i]===open)depth++;if(text[i]===close)depth--;i++;}if(depth)throw Error('unclosed function argument');return notation(text.slice(start,i-1));}
+      const token=/^(?:\\(?:pi|theta|alpha|beta)|[+-]?(?:\d+(?:\.\d+)?|[A-Za-z]))/.exec(text.slice(i));
+      if(!token)throw Error('missing function argument');i+=token[0].length;return token[0];
+    };
+    while(i<text.length){
+      const m=/^\\(arcsin|arccos|arctan|sin|cos|tan|sec|csc|cot|log)(?![A-Za-z])/.exec(text.slice(i));
+      if(!m){out+=text[i++];continue;}
+      i+=m[0].length;let fn=m[1].replace(/^arc/,'a');
+      while(i<text.length&&/\s/.test(text[i]))i++;
+      if(fn==='log'&&text[i]==='_'){i++;const base=argument(),arg=argument();out+='log(('+arg+'),('+base+'))';continue;}
+      let power=null;if(text[i]==='^'){i++;power=argument();if(power==='-1'&&/^(sin|cos|tan)$/.test(fn)){fn='a'+fn;power=null;}}
+      const arg=argument();out+=power===null?fn+'('+arg+')':'('+fn+'('+arg+'))^('+power+')';
+    }return out;
+  }
+  try{t=notation(t);}catch{return 'invalid_latex('+JSON.stringify(String(s))+')';}
   /* Sequence recognisers return one token at a time. LaTeX ignores whitespace
      between digit tokens, but math.js and the correction field do not: "1 0"
      must remain the single number 10. */
@@ -6046,13 +6127,33 @@ function looksLikeMath(s){
 const D = Math.PI/180;
 function num(v){ try{ return typeof v==='number' ? v : Number(math.number(v)); }catch(e){ return Number(v); } }
 function baseScope(){
-  const sp = {naturalLog:x=>Math.log(num(x)),log:(x,b=10)=>Math.log(num(x))/Math.log(num(b))};
-  if(S.settings.angle === 'deg'){
-    sp.sin = x=>Math.sin(num(x)*D); sp.cos = x=>Math.cos(num(x)*D); sp.tan = x=>Math.tan(num(x)*D);
-    sp.sec=x=>1/Math.cos(num(x)*D); sp.csc=x=>1/Math.sin(num(x)*D); sp.cot=x=>1/Math.tan(num(x)*D);
-    sp.asin = x=>Math.asin(num(x))/D; sp.acos = x=>Math.acos(num(x))/D; sp.atan = x=>Math.atan(num(x))/D;
-  }
+  const sp={naturalLog:x=>Math.log(num(x)),log:(x,b=10)=>Math.log(num(x))/Math.log(num(b))};
+  const deg=S.settings.angle==='deg';
+  const sine=x=>{
+    const n=num(x),q=deg?((n%360)+360)%360:n/(Math.PI/2);
+    if(deg){if(q%180===0)return 0;if(q===90)return 1;if(q===270)return -1;if(q===30||q===150)return .5;if(q===210||q===330)return -.5;}
+    else if(Number.isInteger(q))return [0,1,0,-1][((q%4)+4)%4];
+    return deg?Math.sin((n%360)*D):math.sin(x);
+  };
+  const cosine=x=>{
+    const n=num(x),q=deg?((n%360)+360)%360:n/(Math.PI/2);
+    if(deg){if(q===90||q===270)return 0;if(q===0)return 1;if(q===180)return -1;if(q===60||q===300)return .5;if(q===120||q===240)return -.5;}
+    else if(Number.isInteger(q))return [1,0,-1,0][((q%4)+4)%4];
+    return deg?Math.cos((n%360)*D):math.cos(x);
+  };
+  const ratio=(a,b)=>{if(b===0)throw new Error('undefined at this angle');return math.divide(a,b);};
+  sp.sin=sine;sp.cos=cosine;sp.tan=x=>ratio(sine(x),cosine(x));
+  sp.sec=x=>ratio(1,cosine(x));sp.csc=x=>ratio(1,sine(x));sp.cot=x=>ratio(cosine(x),sine(x));
+  for(const fn of ['asin','acos','atan']){sp[fn]=x=>deg?math[fn](x)/D:math[fn](x);sp['arc'+fn.slice(1)]=sp[fn];}
   return sp;
+}
+function finiteValue(v){
+  if(Array.isArray(v))v.forEach(finiteValue);
+  else if(v?.isMatrix)finiteValue(v.toArray());
+  else if(v?.isUnit&&v.value!==null&&v.value!==undefined)finiteValue(v.value);
+  if(v?.isBigNumber&&!v.isFinite())throw new Error('undefined or non-finite result');
+  if(typeof v==='number'&&!Number.isFinite(v)||v?.isComplex&&(!Number.isFinite(v.re)||!Number.isFinite(v.im)))throw new Error('undefined or non-finite result');
+  return v;
 }
 /* "6.02e+23" written out: the digits the number prints with, the point
    moved to where the exponent says, zeros filling the rest */
@@ -6065,6 +6166,7 @@ function plainDigits(v){
   return m[1] + digits.slice(0, point) + '.' + digits.slice(point);
 }
 function fmt(v){
+  finiteValue(v);
   if(v === undefined || v === null) return '';
   if(typeof v === 'function') return 'function';
   if(typeof v === 'boolean') return v ? 'true' : 'false';
@@ -6149,7 +6251,7 @@ function restoreAnswers(entries){
 }
 const provSrc = new Map();
 function memoKey(src, defined){
-  let k = 'answer-v2|'+src+'|'+S.settings.angle+'|'+(S.settings.fractions?1:0);
+  let k = 'answer-v3|'+src+'|'+S.settings.angle+'|'+(S.settings.fractions?1:0);
   for(const name of defined) k += '|'+name+'='+(provSrc.get(name)||'');
   return k;
 }
@@ -6169,18 +6271,19 @@ function evalNode(node, scope, defined){
   if(saved){savedMemo.delete(savedId);C.markDirty();}
   const hit = evalMemo.get(node.id);
   if(hit && hit.key === key){
-    node.result = hit.result; node.provides = hit.provides; node.stated = !!hit.stated;
+    node.result = hit.result; node.error=hit.error||''; node.provides = hit.provides; node.stated = !!hit.stated;
     if(hit.provides){ if(hit.functionDefinition)rawEval(src,scope);else scope[hit.provides] = hit.value; defined.add(hit.provides); provSrc.set(hit.provides, src); }
     return;
   }
   evalMemo.delete(node.id);
   evalNodeFresh(node, scope, defined, src);
   if(continuing&&node.result&&!/=\s*$/.test(node.src)&&normalize(node.src.slice(prefix.length)).trim()===node.result)node.stated=true;
-  if(!node.error && !node.pending && !node.plot && node.result){
-    evalMemo.set(node.id, { key, result:node.result, provides:node.provides, functionDefinition:!!src.match(RE_FN), stated:node.stated, value:node.provides ? scope[node.provides] : undefined });
+  if(!node.pending&&!node.plot&&(node.result||['cannot solve this yet','no solution'].includes(node.error))){
+    if(evalMemo.size>20000)evalMemo.clear();
+    evalMemo.set(node.id, { key, result:node.result,error:node.error, provides:node.provides, functionDefinition:!!src.match(RE_FN), stated:node.stated, value:node.provides ? scope[node.provides] : undefined });
     /* Definitions rebuild runtime scope; plain answers are safe JSON and can
        be restored without invoking the evaluator or symbolic solver. */
-    if(!node.provides){savedMemo.set(savedId,{key,result:node.result,stated:!!node.stated});C.markDirty();}
+    if(!node.provides&&!node.error){savedMemo.set(savedId,{key,result:node.result,stated:!!node.stated});C.markDirty();}
   }
 }
 function evalNodeFresh(node, scope, defined, src){
@@ -6210,7 +6313,7 @@ function evalNodeFresh(node, scope, defined, src){
       node.error = name+' refers to itself'; return;
     }
     try{
-      const v = rawEval(body, scope);
+      const v = finiteValue(rawEval(body, scope));
       scope[name] = v; defined.add(name); provSrc.set(name, src);
       node.provides = name; node.result = fmt(v);
       return;
@@ -6223,9 +6326,9 @@ function evalNodeFresh(node, scope, defined, src){
   if(stated){const vars=freeVars('('+stated[1]+')-('+stated[2]+')');if(vars.length){if(casPending()){node.pending=true;return;}node.result=solve(src,scope)||'';if(!node.result)node.error='cannot solve this yet';return;}}
   if(stated){
     let lv, same = false;
-    try{ lv = rawEval(stated[1], scope); }catch(e){ lv = undefined; }
+    try{ lv = finiteValue(rawEval(stated[1], scope)); }catch(e){ node.error=clean(e);return; }
     if(lv !== undefined){
-      try{ same = sameValue(lv, rawEval(stated[2], scope)); }
+      try{ same = sameValue(lv, finiteValue(rawEval(stated[2], scope)),stated[1],stated[2],scope); }
       catch(e){ same = fmt(lv).replace(/\s+/g,'') === stated[2].replace(/\s+/g,''); }
     }
     if(same){ node.result = fmt(lv); node.stated = true; return; }
@@ -6255,9 +6358,35 @@ function evalNodeFresh(node, scope, defined, src){
     node.result = fmt(v);
   }catch(e){ node.error = clean(e, scope, src); }
 }
-function sameValue(a, b){
-  if(typeof a === 'number' && typeof b === 'number') return Number.isFinite(a)&&Number.isFinite(b)&&Math.abs(a-b) <= Number.EPSILON*8*Math.max(1, Math.abs(a), Math.abs(b));
-  try{ return fmt(a) === fmt(b); }catch(e){ return false; }
+// Estimate roundoff in the expression, rather than applying a unit-sized
+// tolerance to tiny physical quantities. Cancellation retains its own scale.
+function numericError(src,scope){
+  try{
+    const walk=n=>{
+      if(n.isParenthesisNode)return walk(n.content);
+      const v=num(n.compile().evaluate(scope)),eps=Number.EPSILON;
+      if(!Number.isFinite(v))return {v,e:0};
+      if(!n.isOperatorNode)return {v,e:Math.abs(v)*eps};
+      const a=walk(n.args[0]),b=n.args[1]?walk(n.args[1]):null;
+      if(!b)return {v,e:a.e+Math.abs(v)*eps};
+      let e=0;
+      if(n.op==='+'||n.op==='-')e=a.e+b.e+eps*(Math.abs(a.v)+Math.abs(b.v));
+      else if(n.op==='*')e=Math.abs(b.v)*a.e+Math.abs(a.v)*b.e+eps*Math.abs(v);
+      else if(n.op==='/')e=(a.e+Math.abs(v)*b.e)/Math.abs(b.v)+eps*Math.abs(v);
+      else if(n.op==='^')e=Math.abs(v)*(Math.abs(b.v*a.e/a.v)+Math.abs(Math.log(Math.abs(a.v))*b.e)+eps);
+      else e=eps*Math.abs(v);
+      return {v,e:Number.isFinite(e)?e:0};
+    };return walk(rawParse(src)).e*4;
+  }catch{return 0;}
+}
+function sameValue(a,b,left='',right='',scope=baseScope()){
+  if(typeof a==='number'&&typeof b==='number'){
+    if(!Number.isFinite(a)||!Number.isFinite(b))return false;
+    if(a===b)return true;
+    const tolerance=a&&b?Number.EPSILON*8*Math.max(Math.abs(a),Math.abs(b)):numericError(left,scope)+numericError(right,scope);
+    return Math.abs(a-b)<=tolerance;
+  }
+  try{return fmt(a)===fmt(b);}catch{return false;}
 }
 function clean(e, scope, src){
   let msg = (e && e.message) ? e.message : String(e);
@@ -6294,39 +6423,79 @@ function solve(src, scope){
   if(parts.length === 2 && /^\s*[A-Za-z_]\w*\s*$/.test(parts[1])){ want = parts[1].trim(); eq = parts[0]; }
   if(!want){ const sides=eq.split('=');const fv = freeVars(sides.length===2?'('+sides[0]+')-('+sides[1]+')':eq); want = fv[0] || 'x'; }
   try{const sides=eq.split('=');if(sides.length===2&&rawParse(sides[0]).toString()===rawParse(sides[1]).toString())return 'all '+want;const linear=N.localMath?.linear(eq);if(linear&&linear.a===0)return linear.b===0?'all '+want:'no solution';}catch(e){}
-  if(typeof nerdamer !== 'undefined'){
+  const sides=eq.split('='),f=sides.length===2?'('+sides[0]+')-('+sides[1]+')':eq;
+  const trig=/\b(?:sin|cos|tan|sec|csc|cot|asin|acos|atan)\s*\(/.test(eq),degreeTrig=trig&&S.settings.angle==='deg';
+  const residual=r=>{
+    const local=Object.assign({},scope,{[want]:r}),value=rawEval(f,local);
+    const scale=sides.length===2?Math.max(1,num(math.abs(rawEval(sides[0],local))),num(math.abs(rawEval(sides[1],local)))):1;
+    return num(math.abs(value))<=1e-9*scale;
+  };
+  if(typeof nerdamer!=='undefined'&&!degreeTrig){
     try{
-      const r = nerdamer.solve(eq, want);
-      const s = r.toString();
-      if(s && s !== '[]') return want+' = '+s.replace(/^\[|\]$/g,'').split(',').join(' or ');
-    }catch(e){}
+      const answer=nerdamer.solve(eq,want),candidates=(answer.symbol?.elements||[]).slice(0,8).map(r=>finiteValue(rawEval(r.toString(),scope)));
+      if(candidates.length&&candidates.every(residual))return want+' = '+candidates.map(fmt).join(' or ');
+    }catch{}
   }
-  /* fallback: numeric root scan, enough for the equations a Y7 to Y11 page holds */
   try{
-    const sides = eq.split('=');
-    const f = sides.length === 2 ? '('+sides[0]+')-('+sides[1]+')' : eq;
-    const roots = [];
-    const at=x=>num(rawEval(f,Object.assign({},scope,{[want]:x})));
-    const accept=r=>{const residual=at(r);if(Number.isFinite(r)&&Number.isFinite(residual)&&Math.abs(residual)<1e-7&&!roots.some(o=>Math.abs(o-r)<1e-4))roots.push(r);};
-    for(const seed of [0,1,-1,100,-100,10000,-10000,1000000,-1000000]){let x=seed;for(let k=0;k<40;k++){const y=at(x),h=Math.max(1e-5,Math.abs(x)*1e-5),d=(at(x+h)-at(x-h))/(2*h);if(!Number.isFinite(y)||!Number.isFinite(d)||Math.abs(d)<1e-15)break;const next=x-y/d;if(!Number.isFinite(next))break;x=next;if(Math.abs(y)<1e-9)break;}accept(x);}
-    let prev = null;
-    for(let x=-50; x<=50; x+=0.05){
-      let v; try{ v = num(rawEval(f, Object.assign({}, scope, {[want]:x}))); }catch(e){ continue; }
-      if(prev !== null && isFinite(v) && isFinite(prev.v) && ((v<=0&&prev.v>0)||(v>=0&&prev.v<0))){
-        let a = prev.x, b = x;
-        for(let k=0;k<40;k++){
-          const mdl = (a+b)/2;
-          const vm = num(rawEval(f, Object.assign({}, scope, {[want]:mdl})));
-          const va = num(rawEval(f, Object.assign({}, scope, {[want]:a})));
-          if((vm<=0) === (va<=0)) a = mdl; else b = mdl;
-        }
-        const r = Math.round(((a+b)/2)*1e6)/1e6;
-        accept(r);
+    // A structural quadratic fallback also handles the CAS's faulty complex
+    // candidates. Higher degree terms are rejected, never sampled as a proof.
+    const poly=n=>{
+      if(n.isParenthesisNode)return poly(n.content);
+      if(n.isSymbolNode&&n.name===want)return [0,1,0];
+      if(!n.isOperatorNode){if(freeVars(n.toString()).includes(want))throw Error('not polynomial');return [num(n.compile().evaluate(scope)),0,0];}
+      const a=poly(n.args[0]),b=n.args[1]?poly(n.args[1]):null;
+      if(!b)return a.map(x=>n.op==='-'?-x:x);
+      if(n.op==='+'||n.op==='-')return a.map((x,i)=>x+(n.op==='+'?b[i]:-b[i]));
+      if(n.op==='/'&&b[1]===0&&b[2]===0&&b[0]!==0)return a.map(x=>x/b[0]);
+      const mul=(x,y)=>{const c=Array(5).fill(0);for(let i=0;i<3;i++)for(let j=0;j<3;j++)c[i+j]+=x[i]*y[j];if(c[3]||c[4])throw Error('degree');return c.slice(0,3);};
+      if(n.op==='*')return mul(a,b);
+      if(n.op==='^'&&b[1]===0&&b[2]===0&&[0,1,2].includes(b[0]))return b[0]===0?[1,0,0]:b[0]===1?a:mul(a,a);
+      throw Error('not polynomial');
+    };
+    const [c,b,a]=poly(rawParse(f));
+    if([a,b,c].every(Number.isFinite)){
+      let roots=[];
+      if(!a){if(!b)return c===0?'all '+want:'no solution';roots=[-c/b];}
+      else{
+        const d=b*b-4*a*c;
+        if(d<0)roots=[math.complex(-b/(2*a),Math.sqrt(-d)/(2*Math.abs(a))),math.complex(-b/(2*a),-Math.sqrt(-d)/(2*Math.abs(a)))];
+        else if(d===0)roots=[-b/(2*a)];
+        else{const q=-.5*(b+(b>=0?1:-1)*Math.sqrt(d));roots=[q/a,c/q].sort((x,y)=>x-y);}
       }
-      prev = {x, v};
+      if(roots.length&&roots.every(residual))return want+' = '+roots.map(fmt).join(' or ');
     }
-    if(roots.length) return want+' = '+roots.sort((a,b)=>a-b).map(fmt).join(' or ');
-  }catch(e){}
+  }catch{}
+  try{
+    const code=rawParse(f).compile(),local=Object.assign({},scope),roots=[];
+    const at=x=>{local[want]=x;try{return num(code.evaluate(local));}catch{return NaN;}};
+    const accept=r=>{
+      if(!Number.isFinite(r)||roots.some(o=>Math.abs(o-r)<1e-5))return;
+      const v=Math.abs(at(r)),h=Math.max(1e-3,Math.abs(r)*1e-3),l=Math.abs(at(r-h)),u=Math.abs(at(r+h));
+      // A root must be isolated from its neighbourhood; tails, poles and
+      // underflow plateaus cannot pass merely by producing a tiny number.
+      if(Number.isFinite(v)&&Number.isFinite(l)&&Number.isFinite(u)&&Math.min(l,u)>v*100&&v<=1e-8*Math.max(l,u))roots.push(r);
+    };
+    if(!degreeTrig)for(const seed of [0,1,-1,100,-100,10000,-10000,1000000,-1000000]){
+      let x=seed;for(let k=0;k<40;k++){
+        const y=at(x),h=Math.max(1e-5,Math.abs(x)*1e-5),d=(at(x+h)-at(x-h))/(2*h);
+        if(!Number.isFinite(y)||!Number.isFinite(d)||d===0)break;
+        const next=x-y/d;if(!Number.isFinite(next))break;
+        if(Math.abs(next-x)<=1e-12*Math.max(1,Math.abs(x))){x=next;break;}x=next;
+      }accept(x);
+    }
+    const start=degreeTrig?0:-50,end=degreeTrig?360:50,step=degreeTrig?.5:.05;
+    let prev=null;
+    for(let x=start;x<=end;x+=step){
+      const v=at(x);if(v===0)accept(x);
+      if(prev&&Number.isFinite(v)&&Number.isFinite(prev.v)&&((v<0&&prev.v>0)||(v>0&&prev.v<0))){
+        let a=prev.x,b=x,va=prev.v;
+        for(let k=0;k<48;k++){const mid=(a+b)/2,vm=at(mid);if(!Number.isFinite(vm))break;if((vm<=0)===(va<=0)){a=mid;va=vm;}else b=mid;}
+        accept((a+b)/2);
+      }prev={x,v};
+    }
+    const shown=roots.filter(r=>!degreeTrig||r<360-1e-7).sort((a,b)=>a-b).slice(0,8);
+    if(shown.length)return want+' = '+shown.map(fmt).join(' or ')+(degreeTrig?' (0° ≤ '+want+' < 360°)':'');
+  }catch{}
   return '';
 }
 function symbolic(src){
@@ -6684,7 +6853,7 @@ async function quickMath(source){
   if(node.error||!node.result) throw new Error('check the equation and try again.');
   return node.result;
 }
-N.mathcore = { quickMath, run, refreshWaiting, normalize, latexToMath, looksLikeMath, readsAsProse, fmt, freeVars, harden, reset, ensureCAS, savedAnswers, restoreAnswers,
+N.mathcore = { sameValue,finiteValue,quickMath, run, refreshWaiting, normalize, latexToMath, looksLikeMath, readsAsProse, fmt, freeVars, harden, reset, ensureCAS, savedAnswers, restoreAnswers,
                baseScope, evalRaw:(s,sc)=>rawEval(s,sc), parseRaw:s=>rawParse(s), compileRaw, collect, requestSolve, dismiss, inkLanded };
 })();
 </script>
@@ -6805,7 +6974,7 @@ function occupancy(){
   };
   for(const s of S.strokes) mark(s.bbox);
   for(const l of S.lines) mark([0, l.y, M.contentW, l.y+C.LINE_H]);
-  for(const im of S.images) mark([im.x, im.y, im.x+im.w, im.y+im.h]);
+  for(const im of S.images)mark(C.imageBounds(im));
   for(const a of S.annos) for(const o of (a.marks||[])) if(o.box) mark(o.box);
   return set;
 }
@@ -7922,7 +8091,9 @@ function menuSheet(){
        return to the cached notebook. Save the note before refreshing. */
     const within=(work,ms)=>Promise.race([Promise.resolve().then(work),new Promise(r=>setTimeout(r,ms))]).catch(()=>{});
     C.flushView();
-    if(S.dirty)await within(()=>C.save(),4000);
+    const saved=await within(()=>C.save(),15000);
+    if(saved!==true||S.dirty){C.toast('your note is not saved yet. retry the save or export a copy before updating.',8000);return;}
+    S.applyingUpdate=true;S.buildChanged=true;
     try{
       if('serviceWorker' in navigator){
         const registration=await navigator.serviceWorker.getRegistration('./');
@@ -7930,10 +8101,11 @@ function menuSheet(){
           // Keep complete build caches intact. Reload only after the worker
           // supplying the new page and its scripts has actually activated.
           await N.boot.activateUpdate(registration,true);
+          if(await within(()=>C.save(),15000)!==true||S.dirty){S.applyingUpdate=false;C.toast('your note is not saved yet. retry the save before reloading.',8000);return;}
           location.reload();return;
         }
       }
-    }catch(error){C.toast('the update did not finish. try again in a moment.',6000);return;}
+    }catch(error){S.applyingUpdate=false;C.toast('the update did not finish. your note is kept here. save, then reload to try again.',8000);return;}
     await within(async()=>{
       const model=/[/]assets[/](?:text|smart|ink)[/]/;
       if(!('caches' in window))return;
@@ -7946,6 +8118,7 @@ function menuSheet(){
         for(const request of await cache.keys())if(request.url!==pageKey&&!model.test(new URL(request.url).pathname))await cache.delete(request);
       }
     },6000);
+    if(await within(()=>C.save(),15000)!==true||S.dirty){S.applyingUpdate=false;C.toast('your note is not saved yet. retry the save before reloading.',8000);return;}
     location.reload();
   };
   const rn = box.querySelector('#rename');
@@ -8047,11 +8220,23 @@ function contentBottom(){
   let y = 400;
   for(const s of S.strokes) y = Math.max(y, s.bbox[3]);
   for(const l of S.lines) y = Math.max(y, l.y + Math.max(C.LINE_H,l.h||C.LINE_H));
-  for(const im of S.images) y = Math.max(y, im.y + im.h);
+  for(const im of S.images)y=Math.max(y,C.imageBounds(im)[3]);
   document.querySelectorAll('#margin .chip, #margin .plot').forEach(el=>{
     y = Math.max(y, parseFloat(el.style.top||0) + el.offsetHeight);
   });
   return y + 40;
+}
+function exportBounds(){
+  let left=0,top=0,right=M.colW,bottom=contentBottom();
+  const include=b=>{left=Math.min(left,b[0]);top=Math.min(top,b[1]);right=Math.max(right,b[2]);bottom=Math.max(bottom,b[3]);};
+  for(const st of S.strokes)if(st.bbox)include([st.bbox[0]-st.w,st.bbox[1]-st.w,st.bbox[2]+st.w,st.bbox[3]+st.w]);
+  for(const im of S.images)include(C.imageBounds(im));
+  for(const l of S.lines)include([l.x||0,l.y,(l.x||0)+Math.max(80,M.contentW-(l.x||0)),l.y+Math.max(C.LINE_H,l.h||C.LINE_H)]);
+  for(const el of document.querySelectorAll('#margin .chip, #margin .plot')){const x=parseFloat(el.style.left)||0,y=parseFloat(el.style.top)||0;include([x,y,x+el.offsetWidth,y+el.offsetHeight]);}
+  left=Math.floor(left);top=Math.floor(top);return {left,top,width:Math.ceil(right-left),height:Math.ceil(bottom-top)};
+}
+function exportGuard(){
+  const id=S.id,revision=C.revision;return ()=>{if(S.id!==id||C.revision!==revision)throw Error('the note changed during export. try again.');};
 }
 function loadImages(){
   return Promise.all(S.images.map(im=>new Promise(res=>{
@@ -8066,17 +8251,18 @@ async function renderExport(opts={}){
      export after typing cannot capture an older answer. */
   N.mathcore.run();
   const loaded = opts.loaded || await loadImages();
-  const w=M.colW, top=opts.top||0, h=opts.height||contentBottom();
+  opts.check?.();
+  const bounds=opts.bounds||exportBounds(),w=bounds.width,top=opts.top??bounds.top,h=opts.height||bounds.height;
   /* iPadOS gives a canvas at most about 16.7 million pixels and hands back
      nothing past that, so a long note is drawn smaller rather than lost */
   const scale=Math.min(2,Math.sqrt(16e6/(w*h)),32000/h);
   if(scale<1)throw new Error('this note needs multiple export pages.');
-  const cv = document.createElement('canvas');
+  const cv=opts.canvas||document.createElement('canvas');
   cv.width = Math.round(w*scale); cv.height = Math.round(h*scale);
-  const x = cv.getContext('2d');
+  const x=cv.getContext('2d');if(!x){cv.width=cv.height=0;throw Error('canvas memory exhausted');}
   const cs = getComputedStyle(document.documentElement);
   x.fillStyle = cs.getPropertyValue('--paper').trim(); x.fillRect(0,0,cv.width,cv.height);
-  x.scale(scale, scale); x.translate(0,-top);
+  x.scale(scale, scale); x.translate(-bounds.left,-top);
   for(const pair of loaded){
     if(!pair) continue;
     try{
@@ -8087,7 +8273,7 @@ async function renderExport(opts={}){
   }
   for(const st of S.strokes) N.ink.drawStroke(x, st);
   x.font = '400 16px '+((getComputedStyle(document.documentElement).getPropertyValue('--type')||'').trim()||'ui-monospace, monospace'); x.textBaseline = 'top';
-  for(const l of S.lines) if(l.text){ x.fillStyle = l.tutor ? N.ink.colors.red : N.ink.colors.text; drawWrapped(x,l.text,2,l.y+3,M.contentW-4,22.4); }
+  for(const l of S.lines) if(l.text){ x.fillStyle = l.tutor ? N.ink.colors.red : N.ink.colors.text; drawWrapped(x,l.text,(l.x||0)+2,l.y+3,Math.max(80,M.contentW-(l.x||0))-4,22.4); }
   x.fillStyle = cs.getPropertyValue('--blue').trim();
   x.font = '600 21px "Caveat","Segoe Script",system-ui,sans-serif';
   x.textBaseline='alphabetic';
@@ -8126,22 +8312,22 @@ function download(name, href){
   a.href = href; a.download = name; document.body.appendChild(a); a.click(); a.remove();
 }
 async function exportPNG(){
+  const canvas=document.createElement('canvas');
   try{
-    N.mathcore.run();
-    const height=contentBottom(),pageHeight=Math.max(1,Math.floor(Math.min(12000,16e6/M.colW))),count=Math.ceil(height/pageHeight),loaded=await loadImages();
+    N.mathcore.run();const bounds=exportBounds(),title=S.title||'notas',check=exportGuard();
+    const pageHeight=Math.max(1,Math.floor(Math.min(12000,16e6/bounds.width))),count=Math.ceil(bounds.height/pageHeight),loaded=await loadImages();check();
     for(let i=0;i<count;i++){
-      const cv=await renderExport({top:i*pageHeight,height:Math.min(pageHeight,height-i*pageHeight),loaded});
-      const b=await new Promise(r=>cv.toBlob(r));if(!b)throw Error('image export failed');
-      const u=URL.createObjectURL(b);
-      download((S.title||'notas')+(count>1?' part '+(i+1)+' of '+count:'')+'.png',u);
-      setTimeout(()=>URL.revokeObjectURL(u),60000);
-      if(count>1)await new Promise(r=>setTimeout(r,150));
+      const cv=await renderExport({top:bounds.top+i*pageHeight,height:Math.min(pageHeight,bounds.height-i*pageHeight),loaded,bounds,canvas,check});check();
+      const blob=await new Promise(r=>cv.toBlob(r));cv.width=cv.height=0;check();if(!blob)throw Error('image export failed');
+      const url=URL.createObjectURL(blob);download(title+(count>1?' part '+(i+1)+' of '+count:'')+'.png',url);setTimeout(()=>URL.revokeObjectURL(url),60000);
+      if(count>1){await new Promise(r=>setTimeout(r,150));check();}
     }
     if(count>1)C.toast('exported '+count+' readable images. allow multiple downloads if your browser asks.',7000);
-  }catch(e){ C.toast('could not export that image.'); }
+  }catch(e){C.toast(e.message||'could not export that image.');}
+  finally{canvas.width=canvas.height=0;}
 }
-function downloadJSON(name,value){
-  const text=C.exportText(value),limit=180*1024*1024;
+function downloadJSON(name,value,serialized=false){
+  const text=serialized?value:C.exportText(value),limit=180*1024*1024;
   const send=(file,body)=>{const u=URL.createObjectURL(new Blob([body],{type:'application/json'}));download(file,u);setTimeout(()=>URL.revokeObjectURL(u),60000);};
   if(new Blob([text]).size<=limit){send(name,text);return;}
   const id=C.uid(),width=20*1024*1024,parts=Math.ceil(text.length/width);
@@ -8152,21 +8338,22 @@ function exportJSON(){downloadJSON((S.title||'notas')+'.notas.json',C.serialize(
 $('#save-retry').onclick=()=>C.save({announce:true});
 $('#save-export').onclick=()=>exportJSON();
 async function printNote(){
-  /* opened inside the tap, before the drawing is awaited: Safari refuses a
-     window opened after an await as a pop-up */
-  const w = window.open('', '_blank');
-  if(!w) return C.toast('allow pop-ups to print this note.');
+  const w=window.open('','_blank');if(!w)return C.toast('allow pop-ups to print this note.');
+  const canvas=document.createElement('canvas'),urls=[];
+  const release=()=>{for(const url of urls)URL.revokeObjectURL(url);urls.length=0;};
   try{
-    N.mathcore.run();
-    const height=contentBottom(),pageHeight=Math.max(1,Math.floor(M.colW*1.414)),loaded=await loadImages();
-    w.document.write('<title>'+esc(S.title)+'</title><style>@page{margin:10mm}body{margin:0}img{display:block;width:100%;break-after:page}img:last-child{break-after:auto}</style>');
-    for(let top=0;top<height;top+=pageHeight){
-      const cv=await renderExport({top,height:Math.min(pageHeight,height-top),loaded});
-      const img=w.document.createElement('img');img.src=cv.toDataURL('image/png');w.document.body.appendChild(img);
-      await img.decode();
+    N.mathcore.run();const bounds=exportBounds(),title=S.title,check=exportGuard();
+    const pageHeight=Math.max(1,Math.floor(bounds.width*1.414)),loaded=await loadImages();check();
+    w.document.write('<title>'+esc(title)+'</title><style>@page{margin:10mm}body{margin:0}img{display:block;width:100%;break-after:page}img:last-child{break-after:auto}</style>');
+    for(let top=bounds.top;top<bounds.top+bounds.height;top+=pageHeight){
+      const cv=await renderExport({top,height:Math.min(pageHeight,bounds.top+bounds.height-top),loaded,bounds,canvas,check});check();
+      const blob=await new Promise(r=>cv.toBlob(r));cv.width=cv.height=0;check();if(!blob)throw Error('print image failed');
+      const img=w.document.createElement('img'),url=URL.createObjectURL(blob);urls.push(url);img.src=url;w.document.body.appendChild(img);await img.decode();check();
     }
+    w.addEventListener('afterprint',release,{once:true});w.addEventListener('pagehide',release,{once:true});
     w.document.close();w.focus();w.print();
-  }catch(e){w.close();C.toast('could not print this note.');}
+  }catch(e){release();w.close();C.toast(e.message||'could not print this note.');}
+  finally{canvas.width=canvas.height=0;}
 }
 
 /* ---- import, photo drop and paste ---- */
@@ -8194,7 +8381,7 @@ const NOTE_IMAGES=200, NOTE_IMAGE_CHARS=64*1024*1024;
 function imageRoom(adding){
   if(S.images.length>=NOTE_IMAGES){ C.toast('a note holds up to '+NOTE_IMAGES+' pictures. start a new note for more.',6000); return false; }
   const used=S.images.reduce((n,im)=>n+(im.src||'').length+(im.full||'').length+(im.bg||im.cut||'').length,0);
-  if(used+adding>NOTE_IMAGE_CHARS){ C.toast('this note is full of pictures. start a new note for more.',6000); return false; }
+  if(used+adding>(N.collab?.isShared(S.id)?20*1024*1024:NOTE_IMAGE_CHARS)){ C.toast('this note is full of pictures. start a new note for more.',6000); return false; }
   return true;
 }
 const IMAGE_KEEP=/^image\/(png|jpeg|gif|webp)$/i, IMAGE_OPAQUE=/^image\/(jpeg|bmp|tiff|heic|heif)$/i;
@@ -8330,10 +8517,12 @@ async function insertImageFile(f,at,flowLine){
 /* Several images at once (a multi-file drop, or a clipboard holding more than
    one) are added one after another so each lands offset from the last. */
 async function insertImages(files,at,flowLine){
+  const destination=S.id;
   const list=[...files||[]].filter(f=>f&&/^image\//i.test(f.type||''));
   if(!list.length)return 0;
   let n=0;
   for(const f of list){
+    if(S.id!==destination)break;
     /* each picture flows under the line the previous one left the caret on */
     const line=flowLine?(N.text.focusedLine()||flowLine):null;
     if(await insertImageFile(f,at,line))n++;
@@ -8475,7 +8664,7 @@ function validateImportedNote(doc){
   const lines=doc.lines.map(l=>{
     if(!l||!coord(l.y)||typeof l.text!=='string'||l.text.length>5000000)throw new Error('this note contains invalid typed text.');
     const h=Number(l.h||C.LINE_H);if(!Number.isFinite(h)||h<C.LINE_H||h>200000)throw new Error('this note contains invalid text layout.');
-    return {id:safeId(l.id),y:Number(l.y),...(coord(l.x)?{x:Number(l.x)}:{}),text:l.text,h,...(typeof l.notaAsked==='string'&&l.notaAsked.length<=5000000?{notaAsked:l.notaAsked}:{}),...(l.tutor?{tutor:true}:{}),...(typeof l.answerPrefix==='string'&&l.text.startsWith(l.answerPrefix)?{answerPrefix:l.answerPrefix}:{}),...(l.suppressAnswer===l.text?{suppressAnswer:l.text}:{})};
+    return {id:safeId(l.id),y:Number(l.y),...(place(l.x)?{x:Number(l.x)}:{}),text:l.text,h,...(typeof l.notaAsked==='string'&&l.notaAsked.length<=5000000?{notaAsked:l.notaAsked}:{}),...(l.tutor?{tutor:true}:{}),...(typeof l.answerPrefix==='string'&&l.text.startsWith(l.answerPrefix)?{answerPrefix:l.answerPrefix}:{}),...(l.suppressAnswer===l.text?{suppressAnswer:l.text}:{})};
   });
   let imageChars=0;
   const images=doc.images.map(im=>{
@@ -8496,9 +8685,10 @@ function validateImportedNote(doc){
       ...(finite(im.rot,100)&&Number(im.rot)?{rot:Number(im.rot)}:{}),
       ...(full?{full,crop:{l:c.l,t:c.t,r:c.r,b:c.b}}:{}),...(bg?{bg}:{}),...(cut?{cut}:{})};
   });
-  const textTranscripts=Array.isArray(doc.textTranscripts)?doc.textTranscripts.filter(t=>t&&typeof t.hash==='string'&&typeof t.text==='string'&&t.hash.length<=500&&t.text.length<=10000).map(t=>({hash:t.hash,text:t.text,confidence:Number(t.confidence)||0,modelVersion:String(t.modelVersion||''),...(Array.isArray(t.bbox)&&t.bbox.length===4&&t.bbox.every(coord)?{bbox:t.bbox.map(Number)}:{}),...(t.asked?{asked:true}:{})})):[];
-  const transcripts=Array.isArray(doc.transcripts)?doc.transcripts.filter(t=>t&&typeof t.hash==='string'&&t.hash.length<=500).slice(0,20000).map(t=>({
-    hash:t.hash,...(Array.isArray(t.bbox)&&t.bbox.length===4&&t.bbox.every(coord)?{bbox:t.bbox.map(Number)}:{}),latex:typeof t.latex==='string'?t.latex.slice(0,2000):'',ascii:typeof t.ascii==='string'?t.ascii.slice(0,2000):'',
+  const hashLimit=strokes.reduce((n,st)=>n+st.id.length+String(st.pts.length/3).length+2,64);
+  const textTranscripts=Array.isArray(doc.textTranscripts)?doc.textTranscripts.filter(t=>t&&typeof t.hash==='string'&&typeof t.text==='string'&&t.hash.length<=hashLimit&&t.text.length<=10000).slice(0,20000).map(t=>({hash:t.hash,text:t.text,confidence:Number(t.confidence)||0,modelVersion:String(t.modelVersion||''),...(Array.isArray(t.bbox)&&t.bbox.length===4&&t.bbox.every(place)?{bbox:t.bbox.map(Number)}:{}),...(t.asked?{asked:true}:{})})):[];
+  const transcripts=Array.isArray(doc.transcripts)?doc.transcripts.filter(t=>t&&typeof t.hash==='string'&&t.hash.length<=hashLimit).slice(0,20000).map(t=>({
+    hash:t.hash,...(Array.isArray(t.bbox)&&t.bbox.length===4&&t.bbox.every(place)?{bbox:t.bbox.map(Number)}:{}),latex:typeof t.latex==='string'?t.latex.slice(0,2000):'',ascii:typeof t.ascii==='string'?t.ascii.slice(0,2000):'',
     kind:t.kind==='expression'?'expression':'expression',modelVersion:typeof t.modelVersion==='string'?t.modelVersion.slice(0,100):'',
     alternatives:Array.isArray(t.alternatives)?t.alternatives.filter(x=>typeof x==='string').slice(0,20):[],confirmed:!!t.confirmed,needsConfirmation:!!t.needsConfirmation,
     confidence:Number.isFinite(Number(t.confidence))?Number(t.confidence):0,asked:!!t.asked,...(t.dismissed?{dismissed:true}:{}),
@@ -8510,7 +8700,8 @@ function validateImportedNote(doc){
     if(typeof doc.settings.fractions==='boolean')settings.fractions=doc.settings.fractions;
     if(typeof doc.settings.aiOn==='boolean')settings.aiOn=doc.settings.aiOn;
   }
-  const answers=Array.isArray(doc.answers)?doc.answers.filter(e=>Array.isArray(e)&&typeof e[0]==='string'&&e[0].length<=1000&&e[1]&&typeof e[1].key==='string'&&e[1].key.length<=250000&&typeof e[1].result==='string'&&e[1].result.length<=250000).slice(0,20000):[];
+  const answers=[]; // Imported answers are untrusted caches; calculate them here.
+
   return {title:typeof doc.title==='string'?doc.title.slice(0,500):'imported note',strokes,lines,images,textTranscripts,transcripts,answers,
     created:Number.isFinite(Number(doc.created))&&Number(doc.created)>0?Number(doc.created):Date.now(),folder:typeof doc.folder==='string'?doc.folder.slice(0,200):'',
     docH:finite(doc.docH,2e6)?Math.max(1600,Number(doc.docH)):1600,settings};
@@ -8900,12 +9091,21 @@ const L = { open:false, view:'all', query:'', rows:[], ix:[], folders:[], select
 /* ---- folders: flat names; an empty folder is remembered on its own ---- */
 function cleanFolder(v){ return String(v||'').replace(/\s+/g,' ').trim().slice(0,60); }
 async function loadFolders(){
-  const kept = (await C.Store.get('notas.folders')) || [];
+  const kept=(await C.Store.read('notas.folders'))||[];
   const all = new Set(kept.map(cleanFolder).filter(Boolean));
   for(const r of L.ix) if(r.folder) all.add(r.folder);
   return [...all].sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:'base', numeric:true}));
 }
-async function saveFolders(names){ await C.Store.set('notas.folders', [...new Set(names.map(cleanFolder).filter(Boolean))]); }
+async function saveFolders(update){
+  try{
+    return await C.withNoteLock(':folders',async()=>{
+      const current=(await C.Store.read('notas.folders'))||[];
+      const names=[...new Set(update(current).map(cleanFolder).filter(Boolean))];
+      if(!await C.Store.set('notas.folders',names))throw Error('folders could not be saved. try again.');
+      return true;
+    });
+  }catch(e){C.toast('the folder list could not be read or saved. try again.',7000);return false;}
+}
 
 /* ---- the list ---- */
 function title(r){ const name=C.cleanTitle(r.title); return name&&name!=='untitled'?name:(r.preview||'untitled'); }
@@ -8933,7 +9133,7 @@ async function refresh(){
   if(L.open&&el.dataset.mode==='overview')updateCurrentPreview();
   warnTrashedHere();
   await purgeTrash();
-  L.folders = await loadFolders();
+  try{L.folders=await loadFolders();}catch{C.toast('folders could not be read just now. try again.',6000);}
   if(L.view.startsWith('f:') && !L.folders.includes(L.view.slice(2))) L.view = 'all';
   if(L.view === 'shared' && !L.ix.some(r=>!r.trashed && N.collab && N.collab.isShared(r.id))) L.view = 'all';
   const ids = new Set(L.ix.map(r=>r.id));
@@ -9069,7 +9269,6 @@ function paint(hits){
   const keepTop = list.scrollTop;
   const rows = hits ? hits.map(h=>h.row) : sorted(L.ix.filter(inView));
   L.rows = rows; L.hits = hits || null;
-  list.innerHTML = '';
   list.classList.toggle('selecting', L.selecting);
   if(!rows.length){ list.innerHTML = '<p class="lib-empty">'+esc(emptyText())+'</p>'; paintSel(); return; }
   /* one string, parsed once: a few hundred notes built row by row was a
@@ -9094,7 +9293,17 @@ function paint(hits){
         '<button type="button" class="lib-more" aria-label="more for '+esc(title(r))+'" title="more"><i class="ph ph-dots-three-vertical"></i><span class="fb" hidden>...</span></button>' +
       '</div></div>');
   }
-  list.innerHTML = html.join('');
+  const existing=new Map([...list.querySelectorAll('.note-row')].map(row=>[row.dataset.id,row])),wanted=new Set(rows.map(r=>r.id));
+  for(const node of [...list.children])if(!wanted.has(node.dataset.id))node.remove();
+  for(let i=0;i<rows.length;i++){
+    let node=existing.get(rows[i].id);
+    if(!node||node._markup!==html[i]){
+      const template=document.createElement('template');template.innerHTML=html[i];const fresh=template.content.firstElementChild;
+      if(node){const oldThumb=node.querySelector('.lib-thumb'),newThumb=fresh.querySelector('.lib-thumb');oldThumb.querySelector('.lib-thumb-txt').textContent=newThumb.querySelector('.lib-thumb-txt').textContent;newThumb.replaceWith(oldThumb);node.replaceWith(fresh);}
+      node=fresh;node._markup=html[i];
+    }
+    if(list.children[i]!==node)list.insertBefore(node,list.children[i]||null);
+  }
   list.scrollTop = keepTop;
   if(focusId){ const f = list.querySelector('.note-row[data-id="'+CSS.escape(focusId)+'"] .t'); if(f) f.focus({preventScroll:true}); }
   watchThumbs();
@@ -9115,10 +9324,22 @@ search.addEventListener('keydown', e=>{
   if(e.key === 'ArrowDown'){ const f = list.querySelector('.note-row .t'); if(f){ e.preventDefault(); f.focus(); } }
   if(e.key === 'Enter'){ const f = list.querySelector('.note-row'); if(f){ e.preventDefault(); openRow(f.dataset.id); } }
 });
+function searchProjection(d){
+  return d?{title:d.title,lines:(d.lines||[]).map(({y,x,text,tutor,wait})=>({y,x,text,tutor,wait})),
+    textTranscripts:(d.textTranscripts||[]).map(({text,bbox})=>({text,bbox})),
+    transcripts:(d.transcripts||d.clusters||[]).map(({hash,bbox,latex,ascii,dismissed,needsConfirmation})=>({hash,bbox,latex,ascii,dismissed,needsConfirmation}))}:null;
+}
+function projectionSize(d){return d?(d.title||'').length+(d.lines||[]).reduce((n,l)=>n+l.text.length,0)+(d.textTranscripts||[]).reduce((n,t)=>n+(t.text||'').length,0)+(d.transcripts||[]).reduce((n,t)=>n+(t.ascii||t.latex||'').length,0):0;}
 async function docOf(id){
-  if(id === S.id) return C.serialize();
-  if(!L.docs.has(id)) L.docs.set(id, (await C.Store.get('notas.note.'+id)) || null);
-  return L.docs.get(id);
+  if(id===S.id)return searchProjection(S);
+  if(L.docs.has(id)){const doc=L.docs.get(id);L.docs.delete(id);L.docs.set(id,doc);return doc;}
+  const doc=searchProjection(await C.Store.get('notas.note.'+id));
+  if(projectionSize(doc)<250000){
+    L.docs.set(id,doc);
+    let size=[...L.docs.values()].reduce((n,d)=>n+projectionSize(d),0);
+    while(L.docs.size>128||size>2000000){const key=L.docs.keys().next().value;size-=projectionSize(L.docs.get(key));L.docs.delete(key);}
+  }
+  return doc;
 }
 async function runSearch(q){
   const seq = ++L.searchSeq, hits = [], rows = L.ix.filter(inView);
@@ -9246,6 +9467,7 @@ async function drainBacklog(){
     while(backlog.length){
       const id = backlog.shift(), row = L.ix.find(r=>r.id===id); if(!row) continue;
       const have = await thumbOf(id);
+      if(have&&id===S.id&&Date.now()-(lastThumb.get(id)||0)<THUMB_EVERY){showThumb(id);continue;}
       if(have ? (have.at >= (row.updated||0) - 1000) : false){ showThumb(id); continue; }
       await settled();
       const doc = id === S.id ? C.serialize() : await C.Store.get('notas.note.'+id);
@@ -9269,12 +9491,12 @@ async function showThumb(id){
 }
 let seen = null;
 function watchThumbs(){
-  if(seen) seen.disconnect();
   const boxes = list.querySelectorAll('.lib-thumb');
   const want = box=>{ const id = box.dataset.thumb; showThumb(id); if(!backlog.includes(id)) backlog.push(id); drainBacklog(); };
   if(!('IntersectionObserver' in window)){ boxes.forEach(want); return; }
-  seen = new IntersectionObserver(es=>{ for(const e of es) if(e.isIntersecting){ seen.unobserve(e.target); want(e.target); } }, {root:list, rootMargin:'200px 0px'});
-  boxes.forEach(b=>seen.observe(b));
+  if(!seen)seen = new IntersectionObserver(es=>{ for(const e of es) if(e.isIntersecting){ seen.unobserve(e.target); want(e.target); } }, {root:list, rootMargin:'200px 0px'});
+  const updates=new Map(L.ix.map(row=>[row.id,row.updated||0]));
+  boxes.forEach(b=>{const at=updates.get(b.dataset.thumb)||0;if(b._observedAt!==at){b._observedAt=at;seen.observe(b);}});
 }
 /* the theme changed: pictures drawn under the other one are inverted */
 new MutationObserver(()=>{ darkMemo = null; if(L.open) list.querySelectorAll('.lib-thumb img').forEach(img=>{ const id = img.parentNode.dataset.thumb, t = thumbs.get(id); if(t) img.classList.toggle('flip', !!t.dark !== darkNow()); }); })
@@ -9407,7 +9629,7 @@ function close(opts={}){
   /* on a phone the list is a page in the history: closing it is going back,
      so the system back gesture returns to the editor */
   if((el.dataset.mode === 'page' || el.dataset.mode === 'overview') && L.pushed && !opts.fromHistory){ L.pushed = false; try{ history.back(); }catch(e){} }
-  L.open = false; L.pushed = false; endSelect(); closePop();
+  L.open = false;L.docs.clear();previewSeq++; L.pushed = false; endSelect(); closePop();
   const mode = el.dataset.mode, inside = el.contains(document.activeElement);
   $('#brand').setAttribute('aria-expanded','false');
   if(mode === 'dock'){
@@ -9759,14 +9981,14 @@ function formSheet(titleText, label, value, cta, done){
     '<form class="lib-form"><input class="keyin" aria-label="'+esc(label)+'" placeholder="'+esc(label)+'" value="'+esc(value)+'" autocomplete="off" enterkeyhint="done" maxlength="120">' +
     '<div class="sheet-act"><button class="sheet-cta" type="submit">'+esc(cta)+'</button></div></form>', {fit:true});
   const input = box.querySelector('input');
-  box.querySelector('form').onsubmit = e=>{ e.preventDefault(); const v = input.value.trim(); N.ui.closeSheet(); done(v); };
+  box.querySelector('form').onsubmit = e=>{ e.preventDefault(); const v = input.value.trim(); N.ui.closeSheet(); Promise.resolve().then(()=>done(v)).catch(e=>C.toast(e.message||'could not save that change.')); };
   setTimeout(()=>{ input.focus(); input.select(); }, 30);
 }
 function confirmSheet(titleText, text, cta, done){
   const box = N.ui.openSheet('<h2>'+esc(titleText)+'</h2><p class="lib-confirm">'+esc(text)+'</p>' +
     '<div class="sheet-act"><button class="lib-cancel" type="button">cancel</button><button class="sheet-cta danger" type="button">'+esc(cta)+'</button></div>', {fit:true});
   box.querySelector('.lib-cancel').onclick = ()=>N.ui.closeSheet();
-  box.querySelector('.sheet-cta').onclick = ()=>{ N.ui.closeSheet(); done(); };
+  box.querySelector('.sheet-cta').onclick = ()=>{ N.ui.closeSheet(); Promise.resolve().then(done).catch(e=>C.toast(e.message||'could not complete that change.')); };
 }
 function renameSheet(id){
   const r = L.ix.find(x=>x.id===id); if(!r) return;
@@ -9775,7 +9997,7 @@ function renameSheet(id){
 function newFolderSheet(then){
   formSheet('new folder', 'folder name', '', 'create', async v=>{
     const f = cleanFolder(v); if(!f) return;
-    await saveFolders([...L.folders, f]);
+    if(!await saveFolders(cur=>[...cur,f]))return;
     if(then) await then(f); else { L.view = 'f:'+f; }
     await refresh(); broadcast();
   });
@@ -9794,7 +10016,7 @@ function renameFolderSheet(old){
     const f = cleanFolder(v); if(!f || f === old) return;
     const ids = L.ix.filter(r=>r.folder===old).map(r=>r.id);
     await C.patchIndexRows(ids, ()=>({folder:f}));
-    await saveFolders(L.folders.map(x=>x===old ? f : x));
+    if(!await saveFolders(cur=>[...cur.map(x=>x===old?f:x),f]))return;
     L.view = 'f:'+f; await refresh();
   });
 }
@@ -9802,13 +10024,13 @@ function removeFolderSheet(f){
   confirmSheet('remove folder', 'remove "'+f+'"? the notes in it stay, in all notes.', 'remove', async ()=>{
     const ids = L.ix.filter(r=>r.folder===f).map(r=>r.id);
     await C.patchIndexRows(ids, ()=>({folder:undefined}));
-    await saveFolders(L.folders.filter(x=>x!==f));
+    if(!await saveFolders(cur=>cur.filter(x=>x!==f)))return;
     L.view = 'all'; await refresh();
   });
 }
 function purgeSheet(ids){
   confirmSheet(ids.length > 1 ? 'delete '+ids.length+' notes' : 'delete note',
-    (ids.length > 1 ? 'these notes' : 'this note')+' will be gone for good. this cannot be undone.', 'delete forever', async ()=>{
+    (ids.length > 1 ? 'these notes' : 'this note')+' will be gone for good. sharing ends for everyone for notes you host. this cannot be undone.', 'delete forever', async ()=>{
       let failed = 0;
       for(const id of ids) if(!await C.deleteStoredNote(id)) failed++;
       ids.forEach(id=>{ thumbs.delete(id); L.docs.delete(id); });
@@ -9821,7 +10043,7 @@ function purgeSheet(ids){
 function broadcast(){ try{ chan && chan.postMessage({index:true}); }catch(e){} }
 async function move(ids, folder, fresh){
   await C.patchIndexRows(ids, ()=>({folder:folder || undefined}));
-  if(folder && !L.folders.includes(folder)) await saveFolders([...L.folders, folder]);
+  if(folder && !L.folders.includes(folder)) await saveFolders(cur=>[...cur,folder]);
   endSelect(); await refresh();
   C.toast(ids.length > 1 ? 'moved '+ids.length+' notes'+(folder ? ' to '+folder : ' out of their folders')+'.' : (folder ? 'moved to '+folder+'.' : 'moved out of its folder.'));
 }
@@ -9898,46 +10120,33 @@ async function duplicate(id){
 }
 /* one note is the same file export always made; several (or a backup) are one
    bundle that import unpacks back into the library, folders and all */
-async function exportNotes(ids, backup){
-  if(ids.includes(S.id)) await C.save();
-  const docs = [];
-  let unread = 0;
+async function exportNotes(ids,backup){
+  if(ids.includes(S.id)&&await C.save()!==true)return C.toast('save the current note or export it separately before backing up.');
+  const active=ids.includes(S.id)?C.serialize():null;
+  const date=new Date(),day=date.getFullYear()+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0');
+  const stem=(backup?'notas backup ':'notas '+ids.length+' notes ')+day,exported=date.toISOString(),PART=32*1024*1024;
+  let strings=[],bytes=0,part=0,count=0,unread=0;
+  const send=async()=>{
+    if(!strings.length)return;
+    const text='{"notasBundle":1,"exported":'+JSON.stringify(exported)+',"part":'+(++part)+',"notes":['+strings.join(',')+']}';
+    strings=[];bytes=0;
+    N.ui.downloadJSON(stem+(part>1||ids.length>1?' part '+part:'')+'.notas.json',text,true);
+    await new Promise(resolve=>setTimeout(resolve,200));
+  };
   for(const id of ids){
-    let doc = null;
-    try{ doc = id === S.id ? C.serialize() : await C.Store.read('notas.note.'+id); }catch(e){}
-    const row = L.ix.find(r=>r.id===id);
-    if(doc) docs.push(row && row.folder ? {...doc, folder:row.folder} : doc); else unread++;
+    let doc;try{doc=active?.id===id?active:await C.Store.read('notas.note.'+id);}catch{}
+    if(!doc){unread++;continue;}
+    const row=L.ix.find(r=>r.id===id);if(row?.folder)doc={...doc,folder:row.folder};
+    if(ids.length===1&&!backup){N.ui.downloadJSON((C.displayTitle(doc.title,doc.lines,doc.textTranscripts,doc.transcripts)||'notas')+'.notas.json',doc);count++;break;}
+    const text=JSON.stringify(doc),size=new Blob([text]).size;doc=null;
+    if(strings.length&&bytes+size+strings.length+256>PART)await send();
+    strings.push(text);bytes+=size;count++;
+    if(bytes+strings.length+256>=PART)await send();
   }
-  /* a note that could not be read is said, not left out of a backup quietly */
-  if(!docs.length) return C.toast(unread ? 'those notes could not be read just now, so nothing was exported. try again.' : 'nothing to export.', 7000);
-  if(unread) C.toast(unread+' of '+ids.length+' notes could not be read just now and are not in this file. export again to include them.', 9000);
-  const day = new Date().toISOString().slice(0,10);
-  const save = (name, text, delay)=>setTimeout(()=>{
-    const url = URL.createObjectURL(new Blob([text], {type:'application/json'}));
-    N.ui.download(name.replace(/[\\/:*?"<>|]+/g,' '), url);
-    setTimeout(()=>URL.revokeObjectURL(url), 60000);
-  }, delay);
-  if(docs.length === 1 && !backup){ N.ui.downloadJSON((C.displayTitle(docs[0].title, docs[0].lines,docs[0].textTranscripts,docs[0].transcripts)||'notas')+'.notas.json',docs[0]); endSelect(); return; }
-  /* A bundle bigger than import takes (200 MB a file) could never be
-     restored, so a large one is split into parts; import takes them all
-     back at once, several files chosen together. */
-  const PART = 150*1024*1024, exported = new Date().toISOString(), parts = [];
-  let cur = [], size = 0;
-  for(const d of docs){
-    const t = JSON.stringify(d);
-    const bytes=new Blob([t]).size;
-    if(cur.length && size + bytes > PART){ parts.push(cur); cur = []; size = 0; }
-    cur.push(t); size += bytes;
-  }
-  parts.push(cur);
-  const stem = (backup ? 'notas backup ' : 'notas '+docs.length+' notes ')+day;
-  parts.forEach((list, i)=>{
-    const text = parts.length === 1 && size < 8*1024*1024
-      ? JSON.stringify({notasBundle:1, exported, notes:list.map(t=>JSON.parse(t))}, null, 1)
-      : '{"notasBundle":1,"exported":'+JSON.stringify(exported)+(parts.length > 1 ? ',"part":'+(i+1)+',"parts":'+parts.length : '')+',"notes":['+list.join(',')+']}';
-    setTimeout(()=>N.ui.downloadJSON(stem+(parts.length > 1 ? ' part '+(i+1)+' of '+parts.length : '')+'.notas.json',JSON.parse(text)),i*700);
-  });
-  if(parts.length > 1) C.toast('the backup is '+parts.length+' files. keep them together, and choose them all when importing.', 9000);
+  await send();
+  if(!count)C.toast('those notes could not be read just now. nothing was exported.',7000);
+  else if(unread)C.toast(unread+' notes could not be read and are not in this backup. export again to include them.',9000);
+  else if(part>1)C.toast('the backup is '+part+' files. keep them together and choose them all when importing.',9000);
   endSelect();
 }
 function importPick(){
@@ -9993,7 +10202,7 @@ async function importBundle(raw, intoFolder){
     /* the notes are stored already; a list that cannot take them now gets
        them at the next launch, when stored notes missing from it are listed */
     listed = await C.withIndexLock(async()=>{ const ix = await C.Store.index(); return await C.Store.putIndex([...rows, ...ix]); }).catch(()=>false);
-    if(folders.size) await saveFolders([...(await C.Store.get('notas.folders')||[]), ...folders]);
+    if(folders.size) await saveFolders(cur=>[...cur,...folders]);
     broadcast();
   }
   if(L.open) await refresh();
@@ -10028,6 +10237,11 @@ if(chan) chan.onmessage = e=>{
       lastThumb.set(S.id, Date.now());
       (window.requestIdleCallback||setTimeout)(()=>pictureCurrent(), {timeout:2000});
     }
+  }
+  if(L.open&&m.id===S.id&&!m.deleted&&!m.index){
+    const row=L.ix.find(r=>r.id===S.id);
+    if(row){row.title=S.title;row.updated=Date.now();row.preview=C.firstLine(S.lines,S.textTranscripts,S.clusters);}
+    if(L.query)runSearch(L.query);else paint();return;
   }
   if(!L.open){
     /* closed, the list is not kept up, but the open note going to the trash
@@ -10403,6 +10617,7 @@ function beginLaunchReading(){
   return N.ai.setup();
 }
 function loadLib(name){
+  if(C.S.buildChanged)return Promise.resolve(false);
   return new Promise(resolve=>{
     const script=document.createElement('script');
     script.src='./assets/'+name+'.js';
@@ -10410,6 +10625,15 @@ function loadLib(name){
     document.head.appendChild(script);
   });
 }
+if(navigator.serviceWorker)navigator.serviceWorker.addEventListener('controllerchange',()=>{
+  if(C.S.applyingUpdate)return;
+  const worker=navigator.serviceWorker.controller;if(!worker)return;
+  const previous=C.S.buildChanged;C.S.buildChanged=true;
+  const channel=new MessageChannel(),timer=setTimeout(()=>{channel.port1.close();changed();},3000);
+  const changed=()=>{C.S.buildChanged=true;C.toast('notas was updated in another tab. save your note, then reload to use the new version.',60000);};
+  channel.port1.onmessage=({data})=>{clearTimeout(timer);channel.port1.close();if(data?.version!==document.querySelector('meta[name="notas-version"]')?.content)changed();else C.S.buildChanged=previous;};
+  worker.postMessage({type:'GET_VERSION'},[channel.port2]);
+});
 async function activateUpdate(registration,check=false){
   let timer,expired=false,cleanup=()=>{};
   try{

@@ -40,6 +40,30 @@ function readers(reply){
 }
 const canvas=()=>({width:2,height:2,getContext:()=>({getImageData:()=>({data:new Uint8ClampedArray(16)})})});
 
+test('F05/F52/F65: request validation errors leave both healthy readers available',async()=>{
+  const counts=new Map();
+  const {N,workers}=readers((w,d)=>{
+    if(d.type==='setup')return {ready:true};
+    const count=(counts.get(w.url)||0)+1;counts.set(w.url,count);
+    return count===1?{error:'This expression or crop is too large.'}:{text:'okay',latex:'2+2',confidence:1};
+  });
+  await assert.rejects(N.testing.textInfer(canvas(),()=>true),/too large/);
+  assert.equal(N.testing.textState.ready,true);assert.equal(N.testing.textState.broken,false);
+  assert.equal((await N.testing.textInfer(canvas(),()=>true)).text,'okay');
+  await assert.rejects(N.testing.inferInk({strokeIds:['s']},()=>true),/too large/);
+  assert.equal(N.testing.state('ink').ready,true);assert.equal(N.testing.state('ink').broken,false);
+  assert.equal((await N.testing.inferInk({strokeIds:['s']},()=>true)).latex,'2+2');
+  assert.equal(workers.length,2);assert.ok(workers.every(w=>!w.terminated));
+});
+
+test('F60: attempts during text cooldown retain the failure time and memory block',async()=>{
+  const {N}=readers(()=>({error:'download failed'}));
+  await assert.rejects(N.testing.textInfer(canvas(),()=>true));
+  const brokeAt=N.testing.textState.brokeAt;N.testing.textState.memoryBlocked=true;
+  await assert.rejects(N.testing.textInfer(canvas(),()=>true),/unavailable/);
+  assert.equal(N.testing.textState.brokeAt,brokeAt);assert.equal(N.testing.textState.memoryBlocked,true);
+});
+
 test('text inference recovers using a fresh worker and fresh pixels',async()=>{
   const {N,workers}=readers((w,d)=>d.type==='setup'?{ready:true}:w===workers[0]?{error:'Aborted(OOM)'}:{text:'hello'});
   const result=await N.testing.textInfer(canvas(),()=>true);
@@ -105,4 +129,32 @@ test('silent background worker is terminated at deadline and next request succee
   const second=vm.runInContext('cutoutAsk({})',context);
   workers[1].onmessage({data:{id:workers[1].data.id,done:true}});
   assert.equal((await second).done,true);
+});
+
+test('F59: a regrouped copy cannot queue the same hash twice, but explicit retry can',async()=>{
+  let calls=0;
+  const {N,workers}=readers((worker,data)=>{if(data.type==='setup')return {ready:true};calls++;worker.pending=data;return null;});
+  const S=N.core.S;N.core.markDirty=()=>{};N.mathcore.latexToMath=s=>s;
+  Object.assign(S.strokes[0],{w:2,bbox:[0,0,10,10],t0:0,t1:10});
+  const old={id:'cluster',hash:'hash',strokeIds:['s'],bbox:[0,0,10,10],source:'ink',asked:true};S.clusters=[old];
+  const first=N.recog.recognize(old);await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(calls,1);const live={...old,pending:false};S.clusters=[live];
+  await N.recog.recognize(live);assert.equal(calls,1);
+  const answer=()=>workers[0].onmessage({data:{id:workers[0].pending.id,latex:'2+2',confidence:.99,terminated:true}});
+  answer();await first;
+  const explicit=N.recog.recognize(live,true);await new Promise(resolve=>setImmediate(resolve));assert.equal(calls,2);answer();await explicit;
+});
+
+test('F61: shared download progress keeps both prefetch and queued matte jobs alive',async()=>{
+  const workers=[],timers=new Map(),progress=[];let serial=0;
+  class Worker{constructor(){workers.push(this);this.messages=[];}postMessage(data){this.messages.push(data);}terminate(){}}
+  const html=readFileSync(new URL('../notas.html',import.meta.url),'utf8');
+  const ctx=vm.createContext({Worker,N:{},navigator:{userAgent:''},Error,
+    setTimeout(fn){timers.set(++serial,fn);return serial;},clearTimeout(id){timers.delete(id);},onProgress:d=>progress.push(d.phase)});
+  vm.runInContext(html.slice(html.indexOf('const CUTOUT_SIZE='),html.indexOf('/* The model is downloaded in the background')),ctx);
+  const prefetch=vm.runInContext('cutoutAsk({prefetch:true})',ctx),matte=vm.runInContext('cutoutAsk({matte:true},[],onProgress)',ctx);
+  const previous=[...timers.keys()],worker=workers[0];worker.onmessage({data:{id:worker.messages[0].id,progress:true,phase:'download',loaded:1,total:100}});
+  assert.deepEqual(progress,['download']);assert.ok(previous.every(id=>!timers.has(id)));assert.equal(timers.size,2);
+  for(const message of worker.messages)worker.onmessage({data:{id:message.id,done:true}});
+  await Promise.all([prefetch,matte]);
 });

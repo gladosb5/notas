@@ -24,8 +24,8 @@ const SHELL=['notas.html','sw.js','model-contract.js','local-recognition.js','in
 const MODEL_DIRS=['assets/smart','assets/ink','assets/text','assets/slide'];
 const ASSET_LIMIT=25*1024*1024;
 
-// The page is part of the recognition fingerprint. Stamp it as part of each
-// deployment so running npm run deploy cannot publish a stale contract.
+// Stamp the app release and recognition/offline integrity contracts before
+// packaging, so a deployment cannot publish stale compatibility metadata.
 execFileSync(process.execPath,['scripts/model-contract.mjs'],{cwd:root,stdio:'inherit'});
 const slide=JSON.parse(await readFile(path.join(root,'assets/slide/model.json'),'utf8'));
 const whole=createHash('sha256');let modelBytes=0;

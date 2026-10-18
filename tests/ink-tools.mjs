@@ -6,8 +6,8 @@ try{
  const page=await browser.newPage({serviceWorkers:'block',viewport:{width:1200,height:900}});
  await page.addInitScript(()=>{try{localStorage.setItem('notas.tutorial','done');localStorage.setItem('notas.tutorialDone','1');}catch(e){}});
  await page.goto(`http://127.0.0.1:${server.address().port}/notas.html`);
- await page.waitForFunction(()=>window.N?.ui?.applyTheme&&N.ink?.setTool);
- await page.evaluate(()=>{document.querySelectorAll('.tut,.tut-mark,.sheet').forEach(e=>e.remove());});
+ await page.waitForFunction(()=>window.N?.ui?.applyTheme&&N.ink?.setTool&&N.core.S.id&&document.getElementById('preparing').classList.contains('done'));
+ await page.evaluate(()=>{N.tutorial.finish(false);N.core.S.settings.aiOn=false;N.ai.toggle();document.querySelectorAll('.tut,.tut-mark,.sheet').forEach(e=>e.remove());});
  /* world point -> screen point */
  const screen=(x,y)=>page.evaluate(([x,y])=>{const r=document.getElementById('scroller').getBoundingClientRect(),M=N.core.M,sc=document.getElementById('scroller');
    return [r.left+M.colLeft+(x-sc.scrollLeft/M.zoom)*M.zoom,r.top+(y-sc.scrollTop/M.zoom)*M.zoom];},[x,y]);
@@ -49,7 +49,7 @@ try{
  const cut=await page.evaluate(()=>N.core.S.strokes.map(s=>({id:s.id,l:s.bbox[0],r:s.bbox[2]})));
  assert.equal(cut.length,2,'two pieces are left');
  assert.ok(!cut.some(s=>s.id===before),'the original is replaced');
- assert.ok(cut.some(s=>s.r<250)&&cut.some(s=>s.l>250),'one piece either side of the eraser');
+ assert.ok(cut.some(s=>s.r<250)&&cut.some(s=>s.l>250),'one piece either side of the eraser: '+JSON.stringify(cut));
  await page.evaluate(()=>N.core.undo());
  assert.deepEqual(await page.evaluate(()=>N.core.S.strokes.map(s=>s.id)),[before],'undo restores the whole stroke');
  await page.evaluate(()=>N.core.redo&&N.core.redo());

@@ -13,6 +13,24 @@ const ask=model=>({model,stream:true,max_tokens:99999,reasoning_effort:'low',mes
 const sse='data: {"choices":[{"delta":{"content":"answer"}}]}\n\ndata: [DONE]\n\n';
 const settings={CEREBRAS_API_KEY:'test-cerebras',CLOUDFLARE_ACCOUNT_ID:'test-account',CLOUDFLARE_API_TOKEN:'test-cloudflare'};
 
+test('F17/F75: chunked bodies are cancelled at the limit and rate checks precede body reads',async()=>{
+  let cancelled=false,pulls=0,rooms=0;
+  const oversized=()=>new ReadableStream({pull(c){pulls++;c.enqueue(new Uint8Array(1024*1024));},cancel(){cancelled=true;}});
+  const response=await worker.fetch(new Request('https://notas.test/nota/chat',{method:'POST',body:oversized(),duplex:'half'}),{},{});
+  assert.equal(response.status,413);assert.equal(cancelled,true);assert.ok(pulls<=5);
+  cancelled=false;pulls=0;
+  const denied=await worker.fetch(new Request('https://notas.test/nota/chat',{method:'POST',body:oversized(),duplex:'half'}),{NOTA_LIMIT:{limit:async()=>({success:false})}},{});
+  assert.equal(denied.status,429);assert.ok(pulls<=1);
+  const smallLimit=await worker.fetch(new Request('https://notas.test/collab/abcdefgh/nota',{method:'POST',body:'x'.repeat(33000)}),{ROOMS:{idFromName:x=>x,get:()=>({fetch(){rooms++;}})}},{});
+  assert.equal(smallLimit.status,413);assert.equal(rooms,0);
+});
+
+test('F72: text budgets have a distinct 413 response, including requests carrying pictures',async()=>{
+  const body=ask(MODEL);body.messages[0].content[0].text='x'.repeat(65537);
+  const response=await worker.fetch(new Request('https://notas.test/nota/chat',{method:'POST',body:JSON.stringify(body)}),{},{});
+  assert.equal(response.status,413);assert.equal(response.headers.get('X-Notas-Error'),'text-budget');
+});
+
 test('Node proxy routes each model with the correct credentials, sanitizes bodies, and handles missing configuration',async t=>{
  const saved=Object.fromEntries(Object.keys(settings).map(k=>[k,process.env[k]]));
  Object.assign(process.env,settings);

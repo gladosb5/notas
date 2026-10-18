@@ -27,7 +27,8 @@ try{
   return route.fulfill({contentType:'text/event-stream',body:sse(next.deltas)});
  });
  await page.goto(`http://127.0.0.1:${server.address().port}/notas.html`);
- await page.waitForFunction(()=>window.N?.nota?.tools&&N.core?.Store);
+ await page.waitForFunction(()=>window.N?.nota?.tools&&N.core?.Store&&N.core.S.id&&document.getElementById('preparing').classList.contains('done'));
+ await page.evaluate(()=>{N.tutorial.finish(false);N.core.S.settings.aiOn=false;N.ai.toggle();});
  await page.evaluate(async()=>{
   const C=N.core,now=Date.now();
   const docs=[

@@ -313,7 +313,7 @@ try{
       for(let i=1;i<=18;i++)await cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:ox+60+i*6,y,button:'left',buttons:1,pointerType:'pen',force:0.5});
       await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:ox+168,y,button:'left',pointerType:'pen',force:0.5});
       await page.waitForTimeout(140);
-      assert.equal(await strokeCount(),n+1,`Pen stroke ${n+1} survives a stale pointer left in the map`);
+      assert.equal(await strokeCount(),n+2,`Pen stroke ${n+1} survives a stale pointer, and its interrupted ink is retained`);
     }
   }
   console.log('Phantom pointers: a stale pointer cannot eat pen strokes');

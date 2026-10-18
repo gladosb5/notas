@@ -39,21 +39,21 @@ const FLUSH_AFTER=5000;
 // Presence is refreshed by the page every few minutes rather than every
 // 15 seconds, so states are only stale after this long without news.
 const PRESENCE_TIMEOUT=15*60*1000;
-// One outgoing frame larger than this is refused by the runtime, which would
-// close a newcomer's socket in the middle of the handshake and have it try
-// again forever; a document bigger than this goes out in pieces instead.
+// Bound handshake chunks to avoid large transient buffers in browsers.
 const FRAME_LIMIT=900*1024;
 // the close code for "this note is too big to send": final, like ENDED
 export const TOO_BIG=4413;
 // a presence message is a cursor, a selection and a stroke in progress;
 // anything much larger is not one this page sends
 const PRESENCE_MAX=64*1024;
+const DOCUMENT_MAX=24*1024*1024, MESSAGE_MAX=DOCUMENT_MAX+1024;
 // asked-question rows a room keeps; the oldest go first
 const NOTA_ROWS=500;
 
 export class NoteRoom extends DurableObject{
   constructor(ctx,env){
     super(ctx,env);
+    this.closed=true;this.gen='';this.journalReady=false;this.storedBytes=0;
     this.doc=null;
     this.awareness=null;
     this.presenceDoc=null;
@@ -68,28 +68,33 @@ export class NoteRoom extends DurableObject{
       ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS nota_requests(line TEXT PRIMARY KEY, question TEXT NOT NULL, token TEXT NOT NULL, expires INTEGER NOT NULL, done INTEGER NOT NULL)');
       ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS site_budget(day TEXT PRIMARY KEY, requests INTEGER NOT NULL, tokens INTEGER NOT NULL)');
       ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS updates(id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, data BLOB NOT NULL)');
+      this.gen=await ctx.storage.get('gen')||'';
+      this.closed=!!await ctx.storage.get('closed');
     });
+  }
+
+  journal(){
+    if(this.journalReady)return;
+    const [row]=this.ctx.storage.sql.exec("SELECT COALESCE(SUM(length(data)),0) AS bytes, SUM(CASE WHEN kind='upd' THEN 1 ELSE 0 END) AS count, COALESCE(SUM(CASE WHEN kind<>'snap' THEN length(data) ELSE 0 END),0) AS delta FROM updates");
+    this.storedBytes=row.bytes;this.pending=row.count||0;this.pendingBytes=row.delta;
+    this.journalReady=true;
   }
 
   load(){
     if(this.doc)return;
-    const doc=new Y.Doc();
-    const pieces=[],parts=[];let count=0,bytes=0;
+    this.journal();
+    const doc=new Y.Doc(),pieces=[],parts=[];
     for(const row of this.ctx.storage.sql.exec('SELECT id, kind, data FROM updates ORDER BY id')){
       const data=new Uint8Array(row.data);
       if(row.kind==='snap')pieces.push(data);
-      else if(row.kind==='part'){parts.push(data);bytes+=data.byteLength;}
+      else if(row.kind==='part')parts.push(data);
       else{
         if(pieces.length){Y.applyUpdate(doc,join(pieces));pieces.length=0;}
-        Y.applyUpdate(doc,parts.length?join([...parts,data]):data);count++;bytes+=data.byteLength;
-        // a row that ends a split edit is never merged into: it holds only the last piece
-        this.tail=parts.length?null:{id:row.id,data,dirty:false};
-        parts.length=0;
+        Y.applyUpdate(doc,parts.length?join([...parts,data]):data);parts.length=0;
       }
     }
     if(pieces.length)Y.applyUpdate(doc,join(pieces));
-    this.pending=count;
-    this.pendingBytes=bytes;
+    if(this.tail?.dirty)Y.applyUpdate(doc,this.tail.data);
     this.doc=doc;
     doc.on('update',(update,origin)=>{
       this.store(update);
@@ -112,7 +117,7 @@ export class NoteRoom extends DurableObject{
     if(closingSocket)sockets.add(closingSocket);
     for(const socket of sockets){
       const saved=socket.deserializeAttachment();
-      if(!saved?.awareness||Date.now()-saved.seenAt>=PRESENCE_TIMEOUT)continue;
+      if(saved?.retired||saved?.gen!==this.gen||!saved?.awareness||Date.now()-saved.seenAt>=PRESENCE_TIMEOUT)continue;
       awarenessProtocol.applyAwarenessUpdate(this.awareness,saved.awareness,socket);
       for(const id of saved.clients||[]){
         const meta=this.awareness.meta.get(id);
@@ -133,6 +138,7 @@ export class NoteRoom extends DurableObject{
   // Merge into the tail row in memory; the row itself is written when the
   // window closes, or a new tail starts, or a socket closes.
   store(update){
+    this.journal();
     if(this.tail&&this.tail.data.byteLength+update.byteLength<=DELTA_LIMIT){
       this.tail.data=Y.mergeUpdates([this.tail.data,update]);
       this.tail.dirty=true;
@@ -171,7 +177,10 @@ export class NoteRoom extends DurableObject{
     const sql=this.ctx.storage.sql;
     tail.dirty=false;
     if(tail.id!==null){
+      const added=tail.data.byteLength-(tail.storedLength||0);
       sql.exec('UPDATE updates SET data = ? WHERE id = ?',tail.data,tail.id);
+      this.storedBytes+=added;this.pendingBytes+=added;tail.storedLength=tail.data.byteLength;
+      if(this.pendingBytes>=COMPACT_BYTES)this.compact();
       return;
     }
     const data=tail.data;
@@ -184,24 +193,31 @@ export class NoteRoom extends DurableObject{
       if(this.tail===tail)this.tail=null;
     }else{
       const [row]=sql.exec('INSERT INTO updates(kind, data) VALUES (?, ?) RETURNING id','upd',data);
-      tail.id=row.id;
+      tail.id=row.id;tail.storedLength=data.byteLength;
     }
+    this.storedBytes+=data.byteLength;
     this.pendingBytes+=data.byteLength;
     if(++this.pending<COMPACT_AFTER&&this.pendingBytes<COMPACT_BYTES)return;
-    const full=Y.encodeStateAsUpdate(this.doc);
+    this.compact();
+  }
+
+  compact(){
+    this.load();
+    const sql=this.ctx.storage.sql,full=Y.encodeStateAsUpdate(this.doc);
     this.ctx.storage.transactionSync(()=>{
       sql.exec('DELETE FROM updates');
       for(let at=0;at<full.length;at+=PIECE)sql.exec('INSERT INTO updates(kind, data) VALUES (?, ?)','snap',full.subarray(at,at+PIECE));
     });
-    this.pending=0;
+    this.pending=0;this.storedBytes=full.byteLength;
     this.pendingBytes=0;
     this.tail=null;
   }
 
   broadcast(bytes,except){
     for(const ws of this.ctx.getWebSockets()){
-      if(ws===except)continue;
-      try{ws.send(bytes);}catch(e){}
+      const saved=ws.deserializeAttachment();
+      if(ws===except||ws.readyState!==1||saved?.retired||saved?.gen!==this.gen||this.closed)continue;
+      try{ws.send(bytes);}catch(e){try{ws.close(1011,'resync required');}catch{}}
     }
   }
 
@@ -233,10 +249,11 @@ export class NoteRoom extends DurableObject{
     if(url.pathname==='/collab/status')return new Response(null,{status:204});
     if(url.pathname.endsWith('/nota')){
       if(request.method!=='POST')return new Response(null,{status:405});
-      if(await this.ctx.storage.get('closed'))return new Response('sharing ended',{status:410});
+      if(this.closed||!this.gen||gen!==this.gen)return new Response('sharing ended',{status:410});
       let data;try{data=await request.json();}catch{return new Response('invalid request',{status:400});}
+      if(this.closed||gen!==this.gen)return new Response('sharing ended',{status:410});
       const {line,question,token,action}=data||{};
-      if(typeof line!=='string'||line.length>100||typeof question!=='string'||question.length>20000||typeof token!=='string'||token.length>100||!['claim','complete','release'].includes(action))return new Response('invalid request',{status:400});
+      if(typeof line!=='string'||line.length>64000||typeof question!=='string'||question.length>20000||typeof token!=='string'||token.length>100||!['claim','complete','release'].includes(action))return new Response('invalid request',{status:400});
       // only a room someone has shared answers: a made-up id is not a free
       // place to keep rows
       if(!await this.ctx.storage.get('host')&&!this.hasContent())return new Response('no such note',{status:404});
@@ -274,10 +291,14 @@ export class NoteRoom extends DurableObject{
       if(request.method!=='POST')return new Response(null,{status:405,headers:{Allow:'POST'}});
       if(!/^[a-z0-9]{16,80}$/.test(token)||!/^[a-z0-9]{8,40}$/.test(gen))return new Response('invalid request',{status:400});
       if(host&&token!==host)return new Response('not the host',{status:403});
-      const closed=await this.ctx.storage.get('closed');
       if(!host)await this.ctx.storage.put('host',token);
-      if(closed||!await this.ctx.storage.get('gen')){ await this.ctx.storage.put('gen',gen); await this.ctx.storage.delete('closed'); }
-      return Response.json({gen:await this.ctx.storage.get('gen')});
+      if(this.closed||!this.gen){
+        this.ctx.storage.sql.exec('DELETE FROM updates');this.ctx.storage.sql.exec('DELETE FROM nota_requests');
+        this.doc?.destroy();this.doc=null;this.tail=null;this.pending=0;this.pendingBytes=0;this.storedBytes=0;this.journalReady=true;
+        this.gen=gen;this.closed=false;
+        await this.ctx.storage.put('gen',gen);await this.ctx.storage.delete('closed');
+      }
+      return Response.json({gen:this.gen});
     }
     if(request.headers.get('Upgrade')!=='websocket')return new Response('expected a websocket',{status:426});
     // a page from before /open claims the room with its first connection
@@ -287,17 +308,19 @@ export class NoteRoom extends DurableObject{
     this.ctx.acceptWebSocket(server);
     const offered=(request.headers.get('Sec-WebSocket-Protocol')||'').split(',').map(s=>s.trim());
     const headers=offered.includes('notas')?{'Sec-WebSocket-Protocol':'notas'}:undefined;
-    const current=await this.ctx.storage.get('gen');
+    const current=this.gen;
     // Ended, or ended and shared again since this page last saw it: the
     // host included, whose other devices keep their copy as their own note.
     // A page with no generation yet is arriving by the link.
-    if(await this.ctx.storage.get('closed')||(current&&gen!==current)){
+    if(this.closed||!current||gen!==current){
+      server.serializeAttachment({retired:true});
       server.close(ENDED,'the host has stopped sharing');
       return new Response(null,{status:101,webSocket:client,headers});
     }
     this.load();
     this.loadAwareness();
-    server.serializeAttachment({clients:[]});
+    const reconnect=url.searchParams.get('session')||'';
+    server.serializeAttachment({gen:current,clients:[],session:/^[a-z0-9]{24,80}$/.test(reconnect)?reconnect:''});
     // first sync step and the present company, as y-websocket's server does
     const enc=encoding.createEncoder();
     encoding.writeVarUint(enc,SYNC);
@@ -329,7 +352,7 @@ export class NoteRoom extends DurableObject{
     // Fragment a protocol reply, including a large image written by a single
     // author. The provider reassembles it before Yjs sees the update.
     const message=syncMessage(syncProtocol.messageYjsSyncStep2,whole);
-    if(message.byteLength>128*1024*1024){ws.close(TOO_BIG,'this note is too big to share');return;}
+    if(message.byteLength>MESSAGE_MAX){ws.close(TOO_BIG,'this note is too big to share');return;}
     for(let at=0;at<message.length;at+=FRAME_LIMIT-12){
       const chunk=message.subarray(at,at+FRAME_LIMIT-12),frame=new Uint8Array(12+chunk.length),head=new DataView(frame.buffer);
       frame.set([255,78,84,1]);head.setUint32(4,message.length);head.setUint32(8,at);frame.set(chunk,12);ws.send(frame);
@@ -346,20 +369,31 @@ export class NoteRoom extends DurableObject{
   }
 
   handle(ws,message){
+    const auth=ws.deserializeAttachment();
+    if(this.closed||!this.gen||!auth||auth.retired||auth.gen!==this.gen||ws.readyState!==1)return;
     if(typeof message==='string')return;
+    if(message.byteLength>MESSAGE_MAX){ws.close(TOO_BIG,'this edit is too big to share');return;}
+    const now=Date.now(),elapsed=Math.max(0,now-(auth.rateAt||now))/1000;
+    auth.messages=Math.min(240,(auth.messages??240)+elapsed*120)-1;
+    auth.bytes=Math.min(MESSAGE_MAX*2,(auth.bytes??MESSAGE_MAX*2)+elapsed*4*1024*1024)-message.byteLength;
+    auth.rateAt=now;
+    if(auth.messages<0||auth.bytes<0){ws.close(4429,'too many updates');return;}
+    ws.serializeAttachment(auth);
     const dec=decoding.createDecoder(new Uint8Array(message));
     const type=decoding.readVarUint(dec);
     if(type===SYNC){
-      this.load();
-      if(decoding.peekVarUint(dec)===syncProtocol.messageYjsSyncStep1){
-        decoding.readVarUint(dec);
-        this.sendMissing(ws,decoding.readVarUint8Array(dec));
-        return;
+      const kind=decoding.readVarUint(dec),update=decoding.readVarUint8Array(dec);
+      if(kind===syncProtocol.messageYjsSyncStep1){this.load();this.sendMissing(ws,update);return;}
+      if(kind!==syncProtocol.messageYjsSyncStep2&&kind!==syncProtocol.messageYjsUpdate)throw new Error('unknown sync message');
+      // Decode before journalling: malformed updates never poison durable storage.
+      this.journal();
+      if(this.storedBytes+(this.tail?.dirty?this.tail.data.byteLength:0)+update.byteLength>DOCUMENT_MAX){
+        this.flushNow();this.compact();
+        if(this.storedBytes+update.byteLength>DOCUMENT_MAX){ws.close(TOO_BIG,'this note is too big to share');return;}
       }
-      const enc=encoding.createEncoder();
-      encoding.writeVarUint(enc,SYNC);
-      syncProtocol.readSyncMessage(dec,enc,this.doc,ws);
-      if(encoding.length(enc)>1)ws.send(encoding.toUint8Array(enc));
+      Y.decodeUpdate(update);
+      if(this.doc)Y.applyUpdate(this.doc,update,ws);
+      else{this.store(update);this.broadcast(syncMessage(syncProtocol.messageYjsUpdate,update),ws);}
     }else if(type===AWARENESS){
       if(message.byteLength>PRESENCE_MAX)return;
       this.loadAwareness();
@@ -371,14 +405,30 @@ export class NoteRoom extends DurableObject{
       const update=decoding.readVarUint8Array(dec);
       // the client ids this socket speaks for are kept on the socket, so
       // they can be cleared when it closes even after a hibernation
-      const attachment=ws.deserializeAttachment()||{clients:[]};
+      const attachment=ws.deserializeAttachment();
       const known=new Set(attachment.clients);
       const peek=decoding.createDecoder(update);
       const n=decoding.readVarUint(peek),named=[];
-      for(let i=0;i<n;i++){named.push(decoding.readVarUint(peek));decoding.readVarUint(peek);decoding.readVarString(peek);}
+      if(n>4){ws.close(1008,'too many presence ids');return;}
+      const clocks=new Map();
+      for(let i=0;i<n;i++){const id=decoding.readVarUint(peek);named.push(id);clocks.set(id,decoding.readVarUint(peek));decoding.readVarString(peek);}
+      if(new Set([...known,...named]).size>4){ws.close(1008,'too many presence ids');return;}
+      const presenceAt=Date.now(),dt=Math.max(0,presenceAt-(attachment.presenceAt||presenceAt))/1000;
+      attachment.presenceTokens=Math.min(40,(attachment.presenceTokens??40)+dt*20)-1;attachment.presenceAt=presenceAt;
+      if(attachment.presenceTokens<0){ws.close(4429,'too much presence');return;}
+      const owners=new Map();
+      for(const socket of this.ctx.getWebSockets())for(const id of socket.deserializeAttachment()?.clients||[])owners.set(id,socket);
       // A socket speaks only for the client ids it announced first: naming
       // another socket's id would clear or impersonate someone else.
-      for(const id of named){ const owner=this.ownerOf(id); if(owner&&owner!==ws)return; }
+      for(const id of named){
+        const owner=owners.get(id);if(!owner||owner===ws)continue;
+        const previous=owner.deserializeAttachment();
+        if(owner.readyState===1&&(!attachment.session||attachment.session!==previous?.session))return;
+        if((clocks.get(id)||0)<=(this.awareness.meta.get(id)?.clock||0))return;
+        previous.clients=(previous.clients||[]).filter(x=>x!==id);
+        previous.awareness=awarenessProtocol.encodeAwarenessUpdate(this.awareness,previous.clients);
+        owner.serializeAttachment(previous);
+      }
       for(const id of named)known.add(id);
       awarenessProtocol.applyAwarenessUpdate(this.awareness,update,ws);
       // Keep a bounded presence snapshot on the socket, not in SQLite.
@@ -392,7 +442,7 @@ export class NoteRoom extends DurableObject{
         }));
         snapshot=awarenessProtocol.encodeAwarenessUpdate(this.awareness,clients,compact);
       }
-      ws.serializeAttachment({clients,seenAt:Date.now(),
+      ws.serializeAttachment({...attachment,clients,seenAt:Date.now(),
         awareness:snapshot.byteLength<=12000?snapshot:undefined});
     }
   }
@@ -400,13 +450,16 @@ export class NoteRoom extends DurableObject{
   // the host ended the room: everyone is told and cut off, the document
   // is wiped here, and the room stays closed to all but the host
   async end(){
+    this.closed=true;
+    for(const ws of this.ctx.getWebSockets())ws.serializeAttachment({retired:true});
     await this.ctx.storage.put('closed',true);
     clearTimeout(this.flushTimer);this.flushTimer=null;
     if(this.flushResolve){this.flushResolve();this.flushResolve=null;}
     for(const ws of this.ctx.getWebSockets()){ try{ws.close(ENDED,'the host has stopped sharing');}catch(e){} }
     this.ctx.storage.sql.exec('DELETE FROM updates');
     this.ctx.storage.sql.exec('DELETE FROM nota_requests');
-    if(this.doc){ this.doc.destroy(); this.doc=null; this.pending=0; this.pendingBytes=0; this.tail=null; }
+    if(this.doc)this.doc.destroy();
+    this.doc=null;this.pending=0;this.pendingBytes=0;this.storedBytes=0;this.tail=null;this.journalReady=true;
     if(this.presenceDoc)this.presenceDoc.destroy();
     this.presenceDoc=null; this.awareness=null;
   }
@@ -422,6 +475,7 @@ export class NoteRoom extends DurableObject{
   webSocketClose(ws){this.leave(ws);}
   webSocketError(ws){this.leave(ws);}
   leave(ws){
+    if(this.closed||ws.deserializeAttachment()?.retired){try{ws.close();}catch{}return;}
     this.flush();
     this.loadAwareness(ws);
     const {clients=[]}=ws.deserializeAttachment()||{};

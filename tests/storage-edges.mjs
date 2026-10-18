@@ -36,11 +36,13 @@ try{
   assert.equal(index.folder,'school');assert.equal(index.pinned,true);assert.equal(index.trashed,123);
   await page.evaluate(()=>N.core.patchIndexRows([N.core.S.id],()=>({trashed:undefined})));
   const rescue=await page.evaluate(async()=>{
-    const C=N.core;C.S.title='Last unsaved words';C.markDirty();C.rescueSave();
-    // Simulate termination before the queued write reaches IndexedDB.
-    C.S.dirty=false;await C.recoverRescues();return (await C.Store.index()).map(r=>r.title);
+    const C=N.core;C.S.title='Last unsaved words';C.S.lines=[{id:'rescue-line',text:'Last unsaved words',y:120,h:30}];C.markDirty();C.rescueSave();C.S.dirty=false;
+    const key=Object.keys(localStorage).find(k=>k.startsWith('notas.rescue.')&&JSON.parse(localStorage.getItem(k)).title==='Last unsaved words'),raw=localStorage.getItem(key);
+    await C.recoverRescues();const liveKept=localStorage.getItem(key)===raw;
+    localStorage.setItem('notas.rescue.audit-abandoned',raw);await C.recoverRescues();
+    const rows=await C.Store.index();return {liveKept,recovered:rows.some(r=>r.title==='Last unsaved words'&&r.recoveryOf===JSON.parse(raw).id)};
   });
-  assert.ok(rescue.includes('Last unsaved words'));
+  assert.deepEqual(rescue,{liveKept:true,recovered:true});
   const fidelity=await page.evaluate(async()=>{
     const C=N.core;const raw={localVersion:2,title:'Imported',created:123456789,folder:'school',strokes:[],lines:[{id:'one',text:'hello',y:120,h:30}],images:[]};
     const ok=await N.ui.importNoteFile(new File([JSON.stringify(raw)],'note.json'));

@@ -137,6 +137,14 @@ test('a curve on unnumbered axes is read off at even steps',()=>{
   assert.match(out[0],/curve 1 through .*; lowest point near/);
 });
 
+test('F62: a monotonic half-parabola or square-root curve is not a straight gradient',()=>{
+  for(const fn of [x=>x*x,x=>Math.sqrt(x)]){
+    const points=Array.from({length:101},(_,i)=>[100+i,400-300*fn(i/100)]),curve=stroke('curve',points);
+    const measured=D.measure(curve);assert.ok(measured.chord/measured.len>.92,'the old chord-only rule accepts this curve');assert.equal(measured.straight,false);
+  }
+  assert.equal(D.measure(stroke('line',[[0,0],[100,300]])).straight,true);
+});
+
 test('a number line with ticks and numbers',()=>{
   const s=[stroke('line',[[60,200],[460,200]])];
   for(let i=0;i<=4;i++){s.push(stroke('t'+i,[[100+i*80,190],[100+i*80,210]]));s.push(...word('n'+i,95+i*80,240,String(i)));}

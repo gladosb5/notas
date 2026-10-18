@@ -12,9 +12,15 @@ if(stamped!==page){
   if(process.argv.includes('--check'))throw Error('App release metadata is stale. Run node scripts/model-contract.mjs.');
   writeFileSync('notas.html',stamped);
 }
-const common=['local-recognition.js','notas.html'];
+// Recognition compatibility is independent of HTML, CSS and release stamps.
+const common=['local-recognition.js'];
 // the ONNX runtime shared by the workers still lives in assets/smart/
 const runtime=['assets/smart/ort.wasm.min.js','assets/smart/ort-wasm-simd-threaded.js','assets/smart/ort-wasm-simd-threaded.wasm'];
+const swPath='sw.js',sw=readFileSync(swPath,'utf8');
+const offlineFiles=[...runtime,'assets/text/ppocrv6-small.onnx','assets/text/ppocrv6_dict.txt'];
+const offlineHashes=Object.fromEntries(offlineFiles.map(file=>[file,createHash('sha256').update(readFileSync(file)).digest('hex')]));
+const verifiedSW=sw.replace(/const ASSET_HASHES=.*?;/,'const ASSET_HASHES='+JSON.stringify(offlineHashes)+';');
+if(verifiedSW!==sw){if(process.argv.includes('--check'))throw Error('Offline integrity hashes are stale. Run scripts/model-contract.mjs.');writeFileSync(swPath,verifiedSW);}
 const textRecognition=['text-worker.js','assets/text/ppocrv6-small.onnx','assets/text/ppocrv6_dict.txt'];
 const inkRecognition=['ink-worker.js','ink-features.js','assets/ink/encoder.onnx','assets/ink/decoder_step.onnx','assets/ink/vocab.json'];
 // Math now uses independent text evidence for named quantities. A text-model
