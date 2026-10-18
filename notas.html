@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v143">
+<meta name="notas-version" content="v144">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -3722,7 +3722,7 @@ function deleteImage(id){
   if(S.imageSelection===id)clearSelection();after();return true;
 }
 /* ---- background removal ---- */
-/* bg-worker.js holds a 107 MB model and needs most of a gigabyte while it
+/* bg-worker.js holds a 183 MB model and needs a good deal of memory while it
    runs, so it is let go a minute after the last job rather than kept all
    session. The
    model itself stays in the model store, so the next use only restarts it.
@@ -3797,7 +3797,7 @@ function cutoutAsk(msg,transfer,progress){
 }
 /* The model is downloaded in the background once the notebook has started
    and the handwriting readers have finished theirs, so the first "remove
-   background" does not sit behind 107 MB. Only the download: starting the
+   background" does not sit behind 183 MB. Only the download: starting the
    model waits for a picture. A connection that asks to save data is left
    alone, as are automated browsers (the test suite opens hundreds of fresh
    profiles); both still download on first use. */

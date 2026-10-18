@@ -20,7 +20,6 @@
     "test:collab-usage": "node --test tests/collab-usage.test.mjs",
     "build:collab": "node scripts/build-collab.mjs",
     "test:autocrop": "node tests/cutout-autocrop.mjs",
-    "test:slide": "node tests/slide-surface-browser.mjs",
     "deploy": "npm --prefix deploy/cloudflare run deploy",
     "test:edges": "node tests/storage-edges.mjs && node tests/tutor-edges.mjs && node tests/nota-writing.mjs && node tests/nota-model-routing.mjs && node tests/nota-tools.mjs && node tests/nota-format.mjs && node tests/ink-tools.mjs",
     "test:handwriting": "node scripts/model-contract.mjs --check && node --test tests/handwriting-intent.test.cjs && node tests/handwriting-intent.mjs",

@@ -1,5 +1,5 @@
 'use strict';
-const CACHE='notas-local-v143';
+const CACHE='notas-local-v144';
 self.addEventListener('message',event=>{
   if(event.data?.type==='GET_VERSION')event.ports[0]?.postMessage({version:CACHE.replace('notas-local-','')});
   // The update button explicitly applies this installed build. Only the
@@ -9,7 +9,7 @@ self.addEventListener('message',event=>{
 const ASSET_HASHES={"assets/smart/ort.wasm.min.js":"4043d2deda6a2e2fc783afc2b06d984068808181b88d451862c1230c433fce7a","assets/smart/ort-wasm-simd-threaded.js":"5687566b1bc1c8cf628d76c2ddb16b2a3b81a7997273d4666564880495088e57","assets/smart/ort-wasm-simd-threaded.wasm":"be0e129949062ad50290ef94683fac8be5bb6156f709e030b7a5f1661a2f6c17","assets/text/ppocrv6-small.onnx":"5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634","assets/text/ppocrv6_dict.txt":"b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d"};
 const RECOGNITION_ASSET=/\/assets\/(?:text|smart|ink)\//;
 const INK_MODEL=/\/assets\/ink\/[^?]*\.onnx$/;
-const SHELL=['./notas.html','./model-contract.js','./local-recognition.js','./ink-worker.js','./ink-features.js','./model-store.js','./text-worker.js','./bg-worker.js','./slide-surface.js','./assets/slide/model.js',
+const SHELL=['./notas.html','./model-contract.js','./local-recognition.js','./ink-worker.js','./ink-features.js','./model-store.js','./text-worker.js','./bg-worker.js','./assets/bg/model.js',
   // Workers request content-addressed model URLs. Cache those exact keys during
   // install so a newly activated build cannot pair fresh worker code with stale
   // weights, and text recognition still works on the first offline reopen.
@@ -19,6 +19,8 @@ const SHELL=['./notas.html','./model-contract.js','./local-recognition.js','./in
   // controls the page, so "available offline" came with neither reader
   // able to start offline. scripts/model-contract.mjs checks these hashes.
   './assets/smart/ort.wasm.min.js?v=4043d2de','./assets/smart/ort-wasm-simd-threaded.js?v=5687566b','./assets/smart/ort-wasm-simd-threaded.wasm?v=be0e1299',
+  // the background remover's runtime script and loader; its binary (27 MB, in parts) is kept the first time it is fetched
+  './assets/smart/ort.webgpu.min.js?v=ed951b6e','./assets/smart/ort-wasm-simd-threaded.asyncify.js?v=dee69056',
   './local-math-help.js','./diagram.js','./nota.js','./nota-fonts.js','./collab.js','./manifest.webmanifest','./asset-manifest.json',
   './assets/icon-16.png','./assets/icon-32.png','./assets/icon-192.png','./assets/icon-512.png',
   './assets/icon-maskable-512.png','./assets/apple-touch-icon.png',

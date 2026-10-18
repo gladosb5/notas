@@ -1,19 +1,17 @@
 // Background removal for pictures in a note: BiRefNet lite at 512x512 (MIT),
-// one model with two outputs from a single pass. `general` is the published
-// weights; `slide` is the fine-tuned last decoder stage that keeps a
-// projected slide whole (see docs/models/slide.md). The deformable convolutions
-// are exported as GridSample, which this runtime has, rather than the
-// gathers that took the old export to about 2 GB. Served from this site in
-// chunks under the per-file limit, each checked against its hash, and kept
-// in the model store. The page asks for it in the background once the
-// notebook has started (prefetch below), so the first picture does not wait.
-importScripts('./assets/smart/ort.wasm.min.js?v=4043d2de','./model-store.js','./assets/slide/model.js','./slide-surface.js');
+// studioludens/birefnet-lite-512, the fp32 weights. It runs on WebGPU where
+// the browser has it and falls back to WebAssembly where it does not, or
+// where the GPU cannot take the model. Served from this site in chunks under
+// the per-file limit, each checked against its hash, and kept in the model
+// store. The page asks for it in the background once the notebook has
+// started (prefetch below), so the first picture does not wait.
+importScripts('./assets/smart/ort.webgpu.min.js?v=ed951b6e','./model-store.js','./assets/bg/model.js');
 
+// The WebGPU build's own WebAssembly is 27 MB, over a static host's file
+// limit, so it is served in two parts that setup joins and hands over as the
+// binary (wasmBinary); only its script is loaded by address.
 const ORT_ROOT=new URL('./assets/smart/',self.location.href).href;
-ort.env.wasm.wasmPaths={
-  wasm:ORT_ROOT+'ort-wasm-simd-threaded.wasm?v=be0e1299',
-  mjs:ORT_ROOT+'ort-wasm-simd-threaded.js?v=5687566b'
-};
+ort.env.wasm.wasmPaths={mjs:ORT_ROOT+'ort-wasm-simd-threaded.asyncify.js?v=dee69056'};
 // A phone or tablet runs this in the little memory the browser leaves a
 // tab, beside the two handwriting readers. Every extra thread is another
 // worker with its own stack and scratch space, so there it runs on one.
@@ -29,12 +27,12 @@ ort.env.wasm.proxy=false;
 ort.env.logLevel='error';
 
 const SIZE=512,MEAN=[.485,.456,.406],STD=[.229,.224,.225];
-const MODEL=self.NOTAS_SLIDE_MODEL;
-// Earlier builds kept two other models in the store: the previous slide
-// model under assets/slide/ and the general one from Hugging Face. Once this
-// one is stored they are only taking up the device's space.
+const MODEL=self.NOTAS_BG_MODEL,RUNTIME=self.NOTAS_BG_RUNTIME;
+// Earlier builds kept other models in the store: the fine-tuned slide model
+// under assets/slide/ and the general one from Hugging Face. Once this one
+// is stored they are only taking up the device's space.
 const SUPERSEDED=['/assets/slide/','/birefnet-lite-512/'];
-let session,loading,fetching,started=false;
+let session,backend,loading,fetching,started=false,wasmOnly=false;
 
 function announce(id,phase,extra){self.postMessage({id,progress:true,phase,...extra});}
 async function download(url,id,offset=0,overall=0){
@@ -42,7 +40,7 @@ async function download(url,id,offset=0,overall=0){
   const total=Number(r.headers.get('content-length'))||0;
   if(!r.body)return new Uint8Array(await r.arrayBuffer());
   // Written straight into one buffer when the length is known: gathering
-  // the chunks and then joining them held the 94 MB twice at once, on a
+  // the chunks and then joining them held the model twice at once, on a
   // tablet already running the notebook.
   const reader=r.body.getReader();let chunks=null,loaded=0,last=0;
   let bytes=total?new Uint8Array(total):null;
@@ -54,7 +52,7 @@ async function download(url,id,offset=0,overall=0){
     if(bytes)bytes.set(value,loaded);else chunks.push(value);
     loaded+=value.length;
     const now=Date.now();if(now-last<200)continue;last=now;
-    announce(id,'download',{loaded:offset+loaded,total:overall||total});
+    if(id!=null)announce(id,'download',{loaded:offset+loaded,total:overall||total});
   }
   if(bytes)return loaded===bytes.length?bytes:bytes.slice(0,loaded);
   bytes=new Uint8Array(loaded);let at=0;
@@ -69,12 +67,28 @@ async function downloadChunks(id){
   // then let the model store verify the complete model before caching it.
   const bytes=new Uint8Array(MODEL.bytes);let at=0;
   for(const part of MODEL.parts){
-    const chunk=await download('./assets/slide/'+part.file,id,at,MODEL.bytes);
+    const chunk=await download('./assets/bg/'+part.file,id,at,MODEL.bytes);
     if(chunk.length!==part.bytes||await self.NOTAS_MODEL_STORE.sha256(chunk)!==part.sha256)throw Error('the background remover arrived damaged. try again.');
     bytes.set(chunk,at);at+=chunk.length;
   }
   if(at!==bytes.length)throw Error('the background remover is incomplete.');
   return bytes;
+}
+// the runtime's binary, joined from its parts and checked. The service
+// worker keeps the parts, so this is not downloaded again.
+let runtimeReady;
+function fetchRuntime(){
+  if(!runtimeReady)runtimeReady=(async()=>{
+    const bytes=new Uint8Array(RUNTIME.bytes);let at=0;
+    for(const part of RUNTIME.parts){
+      const chunk=await download(ORT_ROOT+part.file+'?v='+RUNTIME.sha256.slice(0,8),null);
+      if(chunk.length!==part.bytes||await self.NOTAS_MODEL_STORE.sha256(chunk)!==part.sha256)throw Error('the background remover arrived damaged. try again.');
+      bytes.set(chunk,at);at+=chunk.length;
+    }
+    if(at!==bytes.length||await self.NOTAS_MODEL_STORE.sha256(bytes)!==RUNTIME.sha256)throw Error('the background remover is incomplete.');
+    return bytes;
+  })().catch(e=>{runtimeReady=null;throw e;});
+  return runtimeReady;
 }
 function fetchModel(id){
   const store=self.NOTAS_MODEL_STORE;
@@ -88,95 +102,123 @@ function fetchModel(id){
   return fetching;
 }
 // download, check and store the model without starting it: starting takes
-// most of a gigabyte, which only a picture is worth
+// a good deal of memory, which only a picture is worth. The runtime's parts
+// come with it, for the service worker to keep, so the first picture works
+// offline too.
 async function prefetch(id){
   const store=self.NOTAS_MODEL_STORE;
   let have=[];try{have=await store.keys();}catch(e){}
-  if(have.includes(store.keyOf(MODEL.url)))return 'stored';
-  await fetchModel(id);
+  const stored=have.includes(store.keyOf(MODEL.url));
+  if(!stored)await fetchModel(id);
   // stored now: the bytes are let go, and a picture later reads them back
   fetching=null;
-  return 'downloaded';
+  await fetchRuntime();runtimeReady=null;
+  return stored?'stored':'downloaded';
 }
 
-// The model cannot be read from the disk as it runs: the runtime copies
-// every weight into its own memory before the first picture. What can be
-// done is to hold it only once. The stored copy is read, handed over and
-// let go as soon as the runtime has its own, rather than kept beside it for
-// as long as this worker lives; the runtime's pool, which grows to the
-// largest step and never gives memory back, is turned off; and the memory
-// plan made ahead of the run, one block for every step at once, is too.
+// whether the browser has a WebGPU adapter to give this worker
+async function gpuAvailable(){
+  try{return !!(self.navigator&&navigator.gpu&&await navigator.gpu.requestAdapter());}
+  catch(e){return false;}
+}
+function sessionOptions(provider){
+  return {executionProviders:[provider],graphOptimizationLevel:'all',
+    enableCpuMemArena:false,enableMemPattern:false,executionMode:'sequential',logSeverityLevel:3};
+}
+
+// On WebAssembly the model cannot be read from the disk as it runs: the
+// runtime copies every weight into its own memory before the first picture.
+// What can be done is to hold it only once. The stored copy is read, handed
+// over and let go as soon as the runtime has its own, rather than kept
+// beside it for as long as this worker lives; the runtime's pool, which
+// grows to the largest step and never gives memory back, is turned off; and
+// the memory plan made ahead of the run, one block for every step at once,
+// is too. WebGPU is tried first; when it cannot start the model, the same
+// bytes start on WebAssembly.
 async function setup(id,lean){
   if(!loading)loading=(async()=>{
     if(!started)ort.env.wasm.numThreads=threads(lean);
     let {bytes}=await fetchModel(id);
     fetching=null;
+    if(!started)ort.env.wasm.wasmBinary=await fetchRuntime();
     announce(id,'starting');
     started=true;
     try{
-      session=await ort.InferenceSession.create(bytes,{executionProviders:['wasm'],graphOptimizationLevel:'all',
-        enableCpuMemArena:false,enableMemPattern:false,executionMode:'sequential',logSeverityLevel:3});
-    }catch(e){
-      const why=String((e&&e.message)||e);
-      // Once the runtime has failed to start in this worker it stays failed
-      // (it remembers that no backend could be found), so the page is told
-      // to throw this worker away rather than ask it again.
-      throw Object.assign(Error('the background remover could not start on this device ('+why+').'),
-        {fatal:true,memory:/memory|allocat|no available backend|RangeError/i.test(why)});
+      let failure;
+      for(const provider of (!wasmOnly&&await gpuAvailable())?['webgpu','wasm']:['wasm']){
+        try{
+          session=await ort.InferenceSession.create(bytes,sessionOptions(provider));
+          backend=provider;failure=null;break;
+        }catch(e){
+          failure=e;
+          if(provider==='webgpu')console.warn('background remover: webgpu could not start the model, using wasm ('+String((e&&e.message)||e)+')');
+        }
+      }
+      if(failure){
+        const why=String((failure&&failure.message)||failure);
+        // Once the runtime has failed to start in this worker it stays failed
+        // (it remembers that no backend could be found), so the page is told
+        // to throw this worker away rather than ask it again.
+        throw Object.assign(Error('the background remover could not start on this device ('+why+').'),
+          {fatal:true,memory:/memory|allocat|no available backend|RangeError/i.test(why)});
+      }
     }finally{bytes=null;}
   })().catch(e=>{loading=null;throw e;});
   return loading;
 }
+// the GPU started the model and then failed it (a lost device, no memory for
+// a buffer): start the model again on WebAssembly
+async function useWasm(id,lean){
+  wasmOnly=true;loading=null;
+  const dead=session;session=null;
+  try{await dead?.release();}catch(e){}
+  await setup(id,lean);
+}
 
 // rgba is the picture already scaled to 512x512; the answer is its alpha
 // matte at the same size, which the page scales back up to the picture.
-// One run gives both readings. A confident projected slide keeps the slide
-// matte, refined to the screen's straight edges; anything else gets the
-// general one.
-async function matte(id,buffer,lean){
-  if(!(buffer instanceof ArrayBuffer)||buffer.byteLength!==SIZE*SIZE*4)throw Error('that picture could not be prepared.');
-  await setup(id,lean);
-  announce(id,'running');
-  const rgba=new Uint8ClampedArray(buffer),plane=SIZE*SIZE,data=new Float32Array(3*plane);
+async function infer(rgba){
+  const plane=SIZE*SIZE,data=new Float32Array(3*plane);
   for(let i=0;i<plane;i++){
     // transparent pixels are read as white, as they show on the paper
     const a=rgba[i*4+3]/255;
     for(let c=0;c<3;c++)data[c*plane+i]=((rgba[i*4+c]*a+255*(1-a))/255-MEAN[c])/STD[c];
   }
-  let out;
   const input=new ort.Tensor('float32',data,[1,3,SIZE,SIZE]);
-  try{out=await session.run({[session.inputNames[0]]:input});}
-  catch(e){
-    const why=String((e&&e.message)||e);
-    throw Object.assign(Error('the background remover stopped partway ('+why+').'),{fatal:true,memory:/memory|allocat|RangeError/i.test(why)});
-  }
+  try{return await session.run({[MODEL.input]:input});}
   finally{input.dispose();}
-  const slide=out[MODEL.outputs.slide].data,general=out[MODEL.outputs.general].data;
-  let alpha=new Uint8ClampedArray(plane);
-  // A run that overflows gives NaN, which comes out as a fully transparent
-  // picture: that is a failure, not a matte.
-  let bad=0,kept=0,strong=0,left=SIZE,top=SIZE,right=0,bottom=0;
-  for(let i=0;i<plane;i++){
-    const v=slide[i];if(!Number.isFinite(v)){bad++;continue;}
-    const p=1/(1+Math.exp(-v));
-    alpha[i]=255*Math.max(0,Math.min(1,(p-.4)/.2));
-    if(p>=.5){
-      kept++;if(p>=.9)strong++;
-      const x=i%SIZE,y=Math.floor(i/SIZE);
-      left=Math.min(left,x);top=Math.min(top,y);right=Math.max(right,x+1);bottom=Math.max(bottom,y+1);
+}
+async function matte(id,buffer,lean){
+  if(!(buffer instanceof ArrayBuffer)||buffer.byteLength!==SIZE*SIZE*4)throw Error('that picture could not be prepared.');
+  await setup(id,lean);
+  announce(id,'running',{backend});
+  const rgba=new Uint8ClampedArray(buffer),plane=SIZE*SIZE;
+  let out;
+  try{out=await infer(rgba);}
+  catch(e){
+    if(backend==='webgpu'){
+      console.warn('background remover: the GPU stopped partway, using wasm ('+String((e&&e.message)||e)+')');
+      try{await useWasm(id,lean);announce(id,'running',{backend});out=await infer(rgba);}catch(e2){e=e2;}
+    }
+    if(!out){
+      const why=String((e&&e.message)||e);
+      throw Object.assign(Error('the background remover stopped partway ('+why+').'),{fatal:true,memory:/memory|allocat|RangeError/i.test(why)});
     }
   }
-  // A slide must have a confident, substantial region, rather than a few
-  // scattered foreground specks. Partial slides may touch any image edge.
-  const slideDetected=!bad&&kept>=plane*.004&&strong>=kept*.9&&kept>=Math.max(1,(right-left)*(bottom-top))*.55;
-  if(slideDetected)alpha=self.NOTAS_SLIDE_SURFACE(rgba,alpha,SIZE);
-  else{
-    bad=0;
-    for(let i=0;i<plane;i++){const v=general[i];if(!Number.isFinite(v)){bad++;alpha[i]=0;}else alpha[i]=255/(1+Math.exp(-v));}
+  const logits=await out[MODEL.output].getData();
+  // the output is logits: the sigmoid is the alpha
+  const alpha=new Uint8ClampedArray(plane);
+  // A run that overflows gives NaN, which comes out as a fully transparent
+  // picture: that is a failure, not a matte.
+  let bad=0;
+  for(let i=0;i<plane;i++){
+    const v=logits[i];
+    if(!Number.isFinite(v)){bad++;continue;}
+    alpha[i]=255/(1+Math.exp(-v));
   }
   for(const t of Object.values(out))t.dispose?.();
   if(bad>plane*.01)throw Error('the background remover could not make sense of this picture.');
-  return {alpha,slideDetected};
+  return {alpha,backend};
 }
 
 async function handleMessage(data){

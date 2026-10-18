@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "sha": "1cb0fb360dadd15af77c639085d77a9df67db0c64315560c3de005f676345ac2",
+  "sha256": "1cb0fb360dadd15af77c639085d77a9df67db0c64315560c3de005f676345ac2",
+  "url": "./assets/bg/model.json?v=1cb0fb360dad",
+  "bytes": 191877254,
+  "parts": [
+    {
+      "file": "birefnet-1cb0fb360dad.0.bin",
+      "bytes": 20971520,
+      "sha256": "bcc9d981b2eeebe30271b24d3c9b1968f7740f66c121e405d2ad0787b69a8211"
+    },
+    {
+      "file": "birefnet-1cb0fb360dad.1.bin",
+      "bytes": 20971520,
+      "sha256": "55543b9ace68b671c96ada680ca79089cfe98ce7c1484c6242006c6594ef81c4"
+    },
+    {
+      "file": "birefnet-1cb0fb360dad.2.bin",
+      "bytes": 20971520,
+      "sha256": "f1bc4ba659e14fe53285b4cce5066d11a909f7da91b4f1e4c823d3d33234c133"
+    },
+    {
+      "file": "birefnet-1cb0fb360dad.3.bin",
+      "bytes": 20971520,
+      "sha256": "f8f71780160558a703e6c2c4759015367a14e2af7701ac3bfd74573036c1848e"
+    },
+    {
+      "file": "birefnet-1cb0fb360dad.4.bin",
+      "bytes": 20971520,
+      "sha256": "df9f25d3def5a06fe88b6daf3ed38353a16f5317014d1fa52a5920965c54d2ab"
+    },
+    {
+      "file": "birefnet-1cb0fb360dad.5.bin",
+      "bytes": 20971520,
+      "sha256": "dac68a9dfe72723d29f10455e545e5d16ef192e2db2e9396776b8cd603f74374"
+    },
+    {
+      "file": "birefnet-1cb0fb360dad.6.bin",
+      "bytes": 20971520,
+      "sha256": "a15ec5e3a2c576d9f66594244f4ef4d392874aab51a16a586971315e75f90c7a"
+    },
+    {
+      "file": "birefnet-1cb0fb360dad.7.bin",
+      "bytes": 20971520,
+      "sha256": "32c7ea5fc3d13313b03eddbe4d6c09291a6abffb266478848fa7ad3a7886ce09"
+    },
+    {
+      "file": "birefnet-1cb0fb360dad.8.bin",
+      "bytes": 20971520,
+      "sha256": "4be5ac003be48a70bb961b32ebb3cf0d8108e6f577d07c308da9078017d4a637"
+    },
+    {
+      "file": "birefnet-1cb0fb360dad.9.bin",
+      "bytes": 3133574,
+      "sha256": "7464b266ee961631becea92a44004e2c53e6999003e3f7bbd37d6b64c81cd28c"
+    }
+  ],
+  "input_size": 512,
+  "input": "input_image",
+  "output": "output_image",
+  "weights": "fp32",
+  "source": "https://huggingface.co/studioludens/birefnet-lite-512",
+  "revision": "962e67969ec6acec9c19fab76acee4f5e22e990c"
+}

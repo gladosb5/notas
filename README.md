@@ -49,7 +49,7 @@ npx playwright install chromium
 npm run test:edges
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for browser tests, the project layout, and asset updates. Model provenance and limitations are documented in [the slide model card](docs/models/slide.md) and the notices under `assets/`.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for browser tests, the project layout, and asset updates. Model provenance and limitations are documented in [the background remover model card](docs/models/background.md) and the notices under `assets/`.
 
 ## License
 

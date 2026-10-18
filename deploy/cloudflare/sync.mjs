@@ -21,21 +21,21 @@ const SHELL=['notas.html','sw.js','model-contract.js','local-recognition.js','in
   'ink-features.js','model-store.js','text-worker.js','bg-worker.js','local-math-help.js','diagram.js','nota.js','nota-fonts.js','manifest.webmanifest','asset-manifest.json',
   'assets/icon-16.png','assets/icon-32.png','assets/icon-192.png','assets/icon-512.png',
   'assets/icon-maskable-512.png','assets/apple-touch-icon.png','assets/logo.png','assets/nota-thinking.png'];
-const MODEL_DIRS=['assets/smart','assets/ink','assets/text','assets/slide'];
+const MODEL_DIRS=['assets/smart','assets/ink','assets/text','assets/bg'];
 const ASSET_LIMIT=25*1024*1024;
 
 // Stamp the app release and recognition/offline integrity contracts before
 // packaging, so a deployment cannot publish stale compatibility metadata.
 execFileSync(process.execPath,['scripts/model-contract.mjs'],{cwd:root,stdio:'inherit'});
-const slide=JSON.parse(await readFile(path.join(root,'assets/slide/model.json'),'utf8'));
+const bgModel=JSON.parse(await readFile(path.join(root,'assets/bg/model.json'),'utf8'));
 const whole=createHash('sha256');let modelBytes=0;
-for(const part of slide.parts){
-  if(path.basename(part.file)!==part.file||!part.file.endsWith('.bin'))throw Error('invalid slide model chunk path');
-  const bytes=await readFile(path.join(root,'assets/slide',part.file));
-  if(bytes.length!==part.bytes||createHash('sha256').update(bytes).digest('hex')!==part.sha256)throw Error('damaged slide model chunk: '+part.file);
+for(const part of bgModel.parts){
+  if(path.basename(part.file)!==part.file||!part.file.endsWith('.bin'))throw Error('invalid background model chunk path');
+  const bytes=await readFile(path.join(root,'assets/bg',part.file));
+  if(bytes.length!==part.bytes||createHash('sha256').update(bytes).digest('hex')!==part.sha256)throw Error('damaged background model chunk: '+part.file);
   whole.update(bytes);modelBytes+=bytes.length;
 }
-if(modelBytes!==slide.bytes||whole.digest('hex')!==slide.sha)throw Error('incomplete slide model');
+if(modelBytes!==bgModel.bytes||whole.digest('hex')!==bgModel.sha)throw Error('incomplete background model');
 
 
 const manifest=JSON.parse(await readFile(path.join(root,'asset-manifest.json'),'utf8'));
@@ -64,7 +64,7 @@ for(const rel of [...wanted].sort()){
 // picked up; the model files are content-addressed (?v=<hash>) so they
 // may be cached for good.
 const noCache=['/','/notas.html','/sw.js','/model-contract.js','/asset-manifest.json','/manifest.webmanifest',
-  '/local-recognition.js','/ink-worker.js','/ink-features.js','/model-store.js','/text-worker.js','/bg-worker.js','/slide-surface.js','/local-math-help.js','/nota.js'];
+  '/local-recognition.js','/ink-worker.js','/ink-features.js','/model-store.js','/text-worker.js','/bg-worker.js','/local-math-help.js','/nota.js'];
 const onnx=[...wanted].filter(f=>f.endsWith('.onnx')).map(f=>'/'+f);
 // The policy is per path, never under /*: two matching rules would send two
 // policies, and a browser enforces both.
@@ -75,10 +75,10 @@ const headers=[
   ...['/','/notas.html'].flatMap(p=>[p,'  Content-Security-Policy: '+pageCsp,'  X-Frame-Options: DENY']),
   ...['/ink-worker.js','/text-worker.js','/bg-worker.js','/sw.js'].flatMap(p=>[p,'  Content-Security-Policy: '+ASSET_CSP]),
   ...noCache.flatMap(p=>[p,'  Cache-Control: no-cache']),
-  ...MODEL_DIRS.filter(d=>d!=='assets/slide').flatMap(d=>['/'+d+'/*','  Cache-Control: public, max-age=31536000, immutable']),
-  '/assets/slide/*.bin','  Cache-Control: public, max-age=31536000, immutable','  Content-Type: application/octet-stream',
-  '/assets/slide/model.js','  Cache-Control: no-cache',
-  '/assets/slide/model.json','  Cache-Control: no-cache',
+  ...MODEL_DIRS.filter(d=>d!=='assets/bg').flatMap(d=>['/'+d+'/*','  Cache-Control: public, max-age=31536000, immutable']),
+  '/assets/bg/*.bin','  Cache-Control: public, max-age=31536000, immutable','  Content-Type: application/octet-stream',
+  '/assets/bg/model.js','  Cache-Control: no-cache',
+  '/assets/bg/model.json','  Cache-Control: no-cache',
   ...onnx.flatMap(p=>[p,'  Content-Type: application/octet-stream']),
   '/manifest.webmanifest','  Content-Type: application/manifest+json',
   ''].join('\n');
