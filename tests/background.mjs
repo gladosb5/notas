@@ -1,27 +1,44 @@
 // Background removal: the selection bar offers it on a picture, the model
-// comes from its pinned Hugging Face revision, the result is a transparent
-// cut-out, and one undo brings the original back. The prefetch that runs
-// in the background on a real start stores the model beforehand. The browser profile is
-// kept in test-results/ so the model store holds the 94 MB model after the
-// first run and later runs do not download it again.
+// comes from the site's verified chunks, the result is a transparent
+// cut-out, and one undo brings the original back. Start with a fresh cache,
+// then verify that a new worker can load the stored model entirely offline.
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
-import {fileURLToPath} from 'node:url';
 import {startServer} from '../scripts/serve.mjs';
 
-const PROFILE=fileURLToPath(new URL('../test-results/background-profile',import.meta.url));
 const server=await startServer(0);
 const base=`http://127.0.0.1:${server.address().port}`;
-const context=await chromium.launchPersistentContext(PROFILE,{channel:process.env.PLAYWRIGHT_CHANNEL,headless:true,viewport:{width:800,height:1100}});
+const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
+const context=await browser.newContext({viewport:{width:800,height:1100}});
 try{
+  await context.addInitScript(()=>{
+    window.backgroundWorkers=[];
+    const OriginalWorker=window.Worker;
+    window.Worker=class extends OriginalWorker{
+      constructor(url,...args){
+        super(url,...args);
+        if(String(url).includes('bg-worker.js'))window.backgroundWorkers.push(this);
+      }
+      terminate(){this.stopped=true;return super.terminate();}
+    };
+  });
   const page=await context.newPage();
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(base+'/notas.html');
   await page.waitForFunction(()=>window.N&&N.ui&&N.ink&&N.ink.removeBackground);
+  // The original 502 only occurs when the page is controlled by sw.js.
+  await page.evaluate(async()=>{
+    await navigator.serviceWorker.register('./sw.js');
+    await Promise.race([navigator.serviceWorker.ready,new Promise((_,reject)=>setTimeout(()=>reject(Error('offline setup timed out')),60000))]);
+  });
+  await page.reload();
+  await page.waitForFunction(()=>navigator.serviceWorker.controller&&window.N?.ink?.removeBackground);
   // the background download (automatic on a real start, asked for here since
   // automated browsers skip it) leaves the model in the store, not running
   const warmed=await page.evaluate(()=>N.ink.prefetchCutout());
   assert.ok(warmed==='stored'||warmed==='downloaded','the prefetch stores the model: '+warmed);
+  assert.ok(await page.evaluate(()=>backgroundWorkers.length===1&&backgroundWorkers.every(w=>w.stopped)), 'prefetch releases its worker immediately');
+  console.log('background model and runtime cached; prefetch worker terminated');
   const before=await page.evaluate(async()=>{
     const S=N.core.S;
     // a dark disc on a light, slightly textured backdrop
@@ -76,6 +93,7 @@ try{
   assert.ok(out.centre>224,'the subject stayed opaque');
   assert.ok(out.selected,'the lasso selected the picture');
   assert.ok(out.undone&&out.redone,'one undo restores the original, redo the cut-out');
+  assert.ok(await page.evaluate(()=>backgroundWorkers.length===2&&backgroundWorkers.every(w=>w.stopped)), 'inference releases its worker immediately');
   // the button turns into undo background, which brings the original back,
   // and remove background then puts the kept cut-out back without the model
   const label=async()=>{await page.waitForTimeout(50);return page.locator('#selbar button').allTextContents();};
@@ -95,6 +113,7 @@ try{
   assert.ok(toggled.undone&&toggled.orig&&toggled.again,'each toggle is one undo: '+JSON.stringify(toggled));
   // a cropped picture: the background goes from its whole original, so a
   // later, wider crop does not bring it back, and the crop stays as it was
+  await context.setOffline(true);
   const cropped=await page.evaluate(async id=>{
     const S=N.core.S,C=N.core,im=S.images.find(i=>i.id===id);
     C.undo();   // back to the photo with its backdrop
@@ -122,6 +141,7 @@ try{
   assert.ok(cropped.back.original,'the original is the whole picture again');
   assert.deepEqual(cropped.again.src,cropped.src,'remove background restores the trimmed cut-out');
   assert.deepEqual(cropped.again.crop,cropped.crop,'the toggle preserves the trimmed crop');
+  assert.ok(await page.evaluate(()=>backgroundWorkers.length===3&&backgroundWorkers.every(w=>w.stopped)), 'a fresh worker removes another background entirely offline and terminates');
   assert.deepEqual(errors,[]);
   console.log('background removal: ok');
-}finally{await context.close();server.close();}
+}finally{await browser.close();server.close();}

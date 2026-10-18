@@ -81,7 +81,7 @@ function fetchRuntime(){
   if(!runtimeReady)runtimeReady=(async()=>{
     const bytes=new Uint8Array(RUNTIME.bytes);let at=0;
     for(const part of RUNTIME.parts){
-      const chunk=await download(ORT_ROOT+part.file+'?v='+RUNTIME.sha256.slice(0,8),null);
+      const chunk=await download(ORT_ROOT+part.file+'?v='+part.sha256.slice(0,8),null);
       if(chunk.length!==part.bytes||await self.NOTAS_MODEL_STORE.sha256(chunk)!==part.sha256)throw Error('the background remover arrived damaged. try again.');
       bytes.set(chunk,at);at+=chunk.length;
     }
@@ -162,7 +162,7 @@ async function setup(id,lean){
         throw Object.assign(Error('the background remover could not start on this device ('+why+').'),
           {fatal:true,memory:/memory|allocat|no available backend|RangeError/i.test(why)});
       }
-    }finally{bytes=null;}
+    }finally{bytes=null;runtimeReady=null;ort.env.wasm.wasmBinary=null;}
   })().catch(e=>{loading=null;throw e;});
   return loading;
 }
@@ -205,20 +205,21 @@ async function matte(id,buffer,lean){
       throw Object.assign(Error('the background remover stopped partway ('+why+').'),{fatal:true,memory:/memory|allocat|RangeError/i.test(why)});
     }
   }
-  const logits=await out[MODEL.output].getData();
-  // the output is logits: the sigmoid is the alpha
-  const alpha=new Uint8ClampedArray(plane);
-  // A run that overflows gives NaN, which comes out as a fully transparent
-  // picture: that is a failure, not a matte.
-  let bad=0;
-  for(let i=0;i<plane;i++){
-    const v=logits[i];
-    if(!Number.isFinite(v)){bad++;continue;}
-    alpha[i]=255/(1+Math.exp(-v));
-  }
-  for(const t of Object.values(out))t.dispose?.();
-  if(bad>plane*.01)throw Error('the background remover could not make sense of this picture.');
-  return {alpha,backend};
+  try{
+    const logits=await out[MODEL.output].getData();
+    // the output is logits: the sigmoid is the alpha
+    const alpha=new Uint8ClampedArray(plane);
+    // A run that overflows gives NaN, which comes out as a fully transparent
+    // picture: that is a failure, not a matte.
+    let bad=0;
+    for(let i=0;i<plane;i++){
+      const v=logits[i];
+      if(!Number.isFinite(v)){bad++;continue;}
+      alpha[i]=255/(1+Math.exp(-v));
+    }
+    if(bad>plane*.01)throw Error('the background remover could not make sense of this picture.');
+    return {alpha,backend};
+  }finally{for(const t of Object.values(out))t.dispose?.();}
 }
 
 async function handleMessage(data){
@@ -229,7 +230,16 @@ async function handleMessage(data){
     return;
   }
   try{
-    const result=await matte(id,rgba,lean);
+    let result;
+    try{result=await matte(id,rgba,lean);}
+    finally{
+      // Keep the verified disk cache, but release weights and GPU resources
+      // before replying, including on failure. The page terminates the worker
+      // when the queue drains to reclaim the runtime's WASM heap too.
+      const dead=session;session=null;loading=null;fetching=null;runtimeReady=null;
+      ort.env.wasm.wasmBinary=null;
+      try{await dead?.release();}catch(e){}
+    }
     self.postMessage({id,...result},[result.alpha.buffer]);
   }catch(err){
     const memory=!!err?.memory||/out of memory|\boom\b|memory access out of bounds|allocat|memory.*(?:grow|limit)/i.test(String(err?.message||err));

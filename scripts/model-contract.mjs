@@ -17,7 +17,20 @@ const common=['local-recognition.js'];
 // the ONNX runtime shared by the workers still lives in assets/smart/
 const runtime=['assets/smart/ort.wasm.min.js','assets/smart/ort-wasm-simd-threaded.js','assets/smart/ort-wasm-simd-threaded.wasm'];
 const swPath='sw.js',sw=readFileSync(swPath,'utf8');
-const offlineFiles=[...runtime,'assets/text/ppocrv6-small.onnx','assets/text/ppocrv6_dict.txt'];
+// Each split background runtime file is content-addressed by its own bytes,
+// while the manifest also verifies the assembled binary.
+const bgRuntime=JSON.parse(/self\.NOTAS_BG_RUNTIME=(\{[^\n]+\});?/.exec(readFileSync('assets/bg/model.js','utf8'))[1]);
+const joined=createHash('sha256');let runtimeBytes=0;
+for(const part of bgRuntime.parts){
+  if(!/^[\w.-]+\.bin$/.test(part.file))throw Error('Invalid background runtime chunk path.');
+  const bytes=readFileSync('assets/smart/'+part.file);
+  if(bytes.length!==part.bytes||createHash('sha256').update(bytes).digest('hex')!==part.sha256)throw Error('Damaged background runtime chunk: '+part.file);
+  joined.update(bytes);runtimeBytes+=bytes.length;
+}
+if(runtimeBytes!==bgRuntime.bytes||joined.digest('hex')!==bgRuntime.sha256)throw Error('Incomplete background runtime.');
+const offlineFiles=[...runtime,'assets/text/ppocrv6-small.onnx','assets/text/ppocrv6_dict.txt',
+  'assets/smart/ort.webgpu.min.js','assets/smart/ort-wasm-simd-threaded.asyncify.js',
+  ...bgRuntime.parts.map(part=>'assets/smart/'+part.file)];
 const offlineHashes=Object.fromEntries(offlineFiles.map(file=>[file,createHash('sha256').update(readFileSync(file)).digest('hex')]));
 const verifiedSW=sw.replace(/const ASSET_HASHES=.*?;/,'const ASSET_HASHES='+JSON.stringify(offlineHashes)+';');
 if(verifiedSW!==sw){if(process.argv.includes('--check'))throw Error('Offline integrity hashes are stale. Run scripts/model-contract.mjs.');writeFileSync(swPath,verifiedSW);}

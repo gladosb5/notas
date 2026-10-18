@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v144">
+<meta name="notas-version" content="v145">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -3723,12 +3723,11 @@ function deleteImage(id){
 }
 /* ---- background removal ---- */
 /* bg-worker.js holds a 183 MB model and needs a good deal of memory while it
-   runs, so it is let go a minute after the last job rather than kept all
-   session. The
-   model itself stays in the model store, so the next use only restarts it.
+   runs, so it is terminated as soon as its queued jobs finish. The model
+   itself stays in the model store, so the next use only restarts it.
    One worker answers every job: a picture asked for while the background
    download is still running waits for that download instead of repeating it. */
-const CUTOUT_SIZE=512, CUTOUT_IDLE=60000, CUTOUT_MAX_CHARS=8*1024*1024;  /* IMAGE_MAX_CHARS */
+const CUTOUT_SIZE=512, CUTOUT_MAX_CHARS=8*1024*1024;  /* IMAGE_MAX_CHARS */
 const CUTOUT_LEAN=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)||(/Macintosh/.test(navigator.userAgent)&&navigator.maxTouchPoints>1);
 /* iOS caps the pixels a canvas may have, and the memory all canvases share;
    a canvas past either is drawn as nothing, and read back as transparent.
@@ -3747,17 +3746,16 @@ function canvasBlank(cv){
     return true;
   }catch(e){ return false; }
 }
-let cutoutWorker=null, cutoutIdle=0, cutoutSeq=0, cutoutBusy=false, cutoutLowMemory=false;
+let cutoutWorker=null, cutoutSeq=0, cutoutBusy=false, cutoutLowMemory=false;
 const cutoutJobs=new Map();
 function cutoutStop(err){
-  const w=cutoutWorker; cutoutWorker=null; clearTimeout(cutoutIdle);
+  const w=cutoutWorker; cutoutWorker=null;
   if(w) w.terminate();
   for(const job of cutoutJobs.values()){clearTimeout(job.timer);job.reject(err||new Error('the background remover stopped. try again. your original image is unchanged.'));}
   cutoutJobs.clear();
 }
 function cutoutPort(){
   if(N.core?.S.buildChanged)throw new Error('notas was updated in another tab. reload to remove backgrounds.');
-  clearTimeout(cutoutIdle);
   if(cutoutWorker) return cutoutWorker;
   const w=cutoutWorker=new Worker('./bg-worker.js');
   w.onmessage=e=>{
@@ -3772,12 +3770,11 @@ function cutoutPort(){
     if(!job) return;
     clearTimeout(job.timer);cutoutJobs.delete(d.id);
     if(d.error) job.reject(Object.assign(new Error(d.error),{fatal:!!d.fatal,memory:!!d.memory})); else job.resolve(d);
-    /* A runtime that failed to start stays failed in its worker, so asking
-       the same worker again, for the minute it was kept, gave the same error
-       every time. It goes at once. A phone or tablet also lets go of it as
-       soon as it is done: its memory is what the handwriting needs. */
+    /* A failed runtime needs a fresh worker. Once all jobs finish, terminate
+       even a healthy worker to free its model and WASM heap on every device.
+       IndexedDB and the service worker keep the verified files on disk. */
     if(d.fatal&&cutoutWorker===w){ cutoutStop(); return; }
-    if(!cutoutJobs.size) cutoutIdle=setTimeout(()=>{ if(!cutoutJobs.size&&cutoutWorker===w) cutoutStop(); },CUTOUT_LEAN?0:CUTOUT_IDLE);
+    if(!cutoutJobs.size&&cutoutWorker===w) cutoutStop();
   };
   w.onerror=e=>{
     if(e&&e.preventDefault) e.preventDefault();

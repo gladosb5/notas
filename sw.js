@@ -1,12 +1,12 @@
 'use strict';
-const CACHE='notas-local-v144';
+const CACHE='notas-local-v145';
 self.addEventListener('message',event=>{
   if(event.data?.type==='GET_VERSION')event.ports[0]?.postMessage({version:CACHE.replace('notas-local-','')});
   // The update button explicitly applies this installed build. Only the
   // page requesting the update reloads its notebook.
   if(event.data?.type==='SKIP_WAITING')event.waitUntil(self.skipWaiting());
 });
-const ASSET_HASHES={"assets/smart/ort.wasm.min.js":"4043d2deda6a2e2fc783afc2b06d984068808181b88d451862c1230c433fce7a","assets/smart/ort-wasm-simd-threaded.js":"5687566b1bc1c8cf628d76c2ddb16b2a3b81a7997273d4666564880495088e57","assets/smart/ort-wasm-simd-threaded.wasm":"be0e129949062ad50290ef94683fac8be5bb6156f709e030b7a5f1661a2f6c17","assets/text/ppocrv6-small.onnx":"5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634","assets/text/ppocrv6_dict.txt":"b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d"};
+const ASSET_HASHES={"assets/smart/ort.wasm.min.js":"4043d2deda6a2e2fc783afc2b06d984068808181b88d451862c1230c433fce7a","assets/smart/ort-wasm-simd-threaded.js":"5687566b1bc1c8cf628d76c2ddb16b2a3b81a7997273d4666564880495088e57","assets/smart/ort-wasm-simd-threaded.wasm":"be0e129949062ad50290ef94683fac8be5bb6156f709e030b7a5f1661a2f6c17","assets/text/ppocrv6-small.onnx":"5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634","assets/text/ppocrv6_dict.txt":"b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d","assets/smart/ort.webgpu.min.js":"ed951b6ed6fb2d6e5c13d57fe906d98590c220ba6d127bc0ea2c1ac2ff0d43d8","assets/smart/ort-wasm-simd-threaded.asyncify.js":"dee69056fbfedf946ba0d9026e191c1361c5455895355e03f4346bf9308e58eb","assets/smart/ort-wasm-simd-threaded.asyncify.f33595b9.0.bin":"e9dd50f0be2e7be9273277ad6b7f182cb2b3b2d123e68cb6569ac50f31661a1f","assets/smart/ort-wasm-simd-threaded.asyncify.f33595b9.1.bin":"5bd3bb7ab25f1255c58b57dd0347b014c2e5244d83bd95de94d67f9c980a9036"};
 const RECOGNITION_ASSET=/\/assets\/(?:text|smart|ink)\//;
 const INK_MODEL=/\/assets\/ink\/[^?]*\.onnx$/;
 const SHELL=['./notas.html','./model-contract.js','./local-recognition.js','./ink-worker.js','./ink-features.js','./model-store.js','./text-worker.js','./bg-worker.js','./assets/bg/model.js',
@@ -78,6 +78,10 @@ self.addEventListener('install',event=>event.waitUntil((async()=>{
 // dropped with the old cache.
 async function keepRecognitionAssets(cache){
   const wanted=new Set();
+  // The background runtime is fetched lazily using each part's own hash.
+  // Carry verified parts across upgrades so unloading never costs a download.
+  for(const [file,hash] of Object.entries(ASSET_HASHES))if(file.endsWith('.bin'))
+    wanted.add(new URL('./'+file+'?v='+hash.slice(0,8),self.location).href);
   try{
     const source=await (await cache.match(new URL('./ink-worker.js',self.location).href))?.text();
     // The model files are written with their directory ('./assets/ink/…?v=…')
