@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v146">
+<meta name="notas-version" content="v147">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -37,10 +37,10 @@ html[data-launch-theme="dark"] #preparing{background:#151517;color:#F2F2F4}
 try{
   const pref=JSON.parse(localStorage.getItem('notas.prefs')||'{}')||{};
   const root=document.documentElement;
-  root.dataset.launchTheme=pref.paper!=='white'&&(pref.theme==='dark'||(pref.theme!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches))?'dark':'light';
+  const theme=pref.paper==='white'?'light':pref.theme;
+  root.dataset.launchTheme=theme==='dark'||(theme!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';
   // Use the saved palette as soon as the app stylesheet arrives, too.
   root.dataset.theme=root.dataset.launchTheme;
-  if(pref.paper==='white')root.dataset.paper='white';
 }catch(e){}
 {
   // This timer runs from the first HTML chunk, even before the atlas arrives.
@@ -68,7 +68,8 @@ try{
 'use strict';
 const screen=document.getElementById('preparing'),art=document.getElementById('prep-art'),launch=window.notasLaunch;
 let prefs={};try{prefs=JSON.parse(localStorage.getItem('notas.prefs')||'{}')||{};}catch(e){}
-const dark=prefs.paper!=='white'&&(prefs.theme==='dark'||(prefs.theme!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches));
+const theme=prefs.paper==='white'?'light':prefs.theme;
+const dark=theme==='dark'||(theme!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);
 document.documentElement.dataset.launchTheme=dark?'dark':'light';
 document.documentElement.dataset.motion=prefs.animations===false?'off':'on';
 const reduced=matchMedia('(prefers-reduced-motion: reduce)');
@@ -261,9 +262,6 @@ Object.assign(launch,{open,finished,stylesReady,cacheReady});
   --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 32px -10px rgba(0,0,0,.6);
   --shadow-2:0 2px 6px rgba(0,0,0,.35),0 30px 70px -20px rgba(0,0,0,.7);
 }
-/* white paper: the light palette on a plain white page, whatever the theme */
-:root[data-paper="white"]{--paper:#FFFFFF}
-
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
 @supports(height:100dvh){html,body{height:100dvh}}
@@ -1755,7 +1753,7 @@ const S = {
   strokes:[], lines:[], images:[], annos:[],
   clusters:[], nodes:[], textTranscripts:[],
   tool:'text', lastTool:'pen',
-  settings:{ angle:'deg', fractions:false, aiOn:true, theme:'auto', voice:false, recognizer:'ink', touchDraw:true, animations:true, paper:'default', textColor:'', notaColor:'', notaFont:'' },
+  settings:{ angle:'deg', fractions:false, aiOn:true, theme:'auto', voice:false, recognizer:'ink', touchDraw:true, animations:true, textColor:'', notaColor:'', notaFont:'' },
   docH:1600, dirty:false, selection:[], imageSelection:null, savedRev:0, remoteRev:0
 };
 
@@ -1781,7 +1779,7 @@ function strokeById(id){
 }
 const reducedMotion = () => { if(S.settings.animations===false) return true; try{ return matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; } };
 
-const APP_PREF_KEYS = ['theme','touchDraw','voice','recognizer','animations','paper','textColor','notaColor','notaFont'];
+const APP_PREF_KEYS = ['theme','touchDraw','voice','recognizer','animations','textColor','notaColor','notaFont'];
 function appPrefs(){
   try{ return JSON.parse(localStorage.getItem('notas.prefs')||'{}')||{}; }catch(e){ return {}; }
 }
@@ -1794,6 +1792,10 @@ function savePrefs(){
 function applyPrefs(){
   const stored=appPrefs(),kept={};
   for(const k of APP_PREF_KEYS)if(k in stored)kept[k]=stored[k];
+  // White paper previously forced the light palette. Preserve that choice
+  // as light mode, then discard the redundant device and legacy note setting.
+  if(stored.paper==='white')kept.theme='light';
+  delete S.settings.paper;
   Object.assign(S.settings,kept);
   document.documentElement.dataset.motion=S.settings.animations===false?'off':'on';
   if(Object.keys(stored).some(k=>!APP_PREF_KEYS.includes(k)))try{ localStorage.setItem('notas.prefs',JSON.stringify(kept)); }catch(e){}
@@ -8011,9 +8013,6 @@ function menuSheet(){
       '<button data-v="auto" aria-pressed="'+(S.settings.theme==='auto')+'">auto</button>' +
       '<button data-v="light" aria-pressed="'+(S.settings.theme==='light')+'">light</button>' +
       '<button data-v="dark" aria-pressed="'+(S.settings.theme==='dark')+'">dark</button></span></span></div>' +
-    '<div class="mi"><span>paper</span><span style="margin-left:auto"><span class="seg" id="seg-paper" role="group" aria-label="paper">' +
-      '<button data-v="default" aria-pressed="'+(S.settings.paper!=='white')+'">theme</button>' +
-      '<button data-v="white" aria-pressed="'+(S.settings.paper==='white')+'">white</button></span></span></div>' +
     colorRow('nota\'s handwriting', 'nota-colour', S.settings.notaColor, [['','nota red','var(--red)'],['#2F6FB3','blue','#2F6FB3'],['#2E8B57','green','#2E8B57'],['#7B4FBF','purple','#7B4FBF'],['#E08A1E','orange','#E08A1E'],['#1C1C1E','black','#1C1C1E']]) +
     '<label class="mi" for="nota-font"><span>nota\'s font</span><select class="keyin" id="nota-font" style="max-width:190px;margin-left:auto" aria-label="nota\'s font"></select></label>' +
     '<div id="nota-font-preview" style="padding:8px 14px;color:var(--nota);overflow-wrap:anywhere" aria-label="font preview">a page that writes back.</div>' +
@@ -8028,7 +8027,7 @@ function menuSheet(){
       '<button data-v="0" aria-pressed="'+(S.settings.touchDraw===false)+'">pen only</button></span></span></div>' +
     '<button class="mi" id="refresh-reading"><i class="ph ph-arrows-clockwise"></i>refresh handwriting models<span class="k">re-read the page</span></button>' +
     '<button class="mi" id="refresh-site"><i class="ph ph-arrow-circle-up"></i>update<span class="k">fetch the latest app</span></button>' +
-    '<div class="sheet-notes"><p>white paper keeps the light theme\'s ink, so the page reads the same printed or on screen. the text tool, tapped twice, picks the colour of typed text; nota writes its answers in its own colour.</p><p>draw with decides what a single finger does. with pen only, a finger scrolls and a resting hand cannot mark the page. it only takes effect once a pen has been used on this device, so it can never leave you unable to draw.</p>' +
+    '<div class="sheet-notes"><p>auto follows your device\'s theme. the text tool, tapped twice, picks the colour of typed text; nota writes its answers in its own colour.</p><p>draw with decides what a single finger does. with pen only, a finger scrolls and a resting hand cannot mark the page. it only takes effect once a pen has been used on this device, so it can never leave you unable to draw.</p>' +
       '<p>handwriting is read on this device. end an expression with an equals sign for an automatic answer, written beside it. the model downloads once and works offline after that.</p>' +
       '<p>a local text recogniser powers handwriting search and helps keep variable names. it never changes your ink.</p>' +
       '<p>maths hints use local rules for arithmetic and linear equations.</p></div>' +
@@ -8049,7 +8048,6 @@ function menuSheet(){
   seg('seg-frac',  v=>{ S.settings.fractions = v==='1'; N.mathcore.run(); C.markDirty(); });
   seg('seg-motion',v=>{S.settings.animations=v==='1';document.documentElement.dataset.motion=S.settings.animations?'on':'off';if(!S.settings.animations)document.getAnimations().forEach(a=>a.cancel());C.savePrefs();});
   seg('seg-theme', v=>{ S.settings.theme = v; applyTheme(); C.savePrefs(); });
-  seg('seg-paper', v=>{ S.settings.paper = v === 'white' ? 'white' : 'default'; applyTheme(); C.savePrefs(); });
   /* a colour row sets its setting from a swatch or, live, from the picker */
   const colours = (id, key)=>{
     const row = box.querySelector('#'+id), pick = row.querySelector('.pick');
@@ -8810,13 +8808,11 @@ function cssColor(v){ return typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) 
 function applyTheme(){
   const root = document.documentElement;
   // Launch colors only cover the first paint. Keeping that selector around
-  // overrides the app palette on the body after a theme or paper change.
+  // overrides the app palette on the body after a theme change.
   delete root.dataset.launchTheme;
-  /* white paper is the light palette on white: graphite ink stays dark on it */
-  const white = S.settings.paper === 'white', t = white ? 'light' : S.settings.theme;
+  const t = S.settings.theme;
   if(t === 'auto') root.removeAttribute('data-theme');
   else root.setAttribute('data-theme', t);
-  if(white) root.dataset.paper = 'white'; else delete root.dataset.paper;
   const text = cssColor(S.settings.textColor), nota = cssColor(S.settings.notaColor);
   if(text) root.style.setProperty('--text-ink', text); else root.style.removeProperty('--text-ink');
   if(nota) root.style.setProperty('--nota', nota); else root.style.removeProperty('--nota');

@@ -72,23 +72,25 @@ try{
  await drag(wobbly,800);
  assert.equal(await page.evaluate(()=>N.core.S.strokes.at(-1).pts.length/3),2,'a held, wobbly line becomes straight');
 
- /* settings: paper, text colour, nota colour */
+ /* settings: theme, text colour, nota colour */
  await page.evaluate(()=>N.ink.setTool('text'));
- await page.evaluate(()=>{const S=N.core.S;S.settings.paper='white';S.settings.textColor='#2e8b57';S.settings.notaColor='#7b4fbf';N.ui.applyTheme();});
+ await page.evaluate(()=>{const S=N.core.S;S.settings.theme='light';S.settings.textColor='#2e8b57';S.settings.notaColor='#7b4fbf';N.ui.applyTheme();});
  const look=await page.evaluate(()=>{const cs=getComputedStyle(document.documentElement);return {paper:cs.getPropertyValue('--paper').trim(),text:cs.getPropertyValue('--text-ink').trim(),nota:N.ink.colors.red,theme:document.documentElement.dataset.theme};});
- assert.equal(look.paper.toUpperCase(),'#FFFFFF');
- assert.equal(look.theme,'light','white paper keeps dark ink');
+ assert.equal(look.paper.toUpperCase(),'#F5F5F7');
+ assert.equal(look.theme,'light','light mode keeps dark ink');
  assert.equal(look.text,'#2e8b57');
  assert.equal(look.nota,'#7b4fbf','nota writes in the chosen colour');
- await page.evaluate(()=>{const S=N.core.S;S.settings.paper='default';S.settings.textColor='';S.settings.notaColor='';N.ui.applyTheme();});
+ await page.evaluate(()=>{const S=N.core.S;S.settings.textColor='';S.settings.notaColor='';N.ui.applyTheme();});
  assert.equal(await page.evaluate(()=>document.documentElement.style.getPropertyValue('--nota')),'','back to the theme colour');
 
- /* the menu has nota's colour and the paper; text colour is the text tool's */
+ /* the menu has nota's colour and one theme setting; text colour is the text tool's */
  await page.evaluate(()=>N.ui.menuSheet());
  await page.waitForSelector('#nota-colour');
  assert.equal(await page.locator('#text-colour').count(),0,'text colour is not in the menu');
- await page.locator('#seg-paper button[data-v="white"]').click();
- assert.equal(await page.evaluate(()=>document.documentElement.dataset.paper),'white');
+ assert.equal(await page.locator('#seg-paper').count(),0,'no redundant paper setting');
+ assert.deepEqual(await page.locator('#seg-theme button').allTextContents(),['auto','light','dark']);
+ await page.locator('#seg-theme button[data-v="dark"]').click();
+ assert.equal(await page.evaluate(()=>document.documentElement.dataset.theme),'dark');
  await page.locator('#nota-colour button[data-v="#2E8B57"]').click();
  assert.equal(await page.evaluate(()=>N.ink.colors.red.toLowerCase()),'#2e8b57');
  await page.locator('#nota-colour .pick input').evaluate(el=>{el.value='#123456';el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));});
@@ -124,5 +126,5 @@ try{
  await page.locator('#pen-pick').evaluate(el=>{el.value='#abcdef';el.dispatchEvent(new Event('input',{bubbles:true}));});
  assert.equal(await page.evaluate(()=>N.ink.pen.color),'#abcdef');
  assert.equal(await page.evaluate(()=>N.core.S.tool),'pen');
- console.log('Ink tools passed: eraser double tap switches stroke/pixel, pixel cut and undo, looser shape tidy, white paper, text/nota colours, colour pickers, text button colours, eraser icons.');
+ console.log('Ink tools passed: eraser double tap switches stroke/pixel, pixel cut and undo, looser shape tidy, themes, text/nota colours, colour pickers, text button colours, eraser icons.');
 }finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}

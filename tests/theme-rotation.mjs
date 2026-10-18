@@ -23,8 +23,8 @@ async function open(options,prefs){
   });
   return {context,page};
 }
-async function palette(page,dark,white=false){
-  const paper=dark?'rgb(21, 21, 23)':white?'rgb(255, 255, 255)':'rgb(245, 245, 247)';
+async function palette(page,dark){
+  const paper=dark?'rgb(21, 21, 23)':'rgb(245, 245, 247)';
   const ink=dark?'rgb(242, 242, 244)':'rgb(28, 28, 30)';
   await page.waitForFunction(([paper,ink])=>getComputedStyle(document.body).backgroundColor===paper&&getComputedStyle(document.body).color===ink&&N.ink.colors.paper.toLowerCase()===getComputedStyle(document.documentElement).getPropertyValue('--paper').trim().toLowerCase(),[paper,ink]);
   const actual=await page.evaluate(()=>{
@@ -52,16 +52,18 @@ try{
       const page=await context.newPage();await page.goto(base+'/notas.html',{waitUntil:'commit'});
       await page.waitForFunction(()=>getComputedStyle(document.documentElement).getPropertyValue('--paper').trim());
       assert.equal(await page.locator('#preparing').isVisible(),true);
-      assert.equal(await page.locator('#preparing').evaluate(el=>getComputedStyle(el).backgroundColor),prefs.paper==='white'?'rgb(255, 255, 255)':'rgb(245, 245, 247)');
+      assert.equal(await page.locator('#preparing').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(245, 245, 247)');
       assert.equal(await page.locator('#preparing').evaluate(el=>getComputedStyle(el).color),'rgb(28, 28, 30)');
     }finally{release();await context.close();}
   }
   // Reproduce a dark startup followed by the real light-theme settings action.
-  const {context,page}=await open({viewport:{width:1280,height:900}},{theme:'dark',paper:'default'});
+  const {context,page}=await open({viewport:{width:1280,height:900}},{theme:'dark'});
   await palette(page,true);
   await page.evaluate(()=>{
     N.core.S.lines=[{id:'theme-text',text:'A clear page for your next idea.',x:0,y:180}];N.text.render();N.ui.menuSheet();
   });
+  assert.deepEqual(await page.locator('#seg-theme button').allTextContents(),['auto','light','dark']);
+  assert.equal(await page.locator('#seg-paper').count(),0,'redundant paper setting is removed');
   await page.locator('#seg-theme button[data-v="light"]').click();
   await palette(page,false);
   const contrast=await page.evaluate(()=>{
@@ -87,14 +89,27 @@ try{
   await page.locator('#seg-theme button[data-v="auto"]').click();await palette(page,true);
   await page.emulateMedia({colorScheme:'light'});await palette(page,false);
   await page.emulateMedia({colorScheme:'dark'});await palette(page,true);
-  await page.locator('#seg-paper button[data-v="white"]').click();await palette(page,false,true);
+  await page.emulateMedia({colorScheme:'light'});await palette(page,false);
+  await page.locator('#seg-theme button[data-v="dark"]').click();await palette(page,true);
   await context.close();
-  // White paper must also open light on its first paint, despite saved dark mode.
-  const white=await open({viewport:{width:800,height:1100}},{theme:'dark',paper:'white'});
-  await palette(white.page,false,true);await white.context.close();
+  // Migrate the old override once; explicit choices must work afterward.
+  for(const prefs of [{theme:'dark',paper:'white'},{theme:'dark',paper:'default'},{theme:'auto',paper:'default'}]){
+    const legacy=await open({viewport:{width:800,height:1100}},prefs);
+    await palette(legacy.page,prefs.paper!=='white');
+    assert.deepEqual(await legacy.page.evaluate(()=>({theme:N.core.S.settings.theme,paper:'paper' in N.core.S.settings,stored:JSON.parse(localStorage.getItem('notas.prefs'))})),
+      {theme:prefs.paper==='white'?'light':prefs.theme,paper:false,stored:{theme:prefs.paper==='white'?'light':prefs.theme,animations:false}});
+    await legacy.page.evaluate(()=>N.ui.menuSheet());
+    assert.equal(await legacy.page.locator('#seg-paper').count(),0);
+    await legacy.page.locator('#seg-theme button[data-v="dark"]').click();
+    await palette(legacy.page,true);
+    await legacy.page.reload();await legacy.page.waitForFunction(()=>window.N?.ui?.applyTheme&&N.core.S.id);
+    await palette(legacy.page,true);
+    assert.equal(await legacy.page.evaluate(()=>('paper' in JSON.parse(localStorage.getItem('notas.prefs')))),false);
+    await legacy.context.close();
+  }
 
   for(const viewport of [{width:1280,height:900},{width:820,height:1100},{width:390,height:844}]){
-    const {context,page}=await open({viewport,hasTouch:viewport.width<1000},{theme:'light',paper:'default'});
+    const {context,page}=await open({viewport,hasTouch:viewport.width<1000},{theme:'light'});
     await page.evaluate(()=>{
       const cv=document.createElement('canvas');cv.width=180;cv.height=260;
       const x=cv.getContext('2d');x.fillStyle='#3670B2';x.fillRect(0,0,180,260);
@@ -146,5 +161,5 @@ try{
     await context.close();
   }
   assert.deepEqual(errors,[]);
-  console.log('Theme and rotation: dark-to-light, reload, automatic theme, white paper, readable page/menu/canvas; 675 angle/zoom/viewport placements and real handle drags passed.');
+  console.log('Theme and rotation: auto/light/dark, reload, legacy paper migration, readable page/menu/canvas; 675 angle/zoom/viewport placements and real handle drags passed.');
 }finally{await browser.close();server.close();}
