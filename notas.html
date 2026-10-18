@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v145">
+<meta name="notas-version" content="v146">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -17,9 +17,9 @@
 <meta name="format-detection" content="telephone=no">
 <style>
 /* Launch-critical styles stay inline; the app's styles arrive after paint. */
-html,body{margin:0;background:#F5F5F7;color:#1C1C1E}
+html,body{margin:0;background:var(--paper,#F5F5F7);color:var(--graphite,#1C1C1E)}
 html[data-launch-theme="dark"],html[data-launch-theme="dark"] body{background:#151517;color:#F2F2F4}
-#preparing{position:fixed;inset:0;z-index:100;display:grid;place-items:center;background:#F5F5F7;color:#1C1C1E;padding:24px;box-sizing:border-box;font:400 15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;transition:opacity .36s cubic-bezier(.22,1,.36,1),visibility .36s}
+#preparing{position:fixed;inset:0;z-index:100;display:grid;place-items:center;background:var(--paper,#F5F5F7);color:var(--graphite,#1C1C1E);padding:24px;box-sizing:border-box;font:400 15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;transition:opacity .36s cubic-bezier(.22,1,.36,1),visibility .36s}
 html[data-launch-theme="dark"] #preparing{background:#151517;color:#F2F2F4}
 #preparing.done{opacity:0;visibility:hidden;pointer-events:none}
 #preparing[hidden]{display:none}
@@ -36,7 +36,11 @@ html[data-launch-theme="dark"] #preparing{background:#151517;color:#F2F2F4}
 <script>
 try{
   const pref=JSON.parse(localStorage.getItem('notas.prefs')||'{}')||{};
-  document.documentElement.dataset.launchTheme=pref.theme==='dark'||(pref.theme!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';
+  const root=document.documentElement;
+  root.dataset.launchTheme=pref.paper!=='white'&&(pref.theme==='dark'||(pref.theme!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches))?'dark':'light';
+  // Use the saved palette as soon as the app stylesheet arrives, too.
+  root.dataset.theme=root.dataset.launchTheme;
+  if(pref.paper==='white')root.dataset.paper='white';
 }catch(e){}
 {
   // This timer runs from the first HTML chunk, even before the atlas arrives.
@@ -64,7 +68,7 @@ try{
 'use strict';
 const screen=document.getElementById('preparing'),art=document.getElementById('prep-art'),launch=window.notasLaunch;
 let prefs={};try{prefs=JSON.parse(localStorage.getItem('notas.prefs')||'{}')||{};}catch(e){}
-const dark=prefs.theme==='dark'||(prefs.theme!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);
+const dark=prefs.paper!=='white'&&(prefs.theme==='dark'||(prefs.theme!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches));
 document.documentElement.dataset.launchTheme=dark?'dark':'light';
 document.documentElement.dataset.motion=prefs.animations===false?'off':'on';
 const reduced=matchMedia('(prefers-reduced-motion: reduce)');
@@ -173,7 +177,7 @@ Object.assign(launch,{open,finished,stylesReady,cacheReady});
   color-scheme:light;
   --paper:#F5F5F7;
   --graphite:#1C1C1E;
-  --ink-2:rgba(60,60,67,.62);
+  --ink-2:rgba(60,60,67,.80);
   --ink-3:rgba(60,60,67,.34);
   --blue:#3670B2;
   --blue-quiet:#6E7A87;
@@ -297,7 +301,7 @@ button{
   -webkit-user-select:none;user-select:none;
 }
 input,textarea{font:inherit;color:inherit;caret-color:var(--graphite);accent-color:var(--graphite)}
-input::placeholder,textarea::placeholder{color:var(--ink-3);opacity:1}
+input::placeholder,textarea::placeholder{color:var(--ink-2);opacity:1}
 /* a ring only for a keyboard; a click or a tap never draws one */
 :focus{outline:none}
 :focus-visible{outline:2px solid var(--graphite);outline-offset:3px}
@@ -392,7 +396,7 @@ input:focus-visible,textarea:focus-visible{outline:none}
   flex:1 1 auto;min-width:0;
   box-shadow:0 0 0 2px var(--graphite);
 }
-#title-edit::placeholder{color:var(--ink-3)}
+#title-edit::placeholder{color:var(--ink-2)}
 /* Renaming on a narrow bar: the field takes the whole capsule between the
    mark and the menu. Undo, redo and share step aside for the moment rather
    than squeeze the name into five characters or fall off the right edge;
@@ -520,7 +524,7 @@ body[data-tool="text"]:not([data-image-sel]) .line{pointer-events:auto}
   font:400 16px/1.4 var(--type);letter-spacing:0;overflow:hidden;display:block;white-space:pre-wrap;overflow-wrap:anywhere;min-width:0;
   border-radius:0;outline:none;cursor:text;color:var(--text-ink,inherit);
 }
-.line .txt:empty::before{content:attr(data-placeholder);color:var(--ink-3);pointer-events:none}
+.line .txt:empty::before{content:attr(data-placeholder);color:var(--ink-2);pointer-events:none}
 /* the native caret is hidden and #caret below glides in its place. With a
    mouse, always. On a touch screen only while nothing is selected (.glide,
    set by the caret script): iPadOS draws its selection handles in the caret
@@ -973,6 +977,7 @@ body:has(.sheet:not(.leave)) #toast{top:calc(var(--safe-t) + 12px)}
 /* ---- selection bar ---- */
 #selbar{
   position:fixed;z-index:32;display:flex;gap:2px;padding:4px;
+  width:max-content;max-width:calc(100vw - 16px);flex-wrap:wrap;justify-content:center;
   border-radius:var(--r-pill);
   animation:chipIn .32s var(--pop);
 }
@@ -3615,6 +3620,7 @@ function commitLaid(orig, label){
   C.growDoc(low);
 }
 function startTurn(im, w){
+  $('#selbar').hidden=true;
   const f = frameOf(im);
   const t = { id:im?im.id:null, cx:f.cx, cy:f.cy, rot0:f.rot, a0:Math.atan2(w.y-f.cy, w.x-f.cx), rot:f.rot };
   if(!im) t.orig = grabStrokes(S.selection);
@@ -4339,6 +4345,7 @@ let selBarKind='',selBarMemo=null,selBarSize=null;
 function showSelBar(){
   const bar = $('#selbar');
   if(!S.selection.length&&!S.imageSelection){ bar.hidden = true; selBarKind = ''; return; }
+  if(turning){bar.hidden=true;return;}
   /* ink the reader made nothing of gets a way to ask nota about it */
   if(!selBarMemo||selBarMemo.sel!==S.selection||selBarMemo.rev!==C.revision||selBarMemo.clusters!==S.clusters){selBarMemo={sel:S.selection,rev:C.revision,clusters:S.clusters,unread:!S.imageSelection&&!!(N.nota?.askSelection&&N.recog?.selectionUnread(S.selection)),text:S.lines.some(l=>selSet().has(l.id))};}
   const unread=selBarMemo.unread;
@@ -4379,18 +4386,26 @@ function showSelBar(){
   const bb = selectionBox(); const r = sc.getBoundingClientRect(), z = M.zoom;
   if(moving){ bb[0]+=moving.dx; bb[1]+=moving.dy; bb[2]+=moving.dx; bb[3]+=moving.dy; }
   bar.hidden = false;
-  /* Measured rather than assumed: the buttons are taller on a touch screen,
-     and a fixed 44px offset put the bar over the very ink it acts on. The
-     knob that turns the selection stands off its top edge, so the bar sits
-     under the selection, flips above only when the page ends there, and
-     clamps sideways so it cannot leave the page. */
+  /* Use the turned frame, including the knob and its touch target. At half
+     a turn the knob is below the picture. Clamping a bar into the viewport
+     must never put it over a handle, even for a large or partly offscreen
+     selection. Prefer below, then above, then a free spot beside it. */
   if(!selBarSize||selBarSize.viewport!==innerWidth)selBarSize={w:bar.offsetWidth,h:bar.offsetHeight,viewport:innerWidth};
-  const {w,h}=selBarSize,gap=12;
-  const left = r.left + M.colLeft - sc.scrollLeft + bb[0]*z;
-  bar.style.left = Math.round(Math.min(Math.max(r.left + 8, left), r.right - w - 8)) + 'px';
-  const above = r.top + bb[1]*z - sc.scrollTop - h - gap - KNOB_REACH;
-  const below = r.top + bb[3]*z - sc.scrollTop + gap;
-  bar.style.top = Math.round(below + h <= r.bottom - 8 ? below : Math.max(r.top + 8, above)) + 'px';
+  const {w,h}=selBarSize,gap=12,hit=22;
+  const frame=frameOf(S.imageSelection?(cropping?.F||picked):null,moving?.dx||0,moving?.dy||0);
+  const handles=frame?frameHandles(frame).map(p=>({k:p.k,x:r.left+M.colLeft-sc.scrollLeft+p.x*z,y:r.top-sc.scrollTop+p.y*z})):[];
+  const left=handles.length?Math.min(...handles.map(p=>p.x)):r.left+M.colLeft-sc.scrollLeft+bb[0]*z;
+  const right=handles.length?Math.max(...handles.map(p=>p.x)):r.left+M.colLeft-sc.scrollLeft+bb[2]*z;
+  const top=handles.length?Math.min(...handles.map(p=>p.y)):r.top+bb[1]*z-sc.scrollTop;
+  const bottom=handles.length?Math.max(...handles.map(p=>p.y)):r.top+bb[3]*z-sc.scrollTop;
+  const candidates=[{x:left,y:bottom+hit+gap},{x:left,y:top-hit-gap-h},
+    {x:right+hit+gap,y:(top+bottom-h)/2},{x:left-hit-gap-w,y:(top+bottom-h)/2}];
+  for(const p of handles)candidates.push({x:left,y:p.y-hit-gap-h},{x:left,y:p.y+hit+gap});
+  const positions=candidates.map(p=>({x:C.clamp(p.x,r.left+8,Math.max(r.left+8,r.right-w-8)),y:C.clamp(p.y,r.top+8,Math.max(r.top+8,r.bottom-h-8))}));
+  const clear=(p,hd)=>hd.x+hit+4<p.x||hd.x-hit-4>p.x+w||hd.y+hit+4<p.y||hd.y-hit-4>p.y+h;
+  const knob=handles.find(hd=>hd.k==='rot');
+  const position=positions.find(p=>handles.every(hd=>clear(p,hd)))||(knob&&positions.find(p=>clear(p,knob)))||positions[0];
+  bar.style.left=Math.round(position.x)+'px';bar.style.top=Math.round(position.y)+'px';
 }
 function pointInPoly(x, y, poly){
   let inside = false;
@@ -8794,6 +8809,9 @@ $('#ask-spk').onclick = ()=>{
 function cssColor(v){ return typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : ''; }
 function applyTheme(){
   const root = document.documentElement;
+  // Launch colors only cover the first paint. Keeping that selector around
+  // overrides the app palette on the body after a theme or paper change.
+  delete root.dataset.launchTheme;
   /* white paper is the light palette on white: graphite ink stays dark on it */
   const white = S.settings.paper === 'white', t = white ? 'light' : S.settings.theme;
   if(t === 'auto') root.removeAttribute('data-theme');
