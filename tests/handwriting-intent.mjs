@@ -52,7 +52,7 @@ try{
 
   await seed('2+*3=','hello');
   await page.evaluate(()=>N.mathcore.requestSolve(N.core.S.clusters[0].id));
-  assert.equal(await page.locator('.chip.error').count(),1,'An explicit failed Solve supplies feedback');
+  assert.equal(await page.locator('.chip').count(),0,'An explicit failed Solve stays silent');
   await seed('61+1=','61+1=');
   await page.evaluate(()=>{N.core.S.textTranscripts[0].text='hello';N.mathcore.run();});
   assert.equal(await page.locator('.chip,.plot').count(),0,'Reclassification removes stale math output');
@@ -81,12 +81,15 @@ try{
     N.recog.rebuild();
     for(const cl of S.clusters)await N.recog.recognize(cl);
     for(const group of N.recog.textGroups())await N.recog.recognizeText(group);
+    // The automatic scheduler can start a cluster while text OCR is awaited.
+    // Let that job finish before disabling the reader and inspecting its result.
+    for(let i=0;i<600&&S.clusters.some(cl=>cl.pending);i++)await new Promise(r=>setTimeout(r,50));
     S.settings.aiOn=false;N.mathcore.run();
     return S.clusters.map(cl=>({kind:N.recog.handwritingKind(cl),ascii:cl.ascii,text:S.textTranscripts.find(t=>t.bbox?.[1]===N.recog.textGroups().find(g=>g.strokeIds.includes(cl.strokeIds[0]))?.bbox[1])?.text,strokeIds:cl.strokeIds,result:S.nodes.find(n=>n.ref===cl)?.result,review:cl.review,error:cl.error,pending:cl.pending}));
   },{hello,math:writing('61+1=',40,340,'actual-math')});
   const word=real.find(c=>c.strokeIds.includes('word0')),math=real.find(c=>c.strokeIds.some(id=>id.startsWith('actual-math')));
   assert.equal(word?.kind,'text',JSON.stringify(real));assert.ok(!word.ascii,'Actual prose bypasses formula decoder');
-  assert.equal(math?.kind,'math',JSON.stringify(real));assert.ok(math.ascii,'Actual math still gets read');
+  assert.equal(math?.kind,'math',JSON.stringify(real));assert.ok(math.ascii,'Actual math still gets read: '+JSON.stringify(real));
   await page.evaluate(()=>{N.ink.setTool('pen');N.ink.render();N.mathcore.run();});
   await mkdir(new URL('../test-results/',import.meta.url),{recursive:true});
   await page.screenshot({path:new URL('../test-results/handwriting-intent.png',import.meta.url).pathname.replace(/^\/(\w:)/,'$1')});

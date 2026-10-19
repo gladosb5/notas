@@ -36,7 +36,7 @@ function pauseForImage(){
   let resumed=false;
   return ()=>{
     if(resumed)return;resumed=true;memoryPaused--;
-    if(!memoryPaused&&enabled()){attempted.clear();textAttempted.clear();schedule();scheduleText();scheduleIndex();}
+    if(!memoryPaused){attempted.clear();textAttempted.clear();schedule();scheduleText();scheduleIndex();}
   };
 }
 const textState={worker:null,booting:null,ready:false,requests:new Map(),broken:false,gen:0};
@@ -98,7 +98,7 @@ function textProgress(phase,detail,loaded,total){
 }
 function watchText(fn){textWatchers.add(fn);if(lastTextProgress)fn(lastTextProgress);return()=>textWatchers.delete(fn);}
 function textSetupState(){
-  if(!enabled())return {phase:'off',detail:''};
+  if(!textEnabled())return {phase:'off',detail:''};
   if(textState.broken)return {phase:'error',detail:lastTextProgress&&lastTextProgress.phase==='error'?lastTextProgress.detail:''};
   if(textState.ready)return {phase:'ready',detail:''};
   if(!textState.booting)return {phase:'idle',detail:''};
@@ -127,7 +127,8 @@ function phaseOf(text){
   if(/starting/i.test(text||''))return {phase:'starting',detail:''};
   return {phase:'download',detail:''};
 }
-function enabled(){return S.settings.aiOn!==false;}
+function enabled(){return S.settings.aiOn!==false&&S.settings.handwritingRecognitionOn!==false;}
+function textEnabled(){return S.settings.aiOn!==false&&S.settings.textRecognitionOn!==false;}
 function stop(message='recognition stopped.',only){
   preparing=false;
   for(const [name,e] of engines){
@@ -178,6 +179,7 @@ function persistStorage(){
 // The stroke reader is about 44 MB, fetched once and kept on the device;
 // small enough to fetch unasked.
 async function setup(name=preferred()){
+  if(S.settings.handwritingRecognitionOn===false)throw new DOMException('Handwriting recognition is off','AbortError');
   if(S.buildChanged)throw new DOMException('notas was updated in another tab. reload to start handwriting.','AbortError');
   if(memoryPaused)throw new DOMException('Handwriting paused while processing your image','AbortError');
   const e=state(name),spec=ENGINES[name];
@@ -253,6 +255,7 @@ function textHealable(){return textState.broken&&!textState.memoryBlocked&&Date.
 function healText(){textState.broken=false;textState.brokeAt=0;textState.memoryBlocked=false;}
 window.addEventListener('online',()=>{if(textState.broken){healText();scheduleText();}});
 async function setupText(){
+  if(S.settings.textRecognitionOn===false)throw Object.assign(new Error('Text recognition is off'),{unavailable:true});
   if(S.buildChanged)throw new DOMException('notas was updated in another tab. reload to start handwriting.','AbortError');
   if(memoryPaused)throw new DOMException('Handwriting paused while processing your image','AbortError');
   if(textState.ready)return;
@@ -335,7 +338,7 @@ window.addEventListener('online',()=>{
   if(!state('ink').ready&&enabled()){
     restart();boot().then(schedule).catch(()=>{});
   }
-  if(enabled()){textState.broken=false;scheduleText();}
+  if(textEnabled()){textState.broken=false;scheduleText();}
 });
 // The hash keys stored transcripts, so its value cannot change: it is still
 // FNV-1a over the decimal text of every coordinate. What changed is the cost.
@@ -1364,7 +1367,7 @@ function schedule(){
 }
 function scheduleText(){
   clearTimeout(textTimer);
-  if(memoryPaused||!enabled()||document.hidden)return;
+  if(memoryPaused||!textEnabled()||document.hidden)return;
   if(textState.broken){if(textHealable())healText();else{if(!textState.memoryBlocked)textTimer=setTimeout(scheduleText,Math.max(1,TEXT_RETRY_AFTER-(Date.now()-(textState.brokeAt||0))));return;}}
   textTimer=setTimeout(readText,TEXT_SETTLE);
 }
@@ -1382,6 +1385,7 @@ function penResting(){
   return N.ink.now()-last>=TEXT_REST;
 }
 async function readText(){
+  if(!textEnabled())return;
   if(!penResting()){textTimer=setTimeout(readText,400);return;}
   const groups=textGroups();syncTextTranscripts(groups);
   const saved=new Set((S.textTranscripts||[]).map(t=>t.hash));
@@ -1398,7 +1402,7 @@ async function readText(){
       cl.strokeIds.some(id=>g.strokeIds.includes(id))&&inkRoutes.get(cl.hash)?.groupHash!==g.hash);
   }).sort((a,b)=>latest(b)-latest(a));
   for(const group of todo){
-    if(!enabled()||document.hidden||textState.broken)break;
+    if(!textEnabled()||document.hidden||textState.broken)break;
     if(!penResting()){textTimer=setTimeout(readText,400);return;}
     await recognizeText(group);
   }
@@ -1557,7 +1561,7 @@ async function readStrokesText(ids){
 }
 async function recognizeText(group){
   const generation=epoch,note=S.id,hash=group.hash;
-  const valid=()=>generation===epoch&&S.id===note&&enabled()&&textGroups().some(g=>g.hash===hash);
+  const valid=()=>generation===epoch&&S.id===note&&textEnabled()&&textGroups().some(g=>g.hash===hash);
   if(!valid())return;
   textAttempted.add(hash);
   try{
@@ -1604,7 +1608,7 @@ const INDEX_KEY='notas.textindex';
 let indexTimer=null,indexing=false,indexEpoch=0;
 function scheduleIndex(delay){
   clearTimeout(indexTimer);
-  if(memoryPaused||!enabled()||document.hidden||textState.broken||!textSupported())return;
+  if(memoryPaused||!textEnabled()||document.hidden||textState.broken||!textSupported())return;
   indexTimer=setTimeout(()=>{indexOthers().catch(()=>{});},delay==null?6000:delay);
 }
 function textSupported(){return !!(window.Worker&&window.OffscreenCanvas&&/^https?:$/.test(location.protocol));}
@@ -1647,7 +1651,7 @@ async function backgroundGroups(doc){
 async function indexOthers(){
   if(indexing)return;
   const generation=++indexEpoch;
-  const live=()=>generation===indexEpoch&&enabled()&&!document.hidden&&!textState.broken;
+  const live=()=>generation===indexEpoch&&textEnabled()&&!document.hidden&&!textState.broken;
   if(!live())return;
   indexing=true;
   try{
@@ -2115,6 +2119,7 @@ function switchEngine(name){
 // explicit: asked for from the selection bar, so read even with handwriting
 // reading turned off in settings
 async function recognize(cl,explicit){
+  if(S.settings.handwritingRecognitionOn===false)return;
   if(!explicit&&(!enabled()||attempted.has(cl.hash)))return;
   if(cl.pending){if(explicit)cl._explicitRetry=true;return;}
   const generation=epoch,note=S.id,hash=cl.hash;
@@ -2175,6 +2180,7 @@ function confirm(cl,text){
   C.markDirty();N.mathcore.run();
 }
 function solveSelection(){
+  if(S.settings.handwritingRecognitionOn===false){C.toast('handwriting recognition is off. enable it in the menu.');return;}
   const cl=S.clusters.find(c=>c.strokeIds.some(id=>S.selection.includes(id)));
   if(!cl)return C.toast('select one expression with the lasso first.');
   // Asking to solve a selection is an explicit request, so this reading is
@@ -2207,13 +2213,17 @@ async function refreshModels(){
   return {ok:true};
 }
 function toggle(){
-  if(enabled()){
-    attempted.clear();textAttempted.clear();textState.broken=false;
-    boot().then(schedule).catch(()=>{});scheduleText();
-  }else{
-    textGroupCache=null;scheduleGen++;epoch++;indexEpoch++;clearTimeout(timer);clearTimeout(textTimer);clearTimeout(indexTimer);stop();stopText();
-    for(const c of S.clusters)c.pending=false;report('handwriting off.');N.mathcore.run();
-  }
+  textGroupCache=null;scheduleGen++;epoch++;indexEpoch++;
+  clearTimeout(timer);clearTimeout(textTimer);clearTimeout(indexTimer);
+  const cancelled=new DOMException('Recognition settings changed','AbortError');
+  if(!enabled())stop(cancelled);
+  if(!textEnabled()){textRestartSeq++;stopText(cancelled);}
+  for(const cl of S.clusters)cl.pending=false;
+  attempted.clear();textAttempted.clear();
+  if(enabled())boot().then(schedule).catch(()=>{});
+  else report('handwriting off.');
+  if(textEnabled()){healText();scheduleText();scheduleIndex();}
+  N.mathcore.run();
 }
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden){clearTimeout(timer);clearTimeout(textTimer);clearTimeout(indexTimer);}else{schedule();scheduleText();}
@@ -2231,7 +2241,7 @@ function release(){
 function retry(){restart();boot().then(schedule).catch(()=>{});}
 function retryText(){textRestartSeq++;stopText('Restarting handwriting search');healText();textAttempted.clear();return setupText().then(()=>scheduleText()).catch(()=>{});}
 N.pauseRecognitionForImage=pauseForImage;
-N.ai={enabled,setup:boot,setupText,retry,retryText,toggle,watch,watchText,setupState,textSetupState,get ready(){return state(preferred()).ready;}};
+N.ai={enabled,textEnabled,setup:boot,setupText,retry,retryText,toggle,watch,watchText,setupState,textSetupState,get ready(){return state(preferred()).ready;}};
 N.recog={resultVersion:RESULT_VERSION.ink,rebuild,penResting,frames:()=>pageFrames,frameInfo,release,selectionUnread,readStrokesText,mathStrokeGroups,equalsGeometryRepair,stackedBarPairs,schedule,scheduleText,scheduleIndex,indexOthers,textGroupsOfDoc,recognize,recognizeText,solveSelection,crop,linearizedCrop,textCrop,textGroups,cache,confirm,reset,refreshModels,engine:preferred,switchEngine,validText,classifyHandwriting,handwritingKind,hasWrittenEquals,wordReading,wordGeometry,needsConfirmation,inkTextAlternatives,textSupportedInk,textSupportedEquation,
   get inkError(){return inkError;},get textReady(){return textState.ready;},get textVersion(){return TEXT_VERSION;},get textConfidenceMin(){return TEXT_CONFIDENCE_MIN;}};
 })();

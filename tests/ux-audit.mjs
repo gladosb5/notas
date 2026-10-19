@@ -31,14 +31,14 @@ try{
   await dialog.getByRole('button',{name:'Close'}).click();
   assert.equal(await page.evaluate(()=>document.activeElement?.id),'btn-menu','Closing restores focus to the opener');
 
-  // Finding 13: invalid maths stays quiet while the student is actively typing,
-  // then becomes visible as soon as editing of that line ends.
+  // Invalid calculations stay silent during editing and after focus leaves.
   await input.fill('unknown+2');
   await page.waitForTimeout(350);
   assert.equal(await page.locator('.chip.error').count(),0,'Invalid maths is not flagged mid-typing');
   await input.evaluate(el=>el.blur());
   await page.waitForTimeout(80);
-  assert.match(await page.locator('.chip.error').first().textContent(),/unknown has no value yet/,'Invalid maths explains itself after blur');
+  assert.equal(await page.locator('.chip.error').count(),0,'Invalid maths stays silent after blur');
+  assert.doesNotMatch(await page.locator('#page-accessible').textContent(),/calculation issue|cannot calculate/);
 
   // Finding 1 coverage: Ctrl+Z remains the line's native history, rather
   // than consuming notebook-level ink/history actions.
@@ -272,7 +272,7 @@ try{
   assert.equal(quiet.auto,'','Autosave does not flash a status');
   assert.equal(quiet.explicit,'saved.','An explicit save confirms');
 
-  console.log('UX audit regressions passed: focused errors, native typing undo, graph persistence/export/samples, mobile reach, image manipulation, safe import recovery, panel motion, text-tool taps, scroll momentum, pinch zoom, and quiet autosave');
+  console.log('UX audit regressions passed: silent calculation failures, native typing undo, graph persistence/export/samples, mobile reach, image manipulation, safe import recovery, panel motion, text-tool taps, scroll momentum, pinch zoom, and quiet autosave');
 }finally{
   await context.close();await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));
 }

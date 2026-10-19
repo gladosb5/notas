@@ -115,7 +115,7 @@ test('desktop worker terminates immediately after its queue drains and restarts 
     terminate(){this.terminated=true;}
   }
   const html=read('notas.html');
-  const context=vm.createContext({Worker,N:{},navigator:{userAgent:'desktop'},Error,
+  const context=vm.createContext({Worker,N:{},S:{settings:{}},navigator:{userAgent:'desktop'},Error,
     setTimeout(fn){timers.set(++serial,fn);return serial;},clearTimeout(id){timers.delete(id);}});
   vm.runInContext(html.slice(html.indexOf('const CUTOUT_SIZE='),html.indexOf('/* The model is downloaded in the background')),context);
   const first=vm.runInContext('cutoutAsk({prefetch:true})',context);

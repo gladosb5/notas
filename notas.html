@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v148">
+<meta name="notas-version" content="v150">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -819,6 +819,27 @@ body.noicons .tool.swatch i,body.noicons .tool.width i{display:block}
 #askbar .ib[aria-pressed="true"]{color:var(--red)}
 #askbar .go{background:var(--red);color:#fff;margin-left:4px}
 #askbar .go:hover{background:var(--red);color:#fff;opacity:.88}
+
+/* Menu pages slide their full width without fading. */
+.menu-viewport{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);overflow:hidden;flex:1;min-height:0}
+.menu-page{grid-area:1/1;display:flex;flex-direction:column;min-width:0;min-height:0;transition:transform .38s cubic-bezier(.22,.75,.2,1)}
+.menu-page[data-page="ai"]{transform:translateX(calc(100% + 24px))}
+.menu-viewport[data-page="ai"] .menu-page[data-page="main"]{transform:translateX(calc(-100% - 24px))}
+.menu-viewport[data-page="ai"] .menu-page[data-page="ai"]{transform:translateX(0)}
+.sheet .menu-back{width:34px;height:34px;flex:none;display:grid;place-items:center;border-radius:var(--r-pill);color:var(--ink-2);background:var(--tint);font-size:18px}
+.sheet .menu-back:hover{background:var(--tint-2);color:var(--graphite)}
+.ai-feature{display:flex;align-items:center;gap:16px;padding:12px;cursor:pointer;border-radius:12px}
+.ai-feature:hover{background:var(--tint)}
+.ai-feature-copy{flex:1;min-width:0}
+.ai-feature-copy strong{display:block;font-size:15px;font-weight:500}
+.ai-feature-copy small{display:block;margin-top:4px;color:var(--ink-2);font-size:12px;line-height:1.45}
+.ai-switch{appearance:none;-webkit-appearance:none;width:42px;height:26px;flex:none;margin:0;border:1px solid var(--rule);border-radius:20px;background:var(--tint-2);position:relative;cursor:pointer;transition:background .18s ease}
+.ai-switch::before{content:'';position:absolute;width:20px;height:20px;left:2px;top:2px;border-radius:50%;background:var(--graphite);transition:transform .18s ease}
+.ai-switch:checked{background:var(--blue);border-color:var(--blue)}
+.ai-switch:checked::before{transform:translateX(16px);background:var(--paper)}
+.ai-switch:focus-visible,.menu-back:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+@media(prefers-reduced-motion:reduce){.menu-page,.ai-switch,.ai-switch::before{transition:none}}
+:root[data-motion="off"] .menu-page,:root[data-motion="off"] .ai-switch,:root[data-motion="off"] .ai-switch::before{transition:none}
 
 /* ---- panels ---- */
 /* a sheet: the paper dims and blurs a touch, the panel settles in from just
@@ -1753,7 +1774,7 @@ const S = {
   strokes:[], lines:[], images:[], annos:[],
   clusters:[], nodes:[], textTranscripts:[],
   tool:'text', lastTool:'pen',
-  settings:{ angle:'deg', fractions:false, aiOn:true, theme:'auto', voice:false, recognizer:'ink', touchDraw:true, animations:true, textColor:'', notaColor:'', notaFont:'' },
+  settings:{ angle:'deg', fractions:false, aiOn:true, theme:'auto', voice:false, recognizer:'ink', touchDraw:true, animations:true, textColor:'', notaColor:'', notaFont:'', notaOn:true, textRecognitionOn:true, backgroundRemovalOn:true, handwritingRecognitionOn:true },
   docH:1600, dirty:false, selection:[], imageSelection:null, savedRev:0, remoteRev:0
 };
 
@@ -1779,7 +1800,7 @@ function strokeById(id){
 }
 const reducedMotion = () => { if(S.settings.animations===false) return true; try{ return matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; } };
 
-const APP_PREF_KEYS = ['theme','touchDraw','voice','recognizer','animations','textColor','notaColor','notaFont'];
+const APP_PREF_KEYS = ['theme','touchDraw','voice','recognizer','animations','textColor','notaColor','notaFont','notaOn','textRecognitionOn','backgroundRemovalOn','handwritingRecognitionOn'];
 function appPrefs(){
   try{ return JSON.parse(localStorage.getItem('notas.prefs')||'{}')||{}; }catch(e){ return {}; }
 }
@@ -3763,6 +3784,7 @@ function cutoutStop(err){
   cutoutJobs.clear();
 }
 function cutoutPort(){
+  if(S.settings.backgroundRemovalOn===false)throw Object.assign(new Error('background remover is off.'),{quiet:true});
   if(N.core?.S.buildChanged)throw new Error('notas was updated in another tab. reload to remove backgrounds.');
   if(cutoutWorker) return cutoutWorker;
   const w=cutoutWorker=new Worker('./bg-worker.js');
@@ -3808,6 +3830,7 @@ function cutoutAsk(msg,transfer,progress){
    profiles); both still download on first use. */
 let cutoutWarming=null;
 function prefetchCutout(){
+  if(S.settings.backgroundRemovalOn===false)return Promise.resolve(false);
   if(cutoutBusy)return Promise.resolve(false);
   if(cutoutWarming) return cutoutWarming;
   if(!navigator.onLine){
@@ -3819,10 +3842,18 @@ function prefetchCutout(){
     return d.done;
   },()=>{
     cutoutWarming=null;
-    N.downloads&&N.downloads.set('cutout','error','',prefetchCutout);
+    N.downloads&&N.downloads.set('cutout',S.settings.backgroundRemovalOn===false?'off':'error','',prefetchCutout);
     return false;
   });
   return cutoutWarming;
+}
+function toggleBackgroundRemoval(){
+  if(S.settings.backgroundRemovalOn===false){
+    if(cutoutBusy)C.toast('background removal stopped.');
+    cutoutStop(Object.assign(new Error('background remover is off.'),{quiet:true}));cutoutWarming=null;
+    N.downloads?.set('cutout','off');
+  }else warmCutoutLater();
+  selBarKind='';showSelBar();
 }
 function warmCutoutLater(){
   if(navigator.webdriver) return;
@@ -3913,6 +3944,7 @@ async function swapBackground(id,back){
 }
 function undoBackground(id){ return swapBackground(id,true); }
 async function removeBackground(id){
+  if(S.settings.backgroundRemovalOn===false){C.toast('background remover is off. enable it in the menu.');return false;}
   const im=S.images.find(i=>i.id===id); if(!im) return false;
   if(im.bg) return false;
   if(im.cut) return swapBackground(id,false);
@@ -3971,7 +4003,7 @@ async function removeBackground(id){
     const decoded=await loadPicture(src); decoded._src=src;
     /* the note, or the picture, may have changed during the few seconds */
     const live=S.images.find(i=>i.id===id);
-    if(note!==S.id||!live||live.src!==before||live.full!==beforeFull||live.bg||live.cut){ C.toast('that picture changed, so its background was left.'); return false; }
+    if(S.settings.backgroundRemovalOn===false||note!==S.id||!live||live.src!==before||live.full!==beforeFull||live.bg||live.cut){ C.toast('that picture changed, so its background was left.'); return false; }
     const F=fullFrame(live).frame, w=(trimmed.r-trimmed.l)*F.w, h=(trimmed.b-trimmed.t)*F.h;
     const mid=cropPoint(F,(trimmed.l+trimmed.r)/2,(trimmed.t+trimmed.b)/2);
     const was=backgroundState(live), now={src, full:cut, crop:trimmed, bg:base,
@@ -3982,6 +4014,7 @@ async function removeBackground(id){
     C.toast('background removed.');
     return true;
   }catch(e){
+    if(S.settings.backgroundRemovalOn===false)return false;
     if(!e||!e.quiet) N.downloads&&N.downloads.set('cutout','error');
     const memory=e?.memory||/out of memory|\boom\b|memory access out of bounds|allocat|memory.*(?:grow|limit)/i.test(String(e?.message||e));
     if(memory){cutoutLowMemory=true;cutoutStop();}
@@ -4344,19 +4377,20 @@ function duplicateSelection(){
    afterwards. Rebuilding four buttons and measuring them on every pointermove
    was DOM churn in the middle of a drag. */
 let selBarKind='',selBarMemo=null,selBarSize=null;
-function showSelBar(){
+function showSelBar(refresh=false){
+  if(refresh===true)selBarKind='';
   const bar = $('#selbar');
   if(!S.selection.length&&!S.imageSelection){ bar.hidden = true; selBarKind = ''; return; }
   if(turning){bar.hidden=true;return;}
   /* ink the reader made nothing of gets a way to ask nota about it */
   if(!selBarMemo||selBarMemo.sel!==S.selection||selBarMemo.rev!==C.revision||selBarMemo.clusters!==S.clusters){selBarMemo={sel:S.selection,rev:C.revision,clusters:S.clusters,unread:!S.imageSelection&&!!(N.nota?.askSelection&&N.recog?.selectionUnread(S.selection)),text:S.lines.some(l=>selSet().has(l.id))};}
-  const unread=selBarMemo.unread;
+  const unread=S.settings.notaOn!==false&&selBarMemo.unread;
   const picked = S.imageSelection && S.images.find(i=>i.id===S.imageSelection) || {};
   const busy = S.imageSelection && cutoutBusy===S.imageSelection;
   const turned = S.imageSelection && !!picked.rot, cutout = S.imageSelection && !!picked.bg;
   if(cropping && cropping.id !== S.imageSelection){ cropping = null; cropDrag = null; }
   const textSelected=selBarMemo.text;
-  const kind = textSelected ? 'text' : cropping ? 'crop' : S.imageSelection ? 'image' + (turned ? '-turned' : '') + (cutout ? '-cutout' : '') + (busy ? '-busy' : '') : (unread ? 'ink-unread' : 'ink');
+  const kind = textSelected ? 'text' : cropping ? 'crop' : S.imageSelection ? 'image' + (turned ? '-turned' : '') + (cutout ? '-cutout' : '') + (busy ? '-busy' : '') + (S.settings.backgroundRemovalOn===false ? '-disabled' : '') : (unread ? 'ink-unread' : 'ink');
   if(kind !== selBarKind || !bar.childElementCount){
     bar.innerHTML = '';
     const mk = (label, fn, aria)=>{ const b=document.createElement('button'); b.textContent=label; b.onclick=fn;if(aria)b.setAttribute('aria-label',aria);bar.appendChild(b); };
@@ -4374,10 +4408,10 @@ function showSelBar(){
         mk('removing background…',()=>{});
         const b=bar.lastElementChild; b.disabled=true; b.setAttribute('aria-busy','true'); b.setAttribute('role','status');
       }else if(cutout) mk('undo background',()=>undoBackground(S.imageSelection));
-      else mk('remove background',()=>removeBackground(S.imageSelection));
+      else if(S.settings.backgroundRemovalOn!==false) mk('remove background',()=>removeBackground(S.imageSelection));
       mk('delete',()=>deleteImage(S.imageSelection));
     }else{
-      mk('solve this', ()=>{ N.recog && N.recog.solveSelection(); });
+      if(S.settings.handwritingRecognitionOn!==false) mk('solve this', ()=>{ N.recog && N.recog.solveSelection(); });
       if(kind === 'ink-unread') mk('ask nota', ()=>{ N.nota.askSelection(); });
       mk('copy', ()=>copySelection(false));
       mk('duplicate', duplicateSelection);
@@ -5151,7 +5185,7 @@ pill.addEventListener('wheel', ev=>{
 pill.addEventListener('keydown', ev=>{ if(ev.key === 'Escape' && pillOpen()){ setPillOpen(false); moreBtn.focus(); } });
 
 N.ink = { busy:()=>!!(cur||lasso||moving||scaling||turning||resizing||twin||cropDrag||panning||gesture),render, renderAI, pasteCut, resize, finishInput, setTool, setPen, pen, setPillOpen, setPenPop, setTextPop, setTextColor, toWorld, viewOrigin, bboxOf, hitStroke, drawStroke,
-          clearSelection, showSelBar, inkColor, colors, refreshColors, isTyping, after, flush, selectImage, nudgeImage, resizeImage, deleteImage, straightenImage, removeBackground, undoBackground, prefetchCutout, startCrop, applyCrop, cancelCrop, cropping:()=>cropping&&{...cropping}, frameOf, frameHandles,
+          clearSelection, showSelBar, inkColor, colors, refreshColors, isTyping, after, flush, selectImage, nudgeImage, resizeImage, deleteImage, straightenImage, removeBackground, undoBackground, prefetchCutout, toggleBackgroundRemoval, startCrop, applyCrop, cancelCrop, cropping:()=>cropping&&{...cropping}, frameOf, frameHandles,
           copySelection, duplicateSelection, deleteSelection, pasteInk, readClip, clipMarker, selectAll, imageAt, pickImage,
           now:inkNow, drawing:()=>!!cur, peerShift, drag:()=>moving?{dx:moving.dx,dy:moving.dy}:null,
           /* what the pointer is in the middle of, for the others on a shared
@@ -6623,13 +6657,12 @@ function paintAccessible(nodes){
   const el=$('#page-accessible');if(!el)return;
   const out=[];
   for(const n of nodes){
-    if(!n.src)continue;
+    if(!n.src||n.error||n.ref?.review)continue;
     if(n.kind==='cluster'&&!n.ref?.asked&&!n.ref?.confirmed&&N.recog?.handwritingKind(n.ref)!=='math')continue;
     out.push((n.kind==='cluster'?'handwriting read as ':'typed ')+n.src);
     if(n.result&&n.kind==='line'&&!n.stated&&/=\s*$/.test(n.src||''))out.push('answer '+n.result+' suggested; press Space to accept');
     else if(n.result)out.push('result '+n.result);
     else if(offersSolve(n))out.push('not calculated yet, solve is offered beside it');
-    if(n.error)out.push('calculation issue, '+n.error);
     if(n.plot)out.push('graph, y = '+n.plot.expr+(n.plot.params.length?' with parameters '+n.plot.params.join(', '):''));
   }
   el.textContent=out.join('. ');
@@ -6695,6 +6728,11 @@ function paint(nodes){
   clearTimeout(settleTimer); settleTimer = 0;
   for(const n of nodes){
     deepest = Math.max(deepest, n.mid || n.y);
+    // Failed calculations leave the original writing untouched and show nothing.
+    if(n.error||n.ref?.review){
+      if(n.kind==='line')N.text?.setGhost?.(n.id,'');
+      continue;
+    }
     /* graphs are too big to sit inline, so they keep the right hand band */
     if(n.plot && N.plot){
       plotted.add(n.id);
@@ -6702,19 +6740,12 @@ function paint(nodes){
       const p = N.plot.card(n, top);
       if(p) plotBottom = top + p.offsetHeight;
     }
-    /* Completed typed expressions surface evaluator/parser feedback instead of
-       failing silently. Handwriting that has not asked for an answer stays quiet. */
     /* Handwriting that does not ask for an answer gets no chip at all. Writing
        a word is not a failed sum, and a model that only knows formulae will
        always read one, so the quiet default is to leave prose alone. */
     // Background prose, uncertain ink and failed reads never become math UI.
-    // Explicit Solve still surfaces its reading or a useful failure.
+    // Explicit Solve also stays quiet when a reading cannot be calculated.
     if(n.kind==='cluster'&&!n.ref?.asked&&!n.ref?.confirmed&&(N.recog?.handwritingKind(n.ref)!=='math'||n.ref?.review))continue;
-    const editingError=n.kind==='line'&&n.error&&N.text&&N.text.isFocused&&N.text.isFocused(n.id);
-    /* a typed line that reads as words and never asks with '=' is a note, not
-       a failed sum: "homework 12 sep" gets no chip */
-    const proseLine=n.kind==='line'&&n.error&&!/=/.test(n.src||'')&&readsAsProse(n.src);
-    const visibleError=(editingError||proseLine)?'':n.error;
     const offer = offersSolve(n);
     /* A trailing equals sign previews the answer; Space accepts it into the editable line.
        Completed answers need no extra chip; extended answers evaluate their tail. */
@@ -6726,7 +6757,7 @@ function paint(nodes){
     /* The graph card is the answer. Leave its old scalar chip unseen so
        cleanup removes it, rather than labelling a valid reading unreadable. */
     if(n.plot && N.plot) continue;
-    const show = n.pending || n.result || visibleError || n.ref?.review || offer || (n.kind==='cluster' && n.src && asksForAnswer(n));
+    const show = n.pending || n.result || offer;
     if(!show || (n.kind==='cluster' && n.ref?.dismissed) || callInk(n)) continue;
     /* Ink still warm from the pen gets no chip yet. The chip lands right after
        the working, where the next symbol goes, and a reading that arrived in
@@ -6759,9 +6790,9 @@ function paint(nodes){
     const handwritingHeight=n.kind==='cluster'&&(n.result||n.pending)&&n.ref?.bbox
       ? Math.max(1,n.ref.bbox[3]-n.ref.bbox[1]) : 0;
     el.style.fontSize=handwritingHeight?handwritingHeight+'px':'';
-    el.classList.toggle('error',!!visibleError);
+    el.classList.remove('error');
     el.classList.toggle('offer',offer);
-    el.classList.toggle('typed', n.kind === 'line' && !offer && !visibleError && !n.pending);
+    el.classList.toggle('typed', n.kind === 'line' && !offer && !n.pending);
     let html;
     if(offer){
       el.setAttribute('aria-label','handwriting read as '+n.src+'.');
@@ -6771,7 +6802,7 @@ function paint(nodes){
       el.removeAttribute('aria-label');
       html = n.pending
         ? pendingHTML(n, waitOn)
-        : escape(visibleError ? 'cannot calculate, '+visibleError : (n.result || 'could not read this'));
+        : escape(n.result || '');
     }
     /* Rewritten only when it changes. A blur on a typed line re-runs the
        maths at once, and replacing the Solve button between the press and
@@ -6807,9 +6838,9 @@ function paint(nodes){
       el.style.maxWidth=Math.max(MIN_PILL,paperR-6-left)+'px';
       /* the height one line of this answer takes; a handwritten answer is
          set at the handwriting's height, so the fixed room check above
-         cannot know whether it will fit beside. Offers and errors are
-         more than one line by design and are left where they are. */
-      const plain=!offer&&!visibleError;
+         cannot know whether it will fit beside. Solve offers can span
+         more than one line and are left where they are. */
+      const plain=!offer;
       const lineH=!plain?0:handwritingHeight?handwritingHeight*1.15:(n.kind==='line'?16*1.4:21*1.15);
       place.push([el,n.mid||n.y,lineH,below]);
     }
@@ -7295,7 +7326,7 @@ async function ask(question, lv){
     clearAnnos('tutor');
     if(out.ops.length) addAnno(out.ops,'tutor');
     reply(esc(out.say));speak(out.say);ladder('answered');
-  }catch(e){reply('the maths helper could not check that expression. try typing it again.',true);ladder('idle');}
+  }catch(e){reply('');ladder('idle');}
 }
 function reply(html, sys){
   const bar = $('#askbar'), r = $('#reply');
@@ -7443,21 +7474,23 @@ function card(node, top){
       box.appendChild(row);
     }
   }
-  paintGraphMeta(el,cv,node,w,h,dpr);
-  return el;
+  return paintGraphMeta(el,cv,node,w,h,dpr)?el:null;
 }
 function drop(id){ const el = cards.get(id); if(el){ el.remove(); cards.delete(id); } }
 function keep(ids){ for(const id of [...cards.keys()]) if(!ids.has(id)) drop(id); }
 
 function paintGraphMeta(el,cv,node,w,h,dpr){
   const meta=draw(cv,node,w,h,dpr);
-  if(!meta)return;
+  if(!meta)return false;
+  el.hidden=!!meta.error;
+  if(meta.error)return false;
   const desc=el.querySelector('.plot-desc'),err=el.querySelector('.plot-error');
   const range='x −10 to 10, y '+fmtAxis(meta.lo)+' to '+fmtAxis(meta.hi);
   const samples=meta.samples&&meta.samples.length?' · '+meta.samples.map(p=>'y('+p.x+') = '+fmtAxis(p.y)).join(', '):'';
   desc.textContent=range+samples;
-  err.hidden=!meta.error;err.textContent=meta.error||'';
-  cv.setAttribute('aria-label','graph of y = '+node.plot.expr+'. '+range+samples+(meta.error?'. '+meta.error:''));
+  err.hidden=true;err.textContent='';
+  cv.setAttribute('aria-label','graph of y = '+node.plot.expr+'. '+range+samples);
+  return true;
 }
 function fmtAxis(v){
   if(!Number.isFinite(v))return '?';
@@ -7594,7 +7627,7 @@ function openSheet(html, opts=false){
   sheet.addEventListener('keydown',e=>{
     if(e.key==='Escape'){e.preventDefault();closeSheet();return;}
     if(e.key!=='Tab')return;
-    const fs=[...sheet.querySelectorAll('button,input,textarea,select,a[href],[tabindex]:not([tabindex="-1"])')].filter(el=>!el.disabled&&!el.hidden&&el.getClientRects().length);
+    const fs=[...sheet.querySelectorAll('button,input,textarea,select,a[href],[tabindex]:not([tabindex="-1"])')].filter(el=>!el.disabled&&!el.hidden&&!el.closest('[inert]')&&el.getClientRects().length);
     if(!fs.length){e.preventDefault();return;}
     const first=fs[0],last=fs[fs.length-1];
     if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
@@ -7927,7 +7960,7 @@ async function calculateQuick(rev,insert){
     quickResult={source,answer};quickValue.textContent=answer.includes('=')?answer:'= '+answer;
     quickAnswer.setAttribute('aria-label',quickValue.textContent+'. insert into note');quickStatus.textContent=quickValue.textContent;
     showQuickResult();if(insert)openQuickInsert();
-  }catch(e){if(rev===quickRevision){hideQuickResult();quickStatus.textContent=e.message;quickInput.setAttribute('aria-invalid','true');quickInput.title=e.message;}}
+  }catch(e){if(rev===quickRevision){hideQuickResult();quickStatus.textContent='';quickInput.removeAttribute('aria-invalid');quickInput.title='';}}
 }
 function updateQuick(){
   clearTimeout(quickTimer);hideQuickResult();quickResult=null;quickValue.textContent='';quickInput.removeAttribute('aria-invalid');quickInput.title='';
@@ -7998,6 +8031,7 @@ function menuSheet(){
     '<button class="mi" id="ex-json"><i class="ph ph-file-arrow-down"></i>export note<span class="k">json</span></button>' +
     '<button class="mi" id="ex-pdf"><i class="ph ph-printer"></i>print or save as pdf</button>' +
     '<hr>' +
+    '<button class="mi" id="disable-ai"><i class="ph ph-sparkle"></i>disable AI features<span class="k"><i class="ph ph-caret-right"></i></span></button>' +
     '<h3>settings</h3>' +
     '<label class="mi" for="rename"><span>note name</span><input class="keyin" id="rename" value="'+esc(S.title)+'" style="max-width:220px;margin:0 0 0 auto"></label>' +
     '<div class="mi"><span>angles</span><span style="margin-left:auto"><span class="seg" id="seg-angle" role="group" aria-label="angles">' +
@@ -8038,6 +8072,43 @@ function menuSheet(){
     (C.FEEDBACK_URL?'<button class="mi" id="mi-fb"><i class="ph ph-chat-circle"></i>send feedback</button>':'') +
     '<button class="mi" id="mi-test"><i class="ph ph-check-square"></i>run self test<span class="k">?selftest=1</span></button>'
   );
+  const viewport=document.createElement('div');
+  viewport.className='menu-viewport';viewport.dataset.page='main';
+  const main=document.createElement('div');main.className='menu-page';main.dataset.page='main';
+  main.append(box.querySelector('.head'),box.querySelector('.body'));
+  const ai=document.createElement('div');ai.className='menu-page';ai.dataset.page='ai';ai.inert=true;ai.setAttribute('aria-hidden','true');
+  const aiTitle='ai-title-'+C.uid();
+  const features=[
+    ['notaOn','nota','Answers questions you type or write on the page.'],
+    ['textRecognitionOn','text recognition','Reads handwriting for search and text understanding.'],
+    ['backgroundRemovalOn','background remover','Removes image backgrounds on this device.'],
+    ['handwritingRecognitionOn','handwriting recognition','Reads handwritten maths for automatic answers.']
+  ];
+  ai.innerHTML='<div class="head"><button type="button" class="menu-back" aria-label="back to menu"><i class="ph ph-arrow-left"></i></button><h2 id="'+aiTitle+'">disable AI features</h2><button type="button" class="sheet-x" aria-label="close"><i class="ph ph-x"></i></button></div>'+
+    '<div class="body"><p class="sheet-notes">Choose which AI features are on. These choices apply to all notes on this device.</p>'+features.map(([key,label,detail])=>
+      '<label class="ai-feature"><span class="ai-feature-copy"><strong id="'+key+'-label">'+label+'</strong><small id="'+key+'-detail">'+detail+'</small></span><input class="ai-switch" type="checkbox" role="switch" data-ai-feature="'+key+'" aria-labelledby="'+key+'-label" aria-describedby="'+key+'-detail"'+(S.settings[key]!==false?' checked':'')+'></label>').join('')+'</div>';
+  viewport.append(main,ai);box.appendChild(viewport);
+  main.querySelector('.sheet-x').focus({preventScroll:true});
+  const panel=box.closest('.sheet'),mainTitle=main.querySelector('h2').id;
+  const showAI=on=>{
+    viewport.dataset.page=on?'ai':'main';main.inert=on;ai.inert=!on;
+    main.setAttribute('aria-hidden',String(on));ai.setAttribute('aria-hidden',String(!on));
+    panel.setAttribute('aria-labelledby',on?aiTitle:mainTitle);
+    (on?ai.querySelector('.menu-back'):main.querySelector('#disable-ai')).focus({preventScroll:true});
+  };
+  box.querySelector('#disable-ai').onclick=()=>showAI(true);
+  ai.querySelector('.menu-back').onclick=()=>showAI(false);
+  ai.querySelector('.sheet-x').onclick=()=>closeSheet();
+  panel.addEventListener('keydown',e=>{
+    if(e.key==='Escape'&&viewport.dataset.page==='ai'){e.preventDefault();e.stopImmediatePropagation();showAI(false);}
+  },true);
+  ai.querySelectorAll('[data-ai-feature]').forEach(input=>input.onchange=()=>{
+    const key=input.dataset.aiFeature;S.settings[key]=input.checked;C.savePrefs();
+    if(key==='notaOn')N.nota.toggle();
+    else if(key==='backgroundRemovalOn')N.ink.toggleBackgroundRemoval();
+    else{N.ai.toggle();dlSyncReaders();}
+    N.ink.showSelBar(true);
+  });
   const seg = (id, fn)=>{
     box.querySelectorAll('#'+id+' button').forEach(b=>b.onclick = ()=>{
       box.querySelectorAll('#'+id+' button').forEach(o=>o.setAttribute('aria-pressed','false'));
@@ -10624,7 +10695,7 @@ function finishPreparing(){
    as soon as the note is open. The downloads button in the bar carries the
    progress instead. */
 function beginLaunchReading(){
-  if(C.S.settings.aiOn===false)return Promise.resolve();
+  if(!N.ai.enabled())return Promise.resolve();
   return N.ai.setup();
 }
 function loadLib(name){
@@ -10805,7 +10876,7 @@ async function openNotebook(){
   launchReading.catch(()=>{}).finally(prepareOffline);
   /* the text reader used to wait for the first handwriting; it is fetched
      in the same quiet moment now, so search is ready before it is needed */
-  launchReading.catch(()=>{}).finally(()=>{ if(N.ai.enabled()&&N.ai.setupText)(window.requestIdleCallback||setTimeout)(()=>{ N.ai.setupText().catch(()=>{}); }); });
+  launchReading.catch(()=>{}).finally(()=>{ if(N.ai.textEnabled()&&N.ai.setupText)(window.requestIdleCallback||setTimeout)(()=>{ N.ai.setupText().catch(()=>{}); }); });
   if(window.requestIdleCallback) requestIdleCallback(()=>loadCAS(),{timeout:4000}); else setTimeout(()=>loadCAS(),1500);
 }
 if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

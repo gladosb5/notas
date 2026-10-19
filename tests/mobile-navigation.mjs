@@ -8,7 +8,7 @@ try{
   const ctx=await browser.newContext({viewport:{width,height},hasTouch:true,isMobile:true,deviceScaleFactor:1,serviceWorkers:'block'});
   const page=await ctx.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(`http://127.0.0.1:${server.address().port}/notas.html`);
-  await page.waitForFunction(()=>window.N?.library&&N.downloads);
+  await page.waitForFunction(()=>window.N?.library&&N.downloads&&document.querySelector('#preparing').classList.contains('done'));
   await page.evaluate(()=>{N.tutorial?.finish(false);N.ink.setTool('pen');for(const key of ['ink','text','cutout'])N.downloads.set(key,'download','',null,3000000,9000000);N.downloads.open(true);});
   await page.waitForTimeout(400);
   const bounds=await page.locator('#dlpop').boundingBox();

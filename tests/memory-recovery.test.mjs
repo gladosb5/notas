@@ -119,7 +119,7 @@ test('silent background worker is terminated at deadline and next request succee
   const workers=[],timers=new Map();let id=0;
   class Worker{constructor(){workers.push(this);}postMessage(data){this.data=data;}terminate(){this.terminated=true;}}
   const html=readFileSync(new URL('../notas.html',import.meta.url),'utf8');
-  const context=vm.createContext({Worker,N:{},navigator:{userAgent:''},Error,
+  const context=vm.createContext({Worker,N:{},S:{settings:{}},navigator:{userAgent:''},Error,
     setTimeout(fn){timers.set(++id,fn);return id;},clearTimeout(id){timers.delete(id);}});
   vm.runInContext(html.slice(html.indexOf('const CUTOUT_SIZE='),html.indexOf('/* The model is downloaded in the background')),context);
   const first=vm.runInContext('cutoutAsk({})',context);
@@ -149,7 +149,7 @@ test('F61: shared download progress keeps both prefetch and queued matte jobs al
   const workers=[],timers=new Map(),progress=[];let serial=0;
   class Worker{constructor(){workers.push(this);this.messages=[];}postMessage(data){this.messages.push(data);}terminate(){}}
   const html=readFileSync(new URL('../notas.html',import.meta.url),'utf8');
-  const ctx=vm.createContext({Worker,N:{},navigator:{userAgent:''},Error,
+  const ctx=vm.createContext({Worker,N:{},S:{settings:{}},navigator:{userAgent:''},Error,
     setTimeout(fn){timers.set(++serial,fn);return serial;},clearTimeout(id){timers.delete(id);},onProgress:d=>progress.push(d.phase)});
   vm.runInContext(html.slice(html.indexOf('const CUTOUT_SIZE='),html.indexOf('/* The model is downloaded in the background')),ctx);
   const prefetch=vm.runInContext('cutoutAsk({prefetch:true})',ctx),matte=vm.runInContext('cutoutAsk({matte:true},[],onProgress)',ctx);

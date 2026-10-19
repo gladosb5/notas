@@ -14,6 +14,7 @@
 const N=window.N;
 if(!N||!N.core)return;
 const C=N.core,S=C.S,M=C.M;
+const enabled=()=>S.settings.notaOn!==false;
 
 /* The forward at ./nota/chat is tried first on every host: the dev server
    and the cloudflare worker both carry the key as CEREBRAS_API_KEY, so a
@@ -1434,6 +1435,7 @@ function noteKey(){return (S.id||'')+'|';}
 const readings=new Map();      /* hash -> {text,confidence,group} for every reading, even quiet ones */
 const pendingInk=new Map();    /* hash -> timer */
 function onTranscript(item,group){
+  if(!enabled())return;
   if(!item||!group)return;
   readings.set(item.hash,{text:item.text,confidence:item.confidence,group});
   const call=parseCall(item.text);
@@ -1474,6 +1476,7 @@ function answeredBelow(bbox,rowH){
   return S.strokes.some(st=>st.author==='ai'&&st.bbox[1]>=top-2&&st.bbox[1]<=bottom&&st.bbox[2]>=bbox[0]&&st.bbox[0]<=bbox[2]+M.contentW*0.5);
 }
 async function fireInk(hash,tries){
+  if(!enabled())return;
   pendingInk.delete(hash);
   const r=readings.get(hash);if(!r)return;
   if(askingSelection){if(tries<40)pendingInk.set(hash,setTimeout(()=>fireInk(hash,tries+1),600));return;}
@@ -1510,7 +1513,7 @@ async function fireInk(hash,tries){
   claiming.add(key);
   try{claim=N.collab?await N.collab.claimNota('ink:'+Array.from(ids).sort().join(','),normalizeQ(call.question)):{state:'claimed',finish:async()=>{}};}
   catch(e){C.toast(e.message);return;}finally{claiming.delete(key);}
-  if(S.id!==claimingNote||noteEpoch!==claimingEpoch||![...ids].every(id=>C.strokeById(id))){if(claim.state==='claimed')await claim.finish(false).catch(()=>{});return;}
+  if(!enabled()||S.id!==claimingNote||noteEpoch!==claimingEpoch||![...ids].every(id=>C.strokeById(id))){if(claim.state==='claimed')await claim.finish(false).catch(()=>{});return;}
   if(claim.state==='busy'||claim.state==='offline'){pendingInk.set(hash,setTimeout(()=>fireInk(hash,0),2000));return;}
   if(claim.state!=='claimed')return;
   asked.add(key);
@@ -1536,6 +1539,7 @@ async function fireInk(hash,tries){
    red, as it does a "hey nota" written on the page. */
 let askingSelection=false;
 async function askSelection(){
+  if(!enabled()){C.toast('nota is off. enable it in the menu.');return;}
   const ids=(S.selection||[]).slice();
   if(!ids.length){C.toast('circle some handwriting with the lasso first.');return;}
   if(askingSelection||busy){C.toast('nota is still busy.');return;}
@@ -1552,7 +1556,7 @@ async function askSelection(){
   /* a circled drawing is asked about as the drawing it is: its shapes,
      arrows and labels in words, not its strokes read as one line of text */
   const drawn=await readDrawings(new Set(),LABEL_WAIT,skip);
-  if(S.id!==selectedNote||noteEpoch!==selectedEpoch)return;
+  if(!enabled()||S.id!==selectedNote||noteEpoch!==selectedEpoch)return;
   let inDrawing=0;for(const id of ids)if(drawn.some(d=>d.ids.has(id)))inDrawing++;
   if(drawn.length&&inDrawing>=ids.length*0.5){
     askingSelection=false;
@@ -1566,8 +1570,8 @@ async function askSelection(){
   }
   let reading;
   try{reading=await N.recog.readStrokesText(ids);}
-  catch(e){if(noteEpoch!==selectedEpoch)return;askingSelection=false;C.status('');unsay();C.toast(String(e.message||'nota could not read this.').toLowerCase());return;}
-  if(S.id!==selectedNote||noteEpoch!==selectedEpoch)return;
+  catch(e){if(!enabled()||noteEpoch!==selectedEpoch)return;askingSelection=false;C.status('');unsay();C.toast(String(e.message||'nota could not read this.').toLowerCase());return;}
+  if(!enabled()||S.id!==selectedNote||noteEpoch!==selectedEpoch)return;
   askingSelection=false;
   const text=reading.text&&reading.confidence>=0.2?reading.text:'';
   /* The maths reader reads everything as a formula, so words come out of it
@@ -1597,7 +1601,7 @@ async function askSelection(){
   if(questionKey&&N.collab){
     try{selectionClaim=await N.collab.claimNota('ink:'+Array.from(skip).sort().join(','),normalizeQ(question));}
     catch(e){C.toast(e.message);return;}
-    if(S.id!==selectedNote||noteEpoch!==selectedEpoch){if(selectionClaim.state==='claimed')await selectionClaim.finish(false).catch(()=>{});return;}
+    if(!enabled()||S.id!==selectedNote||noteEpoch!==selectedEpoch){if(selectionClaim.state==='claimed')await selectionClaim.finish(false).catch(()=>{});return;}
     if(selectionClaim.state!=='claimed'){C.toast(selectionClaim.state==='done'?'this question has already been answered.':'nota could not reserve this shared question. try again when the note is connected.');return;}
   }
   if(questionKey){asked.add(questionKey);for(const id of skip)sentInk.add(id);N.ink.render();}
@@ -1653,6 +1657,7 @@ function reset(){
   askingSelection=false;hideOverloaded();endWaiting(false);
 }
 function onTyped(ln){
+  if(!enabled())return;
   if(!ln||ln.tutor)return;
   clearTimeout(typedTimers.get(ln.id));
   let run=typedRuns.get(ln.id);
@@ -1672,6 +1677,7 @@ function onTyped(ln){
   typedTimers.set(ln.id,setTimeout(()=>fireTyped(ln.id),delay));
 }
 async function fireTyped(id){
+  if(!enabled())return;
   typedTimers.delete(id);
   const ln=S.lines.find(l=>l.id===id);if(!ln)return;
   const call=parseCall(ln.text,true);if(!call||!call.question)return;
@@ -1683,7 +1689,7 @@ async function fireTyped(id){
   try{claim=N.collab?await N.collab.claimNota(id,question):{state:'claimed',finish:async()=>{}};}
   catch(e){if(noteEpoch===epoch)C.toast(e.message);return;}
   finally{if(noteEpoch===epoch)claiming.delete(key);}
-  if(noteEpoch!==epoch||S.id!==noteId||asked.has(key)||S.lines.find(l=>l.id===id)?.notaAsked===question||normalizeQ(parseCall(S.lines.find(l=>l.id===id)?.text||'',true)?.question||'')!==question){
+  if(!enabled()||noteEpoch!==epoch||S.id!==noteId||asked.has(key)||S.lines.find(l=>l.id===id)?.notaAsked===question||normalizeQ(parseCall(S.lines.find(l=>l.id===id)?.text||'',true)?.question||'')!==question){
     if(claim.state==='claimed')await claim.finish(false).catch(()=>{});
     return;
   }
@@ -1843,6 +1849,7 @@ function selectedBox(ids){
 
 const LABEL_WAIT=2500;
 async function answer(question,where,writer,control,onWrite){
+  if(!enabled()){writer.failed?.();return false;}
   if(!navigator.onLine){C.toast('nota needs a connection.');writer.failed?.();return false;}
   if(holdBack()){writer.failed?.();showOverloaded(messageAt(where));return false;}
   control=control||new AbortController();
@@ -1909,7 +1916,16 @@ if(N.recog&&N.recog.selectionUnread){
   };
 }
 
-N.nota={forgetLocalInk,localStroke,ownsInk,reset,restoreInk,overloaded,tools:NOTE_TOOLS,toolLimits:{rounds:TOOL_ROUNDS,calls:TOOL_CALLS},isCallStroke,isAskedStroke,drawings:readDrawings,onTranscript,onTyped,askSelection,parseCall,callLength,drawWaiting,mathMatches,tidy,spell,Writer,get busy(){return busy>0;},get writing(){return queue.length;},config:CONFIG,
+function toggle(){
+  if(enabled())return;
+  for(const timer of pendingInk.values())clearTimeout(timer);
+  for(const timer of typedTimers.values())clearTimeout(timer);
+  pendingInk.clear();typedTimers.clear();
+  askingSelection=false;C.status('');unsay();
+  for(const control of activeAnswers)control.abort();
+  for(const run of typedRuns.values())if(!run.done)run.abort();
+}
+N.nota={enabled,toggle,forgetLocalInk,localStroke,ownsInk,reset,restoreInk,overloaded,tools:NOTE_TOOLS,toolLimits:{rounds:TOOL_ROUNDS,calls:TOOL_CALLS},isCallStroke,isAskedStroke,drawings:readDrawings,onTranscript,onTyped,askSelection,parseCall,callLength,drawWaiting,mathMatches,tidy,spell,Writer,get busy(){return busy>0;},get writing(){return queue.length;},config:CONFIG,
   /* the page as nota reads it, for the console: N.nota.context() */
   context(where){ where=where||liveWhere(); return pageRows({...where,diagrams:knownDrawings(where.skip)}); }};
 })();

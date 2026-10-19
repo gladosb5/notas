@@ -18,7 +18,7 @@ try{
  await input.fill(expr);await input.press('Enter');await page.waitForFunction(result=>document.querySelector('#quick-answer .qa-value')?.textContent===result,result,{timeout:15000});
  }
  assert.equal(await page.locator('.sheet').count(),0,'calculator never opens a sheet');
- await input.fill('2 +');await input.press('Enter');await page.waitForFunction(()=>document.querySelector('#quick-expression').getAttribute('aria-invalid')==='true');assert.equal(await answer.isVisible(),false);
+ await input.fill('2 +');await input.press('Enter');await page.waitForTimeout(250);assert.equal(await answer.isVisible(),false);assert.equal(await input.getAttribute('aria-invalid'),null);assert.equal(await page.locator('#quick-status').textContent(),'');
  const bar=await page.evaluate(()=>{const r=s=>document.querySelector(s).getBoundingClientRect();return{title:r('#title'),quick:r('#quick-maths'),downloads:r('#btn-downloads'),menu:r('#btn-menu'),top:r('#topbar')};});
  assert.ok(bar.menu.right>bar.top.right-20,'menu sits at the right end '+width);
  if(width>=700){assert.ok(bar.quick.left>=bar.title.right&&bar.quick.right<=bar.downloads.left,'quick maths sits between the name and the buttons '+width);assert.ok(bar.downloads.left-bar.quick.right<40,'quick maths takes the middle '+width);}
@@ -72,7 +72,8 @@ try{
    assert.ok(said(request.messages[1].content).includes('2 + 4 * 7 / 5 = 7.6'),'Actual tutor request includes the inserted calculation');
    await page.waitForFunction(()=>!N.nota.busy);
    assert.ok(await page.evaluate(()=>N.core.S.lines.some(l=>l.tutor&&l.text.includes('Work through the operations'))),'Mock tutor reply appears');
-   assert.ok(await page.evaluate(()=>!N.nota.context({x:0,y:900}).includes('Work through the operations')),'Tutor replies remain excluded');
+   assert.ok(await page.evaluate(()=>N.nota.context({x:0,y:900}).includes('[nota reply] Work through the operations')),'Tutor replies remain available for follow-up questions');
+   assert.ok(await page.evaluate(()=>N.core.S.nodes.every(n=>!n.ref?.tutor)),'Tutor replies stay out of calculation inputs');
  }
  await page.waitForTimeout(350);
  if(width===390||width===1280)await page.screenshot({path:`test-results/quick-maths-inline-${width}.png`});
