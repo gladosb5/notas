@@ -129,25 +129,37 @@ try{
   await page.locator('#local-status').filter({hasText:'handwriting ready.'}).waitFor({state:'attached'});
   await page.evaluate(async()=>{
     for(const cl of N.core.S.clusters)if(!cl.confirmed)await N.recog.recognize(cl);
-    const checked=N.core.S.clusters.find(cl=>cl.ascii==='3+3');if(checked)N.mathcore.requestSolve(checked.id);
+    /* the reader may still be settling the unconfirmed readings: wait for
+       the working to carry a reading again before pressing its Solve */
+    let checked=null;for(let t=0;t<40&&!checked;t++){checked=N.core.S.clusters.find(cl=>cl.ascii==='3+3');if(!checked)await new Promise(r=>setTimeout(r,250));}
+    if(checked)N.mathcore.requestSolve(checked.id);
     N.mathcore.run();
   });
-  const answerChip=page.locator('.chip').filter({hasText:'6'}).first();
-  const answerNode=await answerChip.getAttribute('data-node');
-  const generatedSize=await answerChip.evaluate(el=>parseFloat(getComputedStyle(el).fontSize));
-  const sourceHeight=await page.evaluate(()=>{
+  // The pressed answer is a typed line on the paper, under the working: no
+  // popup chip carries it and the margin stays clear once it is there.
+  const paperAnswer=await page.evaluate(()=>{
     const cl=N.core.S.clusters.find(c=>c.ascii==='3+3');
-    return cl.bbox[3]-cl.bbox[1];
+    if(!cl)return null;
+    const lns=N.core.S.lines.filter(l=>l.answerOf===cl.hash),ln=lns[0];
+    return {answerChips:[...document.querySelectorAll('#margin .chip')].filter(c=>c.classList.contains('solved')||c.querySelector('.answer')).length,
+            count:lns.length,text:ln?.text,x:ln?.x,y:ln?.y,
+            left:Math.min(Math.max(0,Math.round(cl.bbox[0])),Math.max(0,N.core.M.contentW-80)),bottom:cl.bbox[3],
+            onPaper:[...document.querySelectorAll('#lines .line .txt')].some(t=>t.textContent===ln?.text)};
   });
-  assert.equal(generatedSize,sourceHeight,'Generated answer font size follows the handwriting height');
-  // the answer is only read, on the page: it opens nothing and a tap on it
-  // lands on the paper
-  const autoChip=page.locator(`.chip[data-node="${answerNode}"]`);
-  const [ax,ay]=await autoChip.evaluate(el=>{const r=el.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];});
-  assert.notEqual(await page.evaluate(([x,y])=>document.elementFromPoint(x,y)?.closest('.chip')?'chip':'paper',[ax,ay]),'chip','A tap on an answer goes to the paper');
-  await autoChip.dispatchEvent('click');
-  assert.equal(await autoChip.locator('.answer').textContent(),'= 6','The checked answer stays on the page');
-  assert.ok((await autoChip.locator('.reading').textContent()).replace(/\s/g,'').includes('3+3'),'The recognised equation stays visible beside its answer');
+  assert.ok(paperAnswer,'The solved 3+3 has a written answer');
+  assert.equal(paperAnswer.answerChips,0,'No popup chip carries the answer');
+  assert.equal(paperAnswer.count,1,'One written answer for the working');
+  assert.equal(paperAnswer.text,'= 6','The answer is written on the paper');
+  assert.equal(paperAnswer.x,paperAnswer.left,'The answer starts where the working starts');
+  assert.ok(paperAnswer.y>=paperAnswer.bottom+8,'The answer sits just under the working');
+  assert.ok(paperAnswer.onPaper,'The written answer reads on the paper');
+  // the writing is untouched and a repaint adds nothing
+  await page.evaluate(()=>N.mathcore.run());
+  assert.equal(await page.evaluate(()=>{
+    const cl=N.core.S.clusters.find(c=>c.ascii==='3+3');
+    return N.core.S.lines.filter(l=>l.answerOf===cl.hash).length;
+  }),1,'A repaint writes no duplicate answer');
+  assert.ok((await page.evaluate(()=>N.core.S.clusters.find(c=>c.ascii==='3+3').ascii))==='3+3','The working stays on the paper beside its answer');
   await page.evaluate(()=>N.recog.confirm(N.core.S.clusters.find(c=>c.ascii==='2+2'),'2+2'));
   assert.equal(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result==='4')),false,'Correcting a reading does not solve it');
   await page.evaluate(()=>N.mathcore.requestSolve(N.core.S.clusters.find(c=>c.ascii==='2+2').id));
@@ -416,7 +428,11 @@ try{
       N.recog.switchEngine('ink');
       N.core.S.strokes=sum;
       N.recog.rebuild();
-      for(const cluster of N.core.S.clusters){cluster.asked=true;await N.recog.recognize(cluster);}
+      /* pressed Solve: the explicit reading keeps asked, the way the
+         selection bar's Solve button presses it, so the answer is written
+         on the paper before the lasso ever happens. Answers from the
+         workings erased above are stale: the fresh write clears them. */
+      for(const cluster of N.core.S.clusters){cluster.asked=true;await N.recog.recognize(cluster,cluster.asked);}
       N.mathcore.run();
     },placeSum('3+3','m',10,60,0));
     await page.waitForTimeout(400);

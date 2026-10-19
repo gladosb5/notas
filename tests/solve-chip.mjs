@@ -17,9 +17,13 @@ try{
 
   // Setup screen: says "setting up", counts the model in, and offers a way through.
   // (a model already in the browser's store skips the download, and the screen with it)
-  const prep=await page.evaluate(()=>document.getElementById('prep-skip')?{
-    word:document.getElementById('prep-word').textContent,
-    skip:!document.getElementById('prep-skip').hidden}:null);
+  const prep=await page.evaluate(()=>{
+    /* the block only means anything on the screen variant that carries the
+       model download counter and bar */
+    const word=document.getElementById('prep-word'),skip=document.getElementById('prep-skip'),
+          bytes=document.getElementById('prep-bytes'),bar=document.getElementById('prep-bar');
+    return word&&skip&&bytes&&bar?{word:word.textContent,skip:!skip.hidden}:null;
+  });
   if(prep){
     assert.equal(prep.word,'setting up','Opening screen says setting up while the model downloads');
     assert.equal(prep.skip,true,'Start writing now is offered while the download runs');
@@ -50,15 +54,19 @@ try{
     return {id:cl.id,hash:cl.hash};
   },[id,ascii,latex,extra]);
 
-  // A recognised graph replaces an earlier scalar answer chip.
+  // Solve writes the answer on the paper; a recognised graph replaces an
+  // earlier scalar answer on the paper too.
   await seed('graph-reading','2+2=','2+2=',{asked:true});
-  assert.equal(await page.locator('.chip').count(),1,'Scalar answer starts with a chip');
+  assert.equal(await page.locator('.chip').count(),0,'Solve writes the answer on the paper and keeps no popup chip');
+  assert.ok(await page.evaluate(()=>N.core.S.lines.some(l=>l.answerOf&&l.text==='= 4')),'The pressed answer is written on the paper');
   for(const expression of ['y=x','y=x^2']){
     await seed('graph-reading',expression,expression,{asked:true});
     assert.equal(await page.locator('.plot').count(),1,'Recognised expression creates a graph');
     assert.equal(await page.locator('.chip').count(),0,'Graph is the answer, with no stale or unread chip');
+    assert.equal(await page.evaluate(()=>N.core.S.lines.some(l=>l.answerOf)),false,'The graph takes the scalar answer on the paper with it');
     await page.evaluate(()=>N.mathcore.run());
     assert.equal(await page.locator('.chip').count(),0,'Repainting the graph stays free of error chips');
+    assert.equal(await page.evaluate(()=>N.core.S.lines.some(l=>l.answerOf)),false,'Repainting the graph does not rewrite the answer');
   }
 
   // 6+2 without '=': shows the reading and Solve, no answer yet.
@@ -89,6 +97,7 @@ try{
   await offer.getByRole('button',{name:/^solve/}).click();
   assert.equal(await page.locator('.chip.offer').count(),0,'Solve removes the offer');
   assert.ok(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result==='8')),'Solve calculates 6+2 = 8');
+  assert.equal(await page.evaluate(()=>N.core.S.lines.filter(l=>l.answerOf).length),1,'One written answer under the working, not one per press');
 
   await seed('uncertain-equals','6+2=','6+2=',{needsConfirmation:true});
   assert.equal(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result)),false,'Uncertain equals does not calculate automatically');
@@ -140,13 +149,16 @@ try{
   assert.equal(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result)),false,'No auto-answer for an equals sign');
   assert.ok((await page.locator('.chip.offer .reading').textContent()).replace(/\s/g,'').includes('6+2='));
   await page.locator('.chip.offer .solve').click();
-  assert.equal(await page.locator('.chip.solved .answer').textContent(),'= 8');
-  assert.ok((await page.locator('.chip.solved .reading').textContent()).replace(/\s/g,'').includes('6+2'),'The equation remains beside the answer');
+  assert.equal(await page.locator('.chip').count(),0,'Solve takes the box away');
+  assert.ok(await page.evaluate(()=>N.core.S.lines.some(l=>l.answerOf&&l.text==='= 8')),'The answer is written on the paper, under the working');
+  assert.ok(await page.evaluate(()=>N.core.S.clusters[0].ascii.replace(/\s/g,'')==='6+2='),'The working stays on the paper with its answer');
   await page.evaluate(()=>N.recog.confirm(N.core.S.clusters[0],'6+3='));
   assert.equal(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result)),false,'Correcting a solved equation requires Solve again');
   assert.equal(await page.locator('.chip.offer .solve').count(),1,'Confirmed readings still offer Solve');
+  assert.equal(await page.evaluate(()=>N.core.S.lines.some(l=>l.answerOf)),false,'A corrected reading takes its written answer with it');
   await page.locator('.chip.offer .solve').click();
-  assert.equal(await page.locator('.chip.solved .answer').textContent(),'= 9');
+  assert.ok(await page.evaluate(()=>N.core.S.lines.some(l=>l.answerOf&&l.text==='= 9')),'The corrected answer is written on the paper');
+  assert.equal(await page.evaluate(()=>N.core.S.lines.filter(l=>l.answerOf).length),1,'One written answer on the paper');
 
   // The offer is read and solved on the page: tapping its reading opens nothing.
   await seed('s4','6+2','6+2');
@@ -169,7 +181,7 @@ try{
   assert.equal(active.s,active.id);assert.equal(active.l,active.id);
 
   // CJK fuzzy search slides over characters even when the transcript has spaces (35).
-  const fuzzy=await page.evaluate(()=>[N.ui.fuzzyHandwriting('æ•°å­¦','ä»Šå¤© å­¦æ•°å­— è¯¾')?.score, N.ui.fuzzyHandwriting('æ•°å­¦ç¬”è®°','æ•°å­¦ ç¬”è®°æœ¬')?.score, N.ui.fuzzyHandwriting('æ•°','æ•°å­¦')?.score]);
+  const fuzzy=await page.evaluate(()=>[N.ui.fuzzyHandwriting('数学','今天 学数字 课')?.score, N.ui.fuzzyHandwriting('数学笔记','数学 笔记本')?.score, N.ui.fuzzyHandwriting('数','数学')?.score]);
   assert.equal(fuzzy[1],0,'Exact CJK phrase across a space is found');
   assert.equal(fuzzy[2],0,'Single-character CJK query matches');
 

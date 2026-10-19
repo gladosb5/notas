@@ -67,8 +67,9 @@ try{
     await context.close();
     console.log('Fast startup: notebook fades in, no loading indicator or film, static logo button works.');
   }
-  // Slower startup: release storage midway through the drawing. Its frame
-  // sequence and cadence must continue through the 300 ms transfer.
+  // Slower startup: release storage midway through the drawing. The drawing
+  // finishes right on the loader at four frames a tick, and only the
+  // completed mark travels through the 300 ms transfer.
   {
     const {context,page}=await setup();let release;const held=new Promise(r=>release=r);
     await context.route('**/assets/idb.js',async r=>{await held;await r.continue();});
@@ -84,23 +85,24 @@ try{
     assert.ok(+await page.locator('#prep-art').getAttribute('data-frame')>=before,'handoff never resets the drawing');
     await page.waitForFunction(()=>document.querySelector('#preparing').dataset.handoff==='moving');
     const active=await page.evaluate(()=>({frame:+document.querySelector('#prep-art').dataset.frame,duration:document.querySelector('#prep-art').getAnimations()[0]?.effect.getTiming().duration}));
+    assert.equal(active.frame,111,'the mark travels finished, not still being drawn');
     assert.equal(active.duration,300);
     const cdp=await context.newCDPSession(page);
     await writeFile('test-results/launch-handoff-moving.png',Buffer.from((await cdp.send('Page.captureScreenshot')).data,'base64'));
-    await typeInNotebook(page,'no waiting for the moving logo');
+    await typeInNotebook(page,'no waiting for the moving logo',false);
     await page.waitForFunction(()=>document.querySelector('#preparing').dataset.handoff==='header');
     const then=+await page.locator('#prep-art').getAttribute('data-frame');
     await page.waitForTimeout(500);
     const now=+await page.locator('#prep-art').getAttribute('data-frame');
-    assert.ok(now-then>=8&&now-then<=15,'header keeps the normal 24 fps pace');
+    assert.equal(now,111,'the header keeps the completed drawing, not a running one');
     await page.setViewportSize({width:390,height:844});
     const box=await page.locator('#prep-art').boundingBox(),brand=await page.locator('#brand').boundingBox();
     assert.ok(box.x>=brand.x&&box.x+box.width<=brand.x+brand.width+1,'header drawing follows mobile layout');
     await page.evaluate(()=>window.notasLaunch.finished);
-    assert.deepEqual(await page.evaluate(()=>window.launchFrames.slice(0,41)),Array.from({length:41},(_,n)=>n));
+    assert.ok(await page.evaluate(()=>{const f=window.launchFrames;return f.at(-1)===111&&f.every((n,i)=>n>=0&&n<=111&&(i===0||n>f[i-1]));}),'every drawing shows once, in order, ending complete');
     await page.screenshot({path:'test-results/launch-handoff-mobile.png'});
     await context.close();
-    console.log('Slow startup: 300 ms transfer, early typing, all frames retained, normal cadence, responsive header.');
+    console.log('Slow startup: drawing finishes on the loader, 300 ms transfer of the finished mark, early typing, responsive header.');
   }
   // Changing accessibility preferences while the mark is travelling must
   // dock a static final logo, with no cancelled animation left on the page.
