@@ -102,6 +102,8 @@ try{
   mode='ok';cfMode='ok';txMode='payment';
   assert.deepEqual(await run(true),{text:'answer',fallbacks:1,grabs:0});
   assert.deepEqual(models(),[textModel,cloudflare]);
+  assert.ok(!image(calls[0]),'GPT-OSS gets words only');
+  assert.ok(image(calls[1]),'the Qwen fallback gets the page picture');
   txMode='ok';
  }
  // Cloudflare's Qwen streams its thinking for longer than the wait before
