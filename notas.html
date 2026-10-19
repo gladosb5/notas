@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v153">
+<meta name="notas-version" content="v154">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -706,18 +706,15 @@ body[data-tool="eraser"] #col .chip{pointer-events:none}
 /* a typed line is answered in its own face; the handwritten blue is for handwriting */
 .chip.typed{font:400 16px/1.4 var(--type);padding:3px 10px 2px}
 .chip.error{font:500 12.5px/1.35 var(--ui);color:var(--ink-2);border-color:var(--rule);background:var(--paper);padding:5px 11px}
-.chip.offer,.chip.solved{
+.chip.offer{
   display:flex;align-items:center;gap:10px;flex-wrap:wrap;
   font:400 17px/1.2 var(--ui);color:var(--graphite);
   background:var(--panel);border-color:var(--rule);padding:5px 6px 5px 13px;
   box-shadow:var(--shadow);
 }
 .chip.offer:hover{background:var(--panel)}
-.chip.offer .reading,.chip.solved .reading{max-width:min(320px,60vw);overflow-wrap:anywhere}
-.chip.offer .reading .katex,.chip.solved .reading .katex{font-size:1.05em}
-.chip.solved{padding:7px 12px}
-.chip.solved .reading{font:400 17px/1.2 var(--ui)}
-.chip.solved .answer{color:var(--blue);font:600 1em/1.15 var(--hand)}
+.chip.offer .reading{max-width:min(320px,60vw);overflow-wrap:anywhere}
+.chip.offer .reading .katex{font-size:1.05em}
 .chip .solve{
   display:inline-flex;align-items:center;gap:6px;
   font:500 13px var(--ui);color:var(--paper);background:var(--graphite);border:0;
@@ -3681,15 +3678,6 @@ function pickImage(id){
 function moveStrokes(ids, dx, dy){
   geometryRev++;const idSet=new Set(ids);
   for(const ln of S.lines)if(idSet.has(ln.id)){ln.x=(ln.x||0)+dx;ln.y+=dy;}
-  /* a written answer belongs to its working: when the whole working moves,
-     the answer travels with it, so the move stays one undo step instead of
-     leaving the line behind and writing a second copy over it */
-  const whole=new Set();
-  for(const cl of S.clusters)if(cl.strokeIds.length&&cl.strokeIds.every(id=>idSet.has(id)))whole.add(cl.hash);
-  if(whole.size){
-    for(const ln of S.lines)if(ln.answerOf&&whole.has(ln.answerOf)&&(ln.text||'')===ln.answerText&&typeof ln.x==='number'){ln.x+=dx;ln.y+=dy;}
-    N.text.render();
-  }
   N.text.render();
   carryReadings(()=>{
     for(const id of ids){
@@ -3785,19 +3773,14 @@ function carryReadings(change){
   if(N.recog){
     N.recog.rebuild();
     const cache = N.recog.cache;
-    let carried = false, answersKeyed = false;
+    let carried = false;
     for(const cl of S.clusters){
       const old = was.get(key(cl));
       if(!old || old === cl.hash) continue;
       if(cache.has(old) && !cache.has(cl.hash)){
         cache.set(cl.hash, cache.get(old)); carried = true;
       }
-      /* a written answer is keyed on the reading it answered: it follows
-         the same re-key, so the answer stays under the working after a
-         move and undo puts the ink and its answer back together */
-      for(const ln of S.lines)if(ln.answerOf===old){ln.answerOf=cl.hash;answersKeyed=true;}
     }
-    if(answersKeyed) N.text.render();
     if(carried) N.recog.rebuild();
   }
 }
@@ -6347,9 +6330,6 @@ function collect(){
   const out = [];
   for(const ln of S.lines){
     if(ln.tutor) continue;              /* nota's red lines are never calculated */
-    /* nor is the answer Solve wrote under a working: its words already are
-       the answer, so it stays on the page and out of the maths and the chips */
-    if(ln.answerOf) continue;
     out.push({ kind:'line', id:ln.id, y:ln.y, x:ln.x||0,
                right: (ln.x||0)+textWidth(ln.text) + 4, mid: ln.y + C.LINE_H/2, src:ln.text, ref:ln });
   }
@@ -6687,112 +6667,6 @@ function requestSolve(id){
   const stored = N.recog && N.recog.cache.get(live.hash); if(stored){ stored.asked = true; delete stored.dismissed; }
   C.markDirty(); run();
 }
-/* ---- the answer is written on the paper ----
-   Pressing Solve takes its box off the page and writes the answer just under
-   the working, in the typed face, the way a ghost answer accepted on a line
-   reads. The line is not calculated again: its words are already the answer,
-   and the flag this records travels with the reading, so a note reopened
-   writes nothing new. One undo takes the press and the line back together. */
-function answerWords(result){
-  const text=String(result||'');
-  /* an answer the solver worded already reads whole ("x = 2 or -2", "no
-     solution"); an answer it computed is the tail of the working and keeps
-     the equals sign it ended on */
-  return /^[A-Za-z]|=/.test(text) ? text : '= '+text;
-}
-function answerX(cl){
-  return Math.min(Math.max(0,Math.round(cl.bbox[0])),Math.max(0,M.contentW-80));
-}
-/* the first clear row under the working: its ink, the ink beside it, pictures
-   and typed lines are steered below rather than written over */
-function answerY(cl,x,w){
-  const blocks=[];
-  for(const l of S.lines){
-    if(l.y==null||!l.text)continue;
-    const left=l.x||0,tw=Math.max(80,Math.min(M.contentW-left,textWidth(l.text)+24));
-    blocks.push({top:l.y,h:Math.max(C.LINE_H,l.h||C.LINE_H),left,right:left+tw});
-  }
-  for(const st of S.strokes)if(st.bbox&&st.bbox.length===4)blocks.push({top:st.bbox[1],h:st.bbox[3]-st.bbox[1],left:st.bbox[0],right:st.bbox[2]});
-  for(const c of S.clusters)if(c.hash!==cl.hash&&c.bbox&&c.bbox.length===4)blocks.push({top:c.bbox[1],h:c.bbox[3]-c.bbox[1],left:c.bbox[0],right:c.bbox[2]});
-  for(const im of S.images)blocks.push({top:im.y,h:im.h||0,left:im.x,right:im.x+(im.w||0)});
-  blocks.sort((a,b)=>a.top-b.top);
-  let y=Math.round(cl.bbox[3])+8;
-  for(const b of blocks){
-    if(b.top+b.h<=y+2)continue;
-    if(b.top>=y+C.LINE_H-2)break;
-    if(b.left>=x+w||b.right<=x+4)continue;
-    y=Math.round(b.top+b.h)+6;
-  }
-  return y;
-}
-/* a written answer nobody edited whose working no longer stands to answer -
-   its reading was corrected, or its ink regrouped and answered again - is
-   replaced when it sits in this working's band, so a re-solve rewrites one
-   answer instead of stacking them. An answer the student has touched, or one
-   whose own ink still stands elsewhere, keeps its place. */
-function staleAnswers(hash,y,x,w){
-  const standing=new Set(S.clusters.map(c=>c.hash));
-  const found=[];
-  for(const l of S.lines){
-    if(!l.answerOf||typeof l.answerText!=='string'||(l.text||'')!==l.answerText)continue;
-    if(l.answerOf!==hash&&standing.has(l.answerOf))continue;
-    if(l.y<y-4*C.LINE_H||l.y>y+4*C.LINE_H)continue;
-    const left=l.x||0,right=left+Math.max(80,Math.min(M.contentW-left,textWidth(l.text)+24));
-    if(left>=x+w||right<=x+4)continue;
-    found.push(l);
-  }
-  return found;
-}
-function markAnswered(hash,on){
-  for(const c of S.clusters)if(c.hash===hash){ if(on){c.asked=true;c.answered=true;} else {delete c.asked;delete c.answered;} }
-  const stored=N.recog&&N.recog.cache.get(hash);
-  if(stored){ if(on){stored.asked=true;stored.answered=true;} else {delete stored.asked;delete stored.answered;} }
-}
-function writeAnswer(n){
-  const cl=n.ref, hash=cl.hash, one=answerWords(n.result);
-  const live=S.lines.find(l=>l.answerOf===hash);
-  if(live){
-    /* answered on the paper already: a mark lost to an older save or another
-       session is kept again quietly, and an answer nobody has edited follows
-       the maths when it changes (the reading or what it reads already moved);
-       one the student has written in is theirs and stays */
-    if((live.text||'')===one){ markAnswered(hash,true); return; }
-    if((live.text||'')!==live.answerText) return;
-    const was={text:live.text,answerText:live.answerText};
-    C.act('rewrite answer',
-      ()=>{live.text=one;live.answerText=one;},
-      ()=>{live.text=was.text;live.answerText=was.answerText;});
-    N.text && N.text.render();
-    return;
-  }
-  const x=answerX(cl), width=Math.max(80,Math.min(M.contentW-x,textWidth(one)+24));
-  const y=answerY(cl,x,width);
-  const stale=staleAnswers(hash,y,x,width).map(l=>({...l}));
-  const line={id:C.uid(),x,y,text:one,h:C.LINE_H,answerOf:hash,answerText:one};
-  const set=on=>{
-    if(on){
-      /* the replaced answers go out as the new one comes in */
-      S.lines=S.lines.filter(l=>!stale.some(o=>o.id===l.id));
-      if(!S.lines.some(l=>l.answerOf===hash))S.lines.push({...line});
-    }else{
-      S.lines=S.lines.filter(l=>!(l.answerOf===hash&&(l.text||'')===one));
-      /* the replaced answers are put back: they are what undo was asked for */
-      for(const old of stale)if(!S.lines.some(l=>l.id===old.id))S.lines.push({...old});
-    }
-    markAnswered(hash,on);
-    C.growDoc(y+C.LINE_H+240);
-    N.text && N.text.render();
-  };
-  C.act('solve answer', ()=>set(true), ()=>set(false));
-}
-/* the graph card is the answer: a scalar one Solve wrote earlier is quiet
-   cleanup, the way the old chip left - it goes out with the graph */
-function dropPaperAnswer(cl){
-  const line=S.lines.find(l=>l.answerOf===cl.hash&&typeof l.answerText==='string'&&(l.text||'')===l.answerText);
-  if(!line)return;
-  S.lines=S.lines.filter(l=>l!==line);
-  N.text && N.text.render();
-}
 /* The box beside handwriting can be sent away: a working the student does
    not want read, a doodle the reader took for a sum. The reading is kept,
    so search still finds the ink, and the flag travels with it like an
@@ -6860,7 +6734,7 @@ function paintAccessible(nodes){
     if(n.kind==='cluster'&&!n.ref?.asked&&!n.ref?.confirmed&&N.recog?.handwritingKind(n.ref)!=='math')continue;
     out.push((n.kind==='cluster'?'handwriting read as ':'typed ')+n.src);
     if(n.result&&n.kind==='line'&&!n.stated&&/=\s*$/.test(n.src||''))out.push('answer '+n.result+' suggested; press Space to accept');
-    else if(n.result)out.push(n.kind==='cluster'?'answer '+n.result+', written under the working':'result '+n.result);
+    else if(n.result)out.push('result '+n.result);
     else if(offersSolve(n))out.push('not calculated yet, solve is offered beside it');
     if(n.plot)out.push('graph, y = '+n.plot.expr+(n.plot.params.length?' with parameters '+n.plot.params.join(', '):''));
   }
@@ -6953,16 +6827,15 @@ function paint(nodes){
       N.text.setGhost(n.id, ghost);
       if(ghost || n.stated) continue;
     }
-    /* An explicit Solve writes the answer on the paper, under the working.
-       The press takes the box away: the offer dies with it, and the margin
-       keeps nothing after - not while the answer is on its way, not once it
-       is there. A reading that cannot be calculated leaves the paper alone.
-       The graph card is the answer: a pressed working's scalar one written
-       under it earlier goes out with it, the way the old chip left. */
+    /* An explicit Solve leaves the answer standing in the margin as written
+       text, the way it read before the press turned it into furniture: seen
+       right beside the working, pressed by nothing, and never inside a box.
+       The offer died with the press, so the answer is all that remains. A
+       reading that cannot be calculated leaves the paper alone. The graph
+       card is the answer already; a scalar one stays unwritten. */
     if(n.kind==='cluster' && n.ref?.asked){
-      if(n.plot && N.plot) dropPaperAnswer(n.ref);
-      else if(n.result && !callInk(n)) writeAnswer(n);
-      continue;
+      if(n.plot && N.plot) continue;
+      if(!n.result || callInk(n)) continue;
     }
     /* The graph card is the answer. Leave its old scalar chip unseen so
        cleanup removes it, rather than labelling a valid reading unreadable. */
@@ -7001,17 +6874,13 @@ function paint(nodes){
       ? Math.max(1,n.ref.bbox[3]-n.ref.bbox[1]) : 0;
     el.style.fontSize=handwritingHeight?handwritingHeight+'px':'';
     el.classList.remove('error');
-    const solved=n.kind==='cluster'&&!!n.result&&!n.pending;
-    el.classList.toggle('offer',offer);el.classList.toggle('solved',solved);
+    el.classList.toggle('offer',offer);
     el.classList.toggle('typed', n.kind === 'line' && !offer && !n.pending);
     let html;
     if(offer){
       el.setAttribute('aria-label','handwriting read as '+n.src+'.');
       html = '<span class="reading">'+readingHTML(n.ref)+'</span>'+
         '<button class="solve" type="button" aria-label="solve '+escape(n.src)+'"><i class="ph ph-equals" aria-hidden="true"></i>solve</button>';
-    }else if(solved){
-      el.setAttribute('aria-label','handwriting read as '+n.src+'. answer '+n.result+'.');
-      html='<span class="reading">'+readingHTML({latex:(n.ref.latex||'').replace(/=\s*$/,''),ascii:(n.ref.ascii||'').replace(/=\s*$/,'')})+'</span><span class="answer">= '+escape(n.result)+'</span>';
     }else{
       el.removeAttribute('aria-label');
       html = n.pending
@@ -7054,7 +6923,7 @@ function paint(nodes){
          set at the handwriting's height, so the fixed room check above
          cannot know whether it will fit beside. Solve offers can span
          more than one line and are left where they are. */
-      const plain=!offer&&!solved;
+      const plain=!offer;
       const lineH=!plain?0:handwritingHeight?handwritingHeight*1.15:(n.kind==='line'?16*1.4:21*1.15);
       place.push([el,n.mid||n.y,lineH,below]);
     }
@@ -8960,7 +8829,7 @@ function validateImportedNote(doc){
   const lines=doc.lines.map(l=>{
     if(!l||!coord(l.y)||typeof l.text!=='string'||l.text.length>5000000)throw new Error('this note contains invalid typed text.');
     const h=Number(l.h||C.LINE_H);if(!Number.isFinite(h)||h<C.LINE_H||h>200000)throw new Error('this note contains invalid text layout.');
-    return {id:safeId(l.id),y:Number(l.y),...(place(l.x)?{x:Number(l.x)}:{}),text:l.text,h,...(typeof l.notaAsked==='string'&&l.notaAsked.length<=5000000?{notaAsked:l.notaAsked}:{}),...(l.tutor?{tutor:true}:{}),...(typeof l.answerPrefix==='string'&&l.text.startsWith(l.answerPrefix)?{answerPrefix:l.answerPrefix}:{}),...(l.suppressAnswer===l.text?{suppressAnswer:l.text}:{}),...(typeof l.answerOf==='string'&&l.answerOf.length<=128?{answerOf:l.answerOf}:{}),...(typeof l.answerText==='string'&&l.answerText.length<=2000?{answerText:l.answerText}:{})};
+    return {id:safeId(l.id),y:Number(l.y),...(place(l.x)?{x:Number(l.x)}:{}),text:l.text,h,...(typeof l.notaAsked==='string'&&l.notaAsked.length<=5000000?{notaAsked:l.notaAsked}:{}),...(l.tutor?{tutor:true}:{}),...(typeof l.answerPrefix==='string'&&l.text.startsWith(l.answerPrefix)?{answerPrefix:l.answerPrefix}:{}),...(l.suppressAnswer===l.text?{suppressAnswer:l.text}:{})};
   });
   let imageChars=0;
   const images=doc.images.map(im=>{

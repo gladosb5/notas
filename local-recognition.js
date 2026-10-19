@@ -1339,7 +1339,7 @@ function rebuild(){
     return {id:'cl_'+list[0].id,hash,strokeIds:list.map(s=>s.id),
       bbox:[Math.min(...list.map(s=>s.bbox[0])),Math.min(...list.map(s=>s.bbox[1])),Math.max(...list.map(s=>s.bbox[2])),Math.max(...list.map(s=>s.bbox[3]))],
       latex:saved.latex||'',ascii:saved.latex?N.mathcore.latexToMath(saved.latex):(saved.ascii||''),kind:saved.kind||'expression',confidence:saved.confidence||0,
-      needsConfirmation:!!saved.needsConfirmation,modelVersion:saved.modelVersion,alternatives:saved.alternatives||[],confirmed:!!saved.confirmed,review:false,pending:prior.pending||false,asked:!!(saved.asked||prior.asked),answered:!!(saved.answered||prior.answered),...(stored.dismissed||prior.dismissed?{dismissed:true}:{}),_plotVals:stored.plotVals||prior._plotVals||{},source:'ink'};
+      needsConfirmation:!!saved.needsConfirmation,modelVersion:saved.modelVersion,alternatives:saved.alternatives||[],confirmed:!!saved.confirmed,review:false,pending:prior.pending||false,asked:!!(saved.asked||prior.asked),...(stored.dismissed||prior.dismissed?{dismissed:true}:{}),_plotVals:stored.plotVals||prior._plotVals||{},source:'ink'};
   });
   // A neighbor can change expression completeness without changing this
   // cluster's own hash. Recheck cached readings after every grouping rebuild.
@@ -2169,14 +2169,6 @@ function confirm(cl,text){
   if(!S.clusters.includes(cl))return;
   text=text.trim();if(!text)return;
   cl.ascii=text;cl.latex='';cl.alternatives=[];cl.confirmed=true;cl.asked=false;cl.needsConfirmation=false;cl.review=false;cl.pending=false;cl.error='';
-  /* a corrected reading's written answer goes with the reading: the old one
-     is no longer the answer to what is there, and a fresh Solve writes the
-     new one in its place */
-  if(cl.answered){
-    delete cl.answered;
-    const old=S.lines.find(l=>l.answerOf===cl.hash&&typeof l.answerText==='string'&&(l.text||'')===l.answerText);
-    if(old){S.lines=S.lines.filter(l=>l!==old);N.text&&N.text.render();}
-  }
   cache.set(cl.hash,{latex:'',ascii:text,kind:'expression',confirmed:true,asked:!!cl.asked});
   attempted.add(cl.hash);
   if(cl.imageId){const im=S.images.find(i=>i.id===cl.imageId);if(im)Object.assign(im,{ascii:text,latex:'',confirmed:true,review:false});}

@@ -54,19 +54,21 @@ try{
     return {id:cl.id,hash:cl.hash};
   },[id,ascii,latex,extra]);
 
-  // Solve writes the answer on the paper; a recognised graph replaces an
-  // earlier scalar answer on the paper too.
+  // A pressed Solve leaves the answer standing in the margin as plain text,
+  // and a recognised graph replaces it with its card.
   await seed('graph-reading','2+2=','2+2=',{asked:true});
-  assert.equal(await page.locator('.chip').count(),0,'Solve writes the answer on the paper and keeps no popup chip');
-  assert.ok(await page.evaluate(()=>N.core.S.lines.some(l=>l.answerOf&&l.text==='= 4')),'The pressed answer is written on the paper');
+  assert.equal(await page.locator('.chip').count(),1,'Solve lets the answer stand beside the working');
+  assert.equal(await page.evaluate(()=>[...document.querySelectorAll('.chip')].map(c=>c.textContent).join('')),'4','The pressed answer reads as plain text');
+  assert.ok(await page.evaluate(()=>{const el=document.querySelector('.chip'),st=getComputedStyle(el);
+    return !el.classList.contains('solved')&&!el.classList.contains('offer')&&!el.classList.contains('typed')
+      &&st.backgroundColor==='rgba(0, 0, 0, 0)'&&st.borderTopColor==='rgba(0, 0, 0, 0)'&&st.boxShadow==='none';}),'The pressed answer is not inside any box');
+  assert.equal(await page.evaluate(()=>N.core.S.lines.some(l=>l.answerOf)),false,'Nothing is written into the typed lines');
   for(const expression of ['y=x','y=x^2']){
     await seed('graph-reading',expression,expression,{asked:true});
     assert.equal(await page.locator('.plot').count(),1,'Recognised expression creates a graph');
     assert.equal(await page.locator('.chip').count(),0,'Graph is the answer, with no stale or unread chip');
-    assert.equal(await page.evaluate(()=>N.core.S.lines.some(l=>l.answerOf)),false,'The graph takes the scalar answer on the paper with it');
     await page.evaluate(()=>N.mathcore.run());
     assert.equal(await page.locator('.chip').count(),0,'Repainting the graph stays free of error chips');
-    assert.equal(await page.evaluate(()=>N.core.S.lines.some(l=>l.answerOf)),false,'Repainting the graph does not rewrite the answer');
   }
 
   // 6+2 without '=': shows the reading and Solve, no answer yet.
@@ -97,7 +99,8 @@ try{
   await offer.getByRole('button',{name:/^solve/}).click();
   assert.equal(await page.locator('.chip.offer').count(),0,'Solve removes the offer');
   assert.ok(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result==='8')),'Solve calculates 6+2 = 8');
-  assert.equal(await page.evaluate(()=>N.core.S.lines.filter(l=>l.answerOf).length),1,'One written answer under the working, not one per press');
+  assert.equal(await page.locator('#margin .chip').count(),1,'One answer beside the working, not one per press');
+  assert.equal(await page.locator('#margin .chip').textContent(),'8');
 
   await seed('uncertain-equals','6+2=','6+2=',{needsConfirmation:true});
   assert.equal(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result)),false,'Uncertain equals does not calculate automatically');
@@ -149,16 +152,26 @@ try{
   assert.equal(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result)),false,'No auto-answer for an equals sign');
   assert.ok((await page.locator('.chip.offer .reading').textContent()).replace(/\s/g,'').includes('6+2='));
   await page.locator('.chip.offer .solve').click();
-  assert.equal(await page.locator('.chip').count(),0,'Solve takes the box away');
-  assert.ok(await page.evaluate(()=>N.core.S.lines.some(l=>l.answerOf&&l.text==='= 8')),'The answer is written on the paper, under the working');
+  const answered=await page.evaluate(()=>{
+    const cl=N.core.S.clusters[0],el=[...document.querySelectorAll('.chip')].find(c=>c.dataset.node===cl.id);
+    if(!cl||!el)return null;
+    const st=getComputedStyle(el);
+    return {text:el.textContent,cls:el.className,boxed:st.backgroundColor!=='rgba(0, 0, 0, 0)'||st.borderTopColor!=='rgba(0, 0, 0, 0)'||st.boxShadow!=='none',
+            typedLines:N.core.S.lines.some(l=>l.answerOf)};
+  });
+  assert.ok(answered,'The pressed answer stands in the margin');
+  assert.equal(answered.text,'8','The answer reads as written text');
+  assert.equal(answered.boxed,false,'The answer carries no box');
+  assert.equal(answered.typedLines,false,'Nothing is typed onto the lines');
+  assert.equal(await page.locator('.chip').count(),1,'Solve takes the offer away; only the answer remains');
   assert.ok(await page.evaluate(()=>N.core.S.clusters[0].ascii.replace(/\s/g,'')==='6+2='),'The working stays on the paper with its answer');
   await page.evaluate(()=>N.recog.confirm(N.core.S.clusters[0],'6+3='));
   assert.equal(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result)),false,'Correcting a solved equation requires Solve again');
   assert.equal(await page.locator('.chip.offer .solve').count(),1,'Confirmed readings still offer Solve');
-  assert.equal(await page.evaluate(()=>N.core.S.lines.some(l=>l.answerOf)),false,'A corrected reading takes its written answer with it');
+  assert.equal(await page.locator('.chip').filter({hasText:/^8$/}).count(),0,'A corrected reading takes its answer with it');
   await page.locator('.chip.offer .solve').click();
-  assert.ok(await page.evaluate(()=>N.core.S.lines.some(l=>l.answerOf&&l.text==='= 9')),'The corrected answer is written on the paper');
-  assert.equal(await page.evaluate(()=>N.core.S.lines.filter(l=>l.answerOf).length),1,'One written answer on the paper');
+  assert.equal(await page.locator('.chip').count(),1,'The corrected answer replaced the old one');
+  assert.equal(await page.locator('.chip').textContent(),'9');
 
   // The offer is read and solved on the page: tapping its reading opens nothing.
   await seed('s4','6+2','6+2');
@@ -280,7 +293,7 @@ try{
     await page.evaluate(()=>{N.ai.setupState=window.__setupState;N.core.S.strokes=[];N.recog.rebuild();N.mathcore.run();});
   }
 
-  console.log('Solve chip, setup progress, solve intent, writing through chips, ink clock, waiting line, toast swap, active note and CJK search passed');
+  console.log('Solve press leaving the answer standing, setup progress, solve intent, writing through chips, ink clock, waiting line, toast swap, active note and CJK search passed');
 }finally{
   await browser.close();server.close();
 }

@@ -135,30 +135,36 @@ try{
     if(checked)N.mathcore.requestSolve(checked.id);
     N.mathcore.run();
   });
-  // The pressed answer is a typed line on the paper, under the working: no
-  // popup chip carries it and the margin stays clear once it is there.
-  const paperAnswer=await page.evaluate(()=>{
-    const cl=N.core.S.clusters.find(c=>c.ascii==='3+3');
-    if(!cl)return null;
-    const lns=N.core.S.lines.filter(l=>l.answerOf===cl.hash),ln=lns[0];
-    return {answerChips:[...document.querySelectorAll('#margin .chip')].filter(c=>c.classList.contains('solved')||c.querySelector('.answer')).length,
-            count:lns.length,text:ln?.text,x:ln?.x,y:ln?.y,
-            left:Math.min(Math.max(0,Math.round(cl.bbox[0])),Math.max(0,N.core.M.contentW-80)),bottom:cl.bbox[3],
-            onPaper:[...document.querySelectorAll('#lines .line .txt')].some(t=>t.textContent===ln?.text)};
+  // The pressed answer stands in the margin as written text, right beside the
+  // working: no box around it, no panel background, and nothing typed onto
+  // the lines - the way it read before the press turned it into furniture.
+  const pressedNode=await page.evaluate(()=>N.core.S.clusters.find(c=>c.ascii==='3+3')?.id);
+  const answerChip=page.locator(`.chip[data-node="${pressedNode}"]`);
+  assert.equal(await answerChip.count(),1,'The pressed answer stands beside the working');
+  const look=await answerChip.evaluate(el=>({cls:el.className,html:el.innerHTML,font:getComputedStyle(el).fontFamily,
+    bg:getComputedStyle(el).backgroundColor,border:getComputedStyle(el).borderTopColor,shadow:getComputedStyle(el).boxShadow,
+    size:parseFloat(getComputedStyle(el).fontSize),pe:getComputedStyle(el).pointerEvents}));
+  assert.ok(!look.cls.includes('solved')&&!look.cls.includes('offer'),'The pressed answer is not a box');
+  assert.equal(look.html,'6','The answer reads as plain text');
+  assert.equal(look.bg,'rgba(0, 0, 0, 0)','The answer has no panel background');
+  assert.equal(look.border,'rgba(0, 0, 0, 0)','The answer has no visible box border');
+  assert.equal(look.shadow,'none','The answer casts no shadow');
+  assert.match(look.font,/caveat|segoe script|hand/i,'The answer is set in the handwriting face');
+  const sourceHeight=await page.evaluate(()=>{const cl=N.core.S.clusters.find(c=>c.ascii==='3+3');return cl.bbox[3]-cl.bbox[1];});
+  assert.equal(look.size,sourceHeight,'Generated answer font size follows the handwriting height');
+  // the answer is only read: a tap on it lands on the paper, and the typed
+  // lines stay clear of it
+  const [ax,ay]=await answerChip.evaluate(el=>{const r=el.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];});
+  assert.notEqual(await page.evaluate(([x,y])=>document.elementFromPoint(x,y)?.closest('.chip')?'chip':'paper',[ax,ay]),'chip','A tap on the answer goes to the paper');
+  const hang=await page.evaluate(()=>{
+    const cl=N.core.S.clusters.find(c=>c.ascii==='3+3'),el=[...document.querySelectorAll('.chip')].find(c=>c.dataset.node===cl.id);
+    return {answerLeft:parseFloat(el.style.left),right:cl.bbox[2],top:parseFloat(el.style.top),bottom:cl.bbox[3]};
   });
-  assert.ok(paperAnswer,'The solved 3+3 has a written answer');
-  assert.equal(paperAnswer.answerChips,0,'No popup chip carries the answer');
-  assert.equal(paperAnswer.count,1,'One written answer for the working');
-  assert.equal(paperAnswer.text,'= 6','The answer is written on the paper');
-  assert.equal(paperAnswer.x,paperAnswer.left,'The answer starts where the working starts');
-  assert.ok(paperAnswer.y>=paperAnswer.bottom+8,'The answer sits just under the working');
-  assert.ok(paperAnswer.onPaper,'The written answer reads on the paper');
-  // the writing is untouched and a repaint adds nothing
+  assert.ok(Math.abs(hang.answerLeft-(hang.right+18))<2||(hang.answerLeft<=hang.right&&hang.top>=hang.bottom+6),'The answer hangs right after the working');
+  assert.equal(await page.evaluate(()=>N.core.S.lines.some(l=>l.answerOf)),false,'Nothing is typed onto the lines');
+  // a repaint keeps exactly one answer
   await page.evaluate(()=>N.mathcore.run());
-  assert.equal(await page.evaluate(()=>{
-    const cl=N.core.S.clusters.find(c=>c.ascii==='3+3');
-    return N.core.S.lines.filter(l=>l.answerOf===cl.hash).length;
-  }),1,'A repaint writes no duplicate answer');
+  assert.equal(await answerChip.count(),1,'A repaint keeps one answer');
   assert.ok((await page.evaluate(()=>N.core.S.clusters.find(c=>c.ascii==='3+3').ascii))==='3+3','The working stays on the paper beside its answer');
   await page.evaluate(()=>N.recog.confirm(N.core.S.clusters.find(c=>c.ascii==='2+2'),'2+2'));
   assert.equal(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result==='4')),false,'Correcting a reading does not solve it');
@@ -429,14 +435,18 @@ try{
       N.core.S.strokes=sum;
       N.recog.rebuild();
       /* pressed Solve: the explicit reading keeps asked, the way the
-         selection bar's Solve button presses it, so the answer is written
-         on the paper before the lasso ever happens. Answers from the
-         workings erased above are stale: the fresh write clears them. */
+         selection bar's Solve button presses it, so the answer stands in
+         the margin before the lasso ever happens */
       for(const cluster of N.core.S.clusters){cluster.asked=true;await N.recog.recognize(cluster,cluster.asked);}
       N.mathcore.run();
     },placeSum('3+3','m',10,60,0));
     await page.waitForTimeout(400);
     const readBefore=await page.evaluate(()=>N.core.S.clusters.map(c=>c.ascii).join('|'));
+    const answerBefore=await page.evaluate(()=>{
+      const cl=N.core.S.clusters.find(c=>c.ascii==='3+3'),el=[...document.querySelectorAll('.chip')].find(c=>c.dataset.node===cl.id);
+      return el?{text:el.textContent,cls:el.className,left:parseFloat(el.style.left),top:parseFloat(el.style.top)}:null;
+    });
+    assert.ok(answerBefore,'The pressed answer stands before the drag');
     const leftBefore=await page.evaluate(()=>Math.min(...N.core.S.strokes.map(s=>s.bbox[0])));
     const ox=inkBox.x+colLeft, oy=inkBox.y;
     await page.click('.tool[data-tool="select"]');
@@ -449,13 +459,26 @@ try{
     const midDrag=await page.evaluate(()=>Math.min(...N.core.S.strokes.map(s=>s.bbox[0])));
     assert.equal(midDrag,leftBefore,'A drag in progress is not committed until the finger lifts');
     await page.mouse.up();await page.waitForTimeout(600);
-    const moved=await page.evaluate(()=>({left:Math.min(...N.core.S.strokes.map(s=>s.bbox[0])),
-      read:N.core.S.clusters.map(c=>c.ascii).join('|'),result:N.core.S.nodes.map(n=>n.result).filter(Boolean).join(',')}));
+    const moved=await page.evaluate(()=>{
+      const cl=N.core.S.clusters.find(c=>c.ascii==='3+3'),el=[...document.querySelectorAll('.chip')].find(c=>c.dataset.node===cl.id);
+      return {left:Math.min(...N.core.S.strokes.map(s=>s.bbox[0])),
+        read:N.core.S.clusters.map(c=>c.ascii).join('|'),result:N.core.S.nodes.map(n=>n.result).filter(Boolean).join(','),
+        answer:el?{text:el.textContent,left:parseFloat(el.style.left),top:parseFloat(el.style.top)}:null,bboxRight:cl.bbox[2],bboxBottom:cl.bbox[3]};
+    });
     assert.ok(moved.left>leftBefore+80,`Dragging inside the selection moves the ink, got ${moved.left-leftBefore}px`);
     assert.equal(moved.read,readBefore,'The reading travels with the ink it belongs to');
     assert.equal(moved.result,'6','The answer survives the move');
+    assert.ok(moved.answer,'The answer still stands after the move');
+    assert.equal(moved.answer.text,answerBefore.text,'The same answer text');
+    assert.ok(Math.abs(moved.answer.left-(moved.bboxRight+18))<10||(moved.answer.left<=moved.bboxRight&&moved.answer.below),'The answer hangs beside the working where it moved');
     await page.click('#btn-undo');await page.waitForTimeout(500);
     assert.equal(await page.evaluate(()=>Math.min(...N.core.S.strokes.map(s=>s.bbox[0]))),leftBefore,'Undo puts a moved selection back');
+    const undone=await page.evaluate(()=>{
+      const cl=N.core.S.clusters.find(c=>c.ascii==='3+3'),el=[...document.querySelectorAll('.chip')].find(c=>c.dataset.node===cl.id);
+      return {result:N.core.S.nodes.map(n=>n.result).filter(Boolean).join(','),answer:!!el,at:cl?Math.round(cl.bbox[2]+18):-1,left:el?parseFloat(el.style.left):null,top:el?parseFloat(el.style.top):null,bottom:cl?cl.bbox[3]:null};
+    });
+    assert.equal(undone.result,'6','The undone move keeps the working answered');
+    assert.ok(undone.answer&&Math.abs(undone.left-undone.at)<10||(undone.answer&&undone.top>=undone.bottom+6),'The undone move puts the answer beside the working');
     await page.evaluate(()=>N.ink.setTool('pen'));
   }
   console.log('Lasso: drag moves the selection, reading and answer travel with it');

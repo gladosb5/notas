@@ -33,34 +33,34 @@ try{
    await page.locator('.chip.offer .solve').click();
    if(source.startsWith('y=')){
     assert.equal(await page.locator('.plot:visible').count(),1);assert.equal(await page.locator('.plot-reading').textContent(),source);
-    assert.equal(await page.evaluate(()=>N.core.S.lines.some(l=>l.answerOf)),false,'a graph is the answer, with no scalar one written under it');
+    assert.equal(await page.locator('.chip').count(),0,'a graph is the answer, with no scalar chip beside it');
    }else{
-    assert.equal(await page.locator('#margin .chip').count(),0,'Solve takes the box away: the margin keeps nothing');
-    const written=await page.evaluate(()=>{
-      const cl=N.core.S.clusters[0],ln=N.core.S.lines.find(l=>l.answerOf===cl.hash);
-      if(!cl||!ln)return null;
-      return {text:ln.text,y:ln.y,bb:cl.bbox,
-              starts:Math.min(Math.max(0,Math.round(cl.bbox[0])),Math.max(0,N.core.M.contentW-80))===ln.x,
-              reads:document.querySelector('#lines .line .txt')?.textContent===ln.text};
+    const standing=await page.evaluate(()=>{
+      const cl=N.core.S.clusters[0],el=[...document.querySelectorAll('.chip')].find(c=>c.dataset.node===cl.id);
+      if(!cl||!el)return null;
+      const st=getComputedStyle(el);
+      return {text:el.textContent,cls:el.className,reading:el.textContent.includes('61+1'),right:cl.bbox[2],bottom:cl.bbox[3],left:parseFloat(el.style.left),top:parseFloat(el.style.top),
+              boxed:st.backgroundColor!=='rgba(0, 0, 0, 0)'||st.borderTopColor!=='rgba(0, 0, 0, 0)'||st.boxShadow!=='none',
+              bb:el.getBoundingClientRect(),typed:N.core.S.lines.some(l=>l.answerOf)};
     });
-    assert.ok(written,'the answer is written on the paper as a typed line, not a chip');
-    assert.equal(written.text,'= 62');
-    assert.equal(written.starts,true,'the answer starts where the working starts');
-    assert.ok(written.y>=written.bb[3]+8,'the answer sits just under the working');
-    assert.ok(written.reads,'the written answer reads on the paper');
+    assert.ok(standing,'Solve leaves the answer standing in the margin');
+    assert.equal(standing.text,'62','the answer reads as written text');
+    assert.ok(!standing.cls.includes('solved')&&!standing.cls.includes('offer')&&!standing.cls.includes('typed'),'the answer is not in a box and not typed');
+    assert.equal(standing.boxed,false,'the answer carries no panel, border or shadow');
+    assert.ok(Math.abs(standing.left-(standing.right+18))<10||(standing.left<=standing.right&&standing.top>=standing.bottom+6),'the answer hangs after the working, or below it when the margin is out of room');
+    assert.equal(standing.typed,false,'nothing is typed onto the lines');
     if(width===390&&source==='61+1='&&!confirmed)await page.screenshot({path:'test-results/review-solved-mobile.png'});
    }
   }
   await seed('61+1=');await page.locator('.chip.offer .solve').click();
-  assert.equal(await page.evaluate(()=>N.core.S.lines.find(l=>l.answerOf)?.text),'= 62','the pressed answer is on the paper');
+  assert.equal(await page.evaluate(()=>[...document.querySelectorAll('.chip')].map(c=>c.textContent).join('')),'62','the pressed answer stands in the margin');
   await page.evaluate(()=>N.recog.confirm(N.core.S.clusters[0],'61+2='));
-  assert.equal(await page.evaluate(()=>N.core.S.lines.some(l=>l.answerOf)),false,'a corrected reading takes its written answer with it');
+  assert.equal(await page.locator('.chip').filter({hasText:'62'}).count(),0,'a corrected reading takes its answer with it');
   assert.equal(await page.locator('.chip.offer .solve').count(),1,'a corrected equation needs a new Solve');
   assert.equal(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result)),false);
   await page.locator('.chip.offer .solve').click();
-  assert.equal(await page.evaluate(()=>N.core.S.lines.filter(l=>l.answerOf).length),1,'the corrected answer replaced the old one on the paper');
-  assert.equal(await page.evaluate(()=>N.core.S.lines.find(l=>l.answerOf)?.text),'= 63');
-  assert.equal(await page.locator('#margin .chip').count(),0,'the margin keeps nothing after Solve');
+  assert.equal(await page.locator('.chip').count(),1,'the corrected answer replaced the old one');
+  assert.equal(await page.locator('#margin .chip').textContent(),'63');
   await page.evaluate(strokes=>{N.core.S.strokes.push(...strokes);N.recog.rebuild();N.mathcore.run();},writing('1',210,200,'added'));
   assert.ok(await page.evaluate(()=>N.core.S.clusters.every(c=>!c.asked)),'changed ink does not inherit Solve permission');
   assert.equal(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result)),false);
@@ -69,8 +69,8 @@ try{
   await page.waitForFunction(()=>window.N?.core?.S.clusters.length&&document.querySelector('#preparing').classList.contains('done'));
   await page.locator('.chip.offer .solve').waitFor();assert.equal(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result)),false,'saved readings never auto-solve on reopen');
   await page.locator('.chip.offer .solve').click();
-  assert.equal(await page.evaluate(()=>N.core.S.lines.find(l=>l.answerOf)?.text),'= 62','a reopened note writes the answer on the paper, on demand');
-  assert.equal(await page.locator('#margin .chip').count(),0);
+  assert.equal(await page.locator('#margin .chip').count(),1,'a reopened note answers on demand, standing in the margin');
+  assert.equal(await page.locator('#margin .chip').textContent(),'62');
   await page.evaluate(()=>{const ln=N.text.add(600,false);ln.text='2+2=';N.text.render();N.mathcore.run();});
   assert.equal(await page.locator('.ghost-layer .ghost').textContent(),'4','typed answer previews still work');
   assert.deepEqual(errors,[]);
