@@ -42,7 +42,10 @@ try{
   assert.equal(await page.locator('.chip').count(),0,'Background reading failure stays quiet');
 
   await seed('61+1=','61+1=');
-  assert.ok(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result==='62')),'Real written equals plus math evidence auto-calculates');
+  assert.equal(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result)),false,'A real written equals waits for Solve');
+  assert.equal(await page.locator('.chip.offer .solve').count(),1,'A recognised equation is available to check');
+  await page.locator('.chip.offer .solve').click();
+  assert.ok(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result==='62')),'Solve calculates the checked equation');
   assert.equal(await page.locator('.chip.error').count(),0);
   await seed('61+1=','61+1',{withoutEquals:true});
   assert.equal(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result)),false,'Invented equals cannot auto-calculate');

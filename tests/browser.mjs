@@ -115,7 +115,7 @@ try{
     const cl=N.core.S.clusters.find(c=>c.strokeIds.includes('test-4'));
     const t=performance.now();
     await N.recog.recognize(cl);
-    N.mathcore.run();
+    N.mathcore.requestSolve(cl.id);
     const node=N.core.S.nodes.find(o=>o.ref===cl);
     return {engine:N.recog.engine(),status:document.querySelector('#local-status').textContent,
             latex:cl.latex,ascii:cl.ascii,result:node?.result,ms:Math.round(performance.now()-t)};
@@ -129,6 +129,7 @@ try{
   await page.locator('#local-status').filter({hasText:'handwriting ready.'}).waitFor({state:'attached'});
   await page.evaluate(async()=>{
     for(const cl of N.core.S.clusters)if(!cl.confirmed)await N.recog.recognize(cl);
+    const checked=N.core.S.clusters.find(cl=>cl.ascii==='3+3');if(checked)N.mathcore.requestSolve(checked.id);
     N.mathcore.run();
   });
   const answerChip=page.locator('.chip').filter({hasText:'6'}).first();
@@ -145,8 +146,11 @@ try{
   const [ax,ay]=await autoChip.evaluate(el=>{const r=el.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];});
   assert.notEqual(await page.evaluate(([x,y])=>document.elementFromPoint(x,y)?.closest('.chip')?'chip':'paper',[ax,ay]),'chip','A tap on an answer goes to the paper');
   await autoChip.dispatchEvent('click');
-  assert.equal(await autoChip.evaluate(el=>el.children.length===0&&el.textContent.trim()),'6','The answer stays a plain answer on the page');
+  assert.equal(await autoChip.locator('.answer').textContent(),'= 6','The checked answer stays on the page');
+  assert.ok((await autoChip.locator('.reading').textContent()).replace(/\s/g,'').includes('3+3'),'The recognised equation stays visible beside its answer');
   await page.evaluate(()=>N.recog.confirm(N.core.S.clusters.find(c=>c.ascii==='2+2'),'2+2'));
+  assert.equal(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result==='4')),false,'Correcting a reading does not solve it');
+  await page.evaluate(()=>N.mathcore.requestSolve(N.core.S.clusters.find(c=>c.ascii==='2+2').id));
   assert.ok(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result==='4')));
   const migration=await page.evaluate(()=>{
     const hash=N.core.S.clusters[0].hash;

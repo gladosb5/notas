@@ -18,6 +18,7 @@ try{
       const S=N.core.S;
       S.strokes=[{id,author:'user',w:2.8,t0:1,pts:[100,300,.5,160,300,.5,160,340,.5,220,340,.5],bbox:[100,300,220,340]}];
       N.recog.rebuild();Object.assign(S.clusters[0],{ascii:'6+2',latex:'6+2',pending:false,review:false,confirmed:false,asked:false});
+      S.textTranscripts=N.recog.textGroups().map(g=>({hash:g.hash,bbox:g.bbox,text:'6+2',confidence:.99,modelVersion:N.recog.textVersion}));
       N.core.setZoom(zoom,400,350);N.mathcore.run();N.ink.render();
     },[zoom,'tap-'+(++serial)]);
     const r=await page.locator('.chip .solve').boundingBox();return {x:r.x+r.width/2,y:r.y+r.height/2};

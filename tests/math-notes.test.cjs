@@ -45,7 +45,7 @@ test('text consensus cannot invent candidates or change operators and math struc
   for(const confidence of [.969,0,NaN,undefined])assert.equal(textSupportedInk(base,{text:'6+9=',confidence}),base);
 });
 
-test('automatic calculation requires measured ink acceptance, not raw likelihood',()=>{
+test('measured ink acceptance flags readings for review without trusting raw likelihood',()=>{
   const {needsConfirmation}=controller().recog;
   const ink={engine:'ink',latex:'1+2=',confidence:.93,minTokenConfidence:.91,terminated:true,truncated:false};
   assert.equal(needsConfirmation(ink),false);

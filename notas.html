@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v150">
+<meta name="notas-version" content="v151">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -630,15 +630,18 @@ body[data-tool="eraser"] #col .chip{pointer-events:none}
 /* a typed line is answered in its own face; the handwritten blue is for handwriting */
 .chip.typed{font:400 16px/1.4 var(--type);padding:3px 10px 2px}
 .chip.error{font:500 12.5px/1.35 var(--ui);color:var(--ink-2);border-color:var(--rule);background:var(--paper);padding:5px 11px}
-.chip.offer{
+.chip.offer,.chip.solved{
   display:flex;align-items:center;gap:10px;flex-wrap:wrap;
   font:400 17px/1.2 var(--ui);color:var(--graphite);
   background:var(--panel);border-color:var(--rule);padding:5px 6px 5px 13px;
   box-shadow:var(--shadow);
 }
 .chip.offer:hover{background:var(--panel)}
-.chip.offer .reading{max-width:min(320px,60vw);overflow-wrap:anywhere}
-.chip.offer .reading .katex{font-size:1.05em}
+.chip.offer .reading,.chip.solved .reading{max-width:min(320px,60vw);overflow-wrap:anywhere}
+.chip.offer .reading .katex,.chip.solved .reading .katex{font-size:1.05em}
+.chip.solved{padding:7px 12px}
+.chip.solved .reading{font:400 17px/1.2 var(--ui)}
+.chip.solved .answer{color:var(--blue);font:600 1em/1.15 var(--hand)}
 .chip .solve{
   display:inline-flex;align-items:center;gap:6px;
   font:500 13px var(--ui);color:var(--paper);background:var(--graphite);border:0;
@@ -664,6 +667,7 @@ body[data-tool="eraser"] #col .chip{pointer-events:none}
   border:1px solid var(--rule-2);border-radius:var(--r-card);padding:10px;z-index:4;
   box-shadow:var(--shadow);
 }
+.plot .plot-reading{font:400 14px/1.4 var(--ui);color:var(--graphite);margin-bottom:8px;overflow-wrap:anywhere}
 .plot canvas{display:block;width:100%;height:auto;border-radius:8px}
 .plot .plot-desc{font:400 12px/1.4 var(--ui);color:var(--ink-2);margin-top:6px}
 .plot .plot-error{font:500 12px/1.4 var(--ui);color:var(--red);margin-top:6px}
@@ -6551,13 +6555,11 @@ function symbolic(src){
   try{ return nerdamer(src).toString(); }catch(e){ return ''; }
 }
 
-/* Handwriting is only calculated once the student writes '=' and asks for an
-   answer. Half finished working and misread scribbles then stay quiet instead
-   of producing a confident answer to something nobody wrote. Typed lines and
-   readings the student has confirmed are calculated as before. */
+/* A handwriting reading must be checked before it is calculated. Only an
+   explicit Solve asks for an answer; '=' and recognition confidence do not. */
 /* A run of three or more letters is a word, not algebra. A model trained only
    on formulae will read "hello" as some equation, sometimes one containing an
-   equals sign, so the equals test alone is not enough to keep prose quiet. */
+   equals sign. Independent text evidence keeps prose out of the Solve UI. */
 const KNOWN_WORD=/^(sqrt|nthRoot|sin|cos|tan|asin|acos|atan|arcsin|arccos|arctan|log|ln|exp|abs|min|max|det|pi|solve|integrate|antiderivative|derivative|plot|true|false)$/i;
 function readsAsProse(src){
   // Named quantities are valid math (Pens=3, Pens*4). Require a single name
@@ -6575,18 +6577,15 @@ function callInk(n){
 }
 function asksForAnswer(n){
   if(n.kind !== 'cluster') return true;
-  if(n.ref?.confirmed || n.ref?.asked) return true;
-  if(n.ref?.needsConfirmation) return false;
-  return N.recog?.handwritingKind(n.ref)==='math' && N.recog.hasWrittenEquals(n.ref,n.src) && !readsAsProse(n.src);
+  return !!n.ref?.asked;
 }
-/* Handwriting without an '=' is not calculated, but it is not hidden either:
-   the chip shows what the reader made of the ink and offers Solve. The student
-   sees the reading before any answer exists, can correct it, or can ask for
+/* Every mathematical handwriting reading shows its equation and Solve first.
+   The student sees the reading before any answer exists, can correct it, or ask for
    the answer with one tap. Prose and doodles still get nothing. */
 function offersSolve(n){
   if(n.kind !== 'cluster' || !n.src || n.pending || n.ref?.review) return false;
   if(asksForAnswer(n)) return false;
-  return N.recog?.handwritingKind(n.ref)==='math' && looksLikeMath(n.src) && !readsAsProse(n.src);
+  return (n.ref?.confirmed||N.recog?.handwritingKind(n.ref)==='math') && looksLikeMath(n.src) && !readsAsProse(n.src);
 }
 function requestSolve(id){
   const live = S.clusters.find(c=>c.id===id); if(!live) return;
@@ -6791,13 +6790,17 @@ function paint(nodes){
       ? Math.max(1,n.ref.bbox[3]-n.ref.bbox[1]) : 0;
     el.style.fontSize=handwritingHeight?handwritingHeight+'px':'';
     el.classList.remove('error');
-    el.classList.toggle('offer',offer);
+    const solved=n.kind==='cluster'&&!!n.result&&!n.pending;
+    el.classList.toggle('offer',offer);el.classList.toggle('solved',solved);
     el.classList.toggle('typed', n.kind === 'line' && !offer && !n.pending);
     let html;
     if(offer){
       el.setAttribute('aria-label','handwriting read as '+n.src+'.');
       html = '<span class="reading">'+readingHTML(n.ref)+'</span>'+
         '<button class="solve" type="button" aria-label="solve '+escape(n.src)+'"><i class="ph ph-equals" aria-hidden="true"></i>solve</button>';
+    }else if(solved){
+      el.setAttribute('aria-label','handwriting read as '+n.src+'. answer '+n.result+'.');
+      html='<span class="reading">'+readingHTML({latex:(n.ref.latex||'').replace(/=\s*$/,''),ascii:(n.ref.ascii||'').replace(/=\s*$/,'')})+'</span><span class="answer">= '+escape(n.result)+'</span>';
     }else{
       el.removeAttribute('aria-label');
       html = n.pending
@@ -6840,7 +6843,7 @@ function paint(nodes){
          set at the handwriting's height, so the fixed room check above
          cannot know whether it will fit beside. Solve offers can span
          more than one line and are left where they are. */
-      const plain=!offer;
+      const plain=!offer&&!solved;
       const lineH=!plain?0:handwritingHeight?handwritingHeight*1.15:(n.kind==='line'?16*1.4:21*1.15);
       place.push([el,n.mid||n.y,lineH,below]);
     }
@@ -6869,7 +6872,7 @@ function escape(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&
 function readingHTML(ref){
   if(!ref) return '';
   if(window.katex && ref.latex){
-    try{ return katex.renderToString(ref.latex, {throwOnError:false, displayMode:false}); }catch(e){}
+    try{ return katex.renderToString(ref.latex, {throwOnError:true, displayMode:false}); }catch(e){}
   }
   return escape(ref.ascii || latexToMath(ref.latex || ''));
 }
@@ -7434,11 +7437,12 @@ function card(node, top){
   if(!el){
     el = document.createElement('div');
     el.className = 'plot';
-    el.innerHTML = '<canvas role="img"></canvas><div class="plot-desc"></div><div class="plot-error" hidden></div><div class="sliders"></div>';
+    el.innerHTML = '<div class="plot-reading" hidden></div><canvas role="img"></canvas><div class="plot-desc"></div><div class="plot-error" hidden></div><div class="sliders"></div>';
     marginEl.appendChild(el);
     cards.set(node.id, el);
     el.addEventListener('pointerdown', e=>e.stopPropagation());
   }
+  const reading=el.querySelector('.plot-reading');reading.hidden=node.kind!=='cluster';reading.textContent=reading.hidden?'':node.src;
   /* the card fills the margin; a narrowed margin gets a smaller graph rather
      than one that hangs past the paper's edge and puts a sideways scroll on
      a phone */
@@ -8062,7 +8066,7 @@ function menuSheet(){
     '<button class="mi" id="refresh-reading"><i class="ph ph-arrows-clockwise"></i>refresh handwriting models<span class="k">re-read the page</span></button>' +
     '<button class="mi" id="refresh-site"><i class="ph ph-arrow-circle-up"></i>update<span class="k">fetch the latest app</span></button>' +
     '<div class="sheet-notes"><p>auto follows your device\'s theme. the text tool, tapped twice, picks the colour of typed text; nota writes its answers in its own colour.</p><p>draw with decides what a single finger does. with pen only, a finger scrolls and a resting hand cannot mark the page. it only takes effect once a pen has been used on this device, so it can never leave you unable to draw.</p>' +
-      '<p>handwriting is read on this device. end an expression with an equals sign for an automatic answer, written beside it. the model downloads once and works offline after that.</p>' +
+      '<p>handwriting is read on this device. check the recognised equation, then tap solve for an answer written beside it. the model downloads once and works offline after that.</p>' +
       '<p>a local text recogniser powers handwriting search and helps keep variable names. it never changes your ink.</p>' +
       '<p>maths hints use local rules for arithmetic and linear equations.</p></div>' +
     '<hr>' +
@@ -8082,7 +8086,7 @@ function menuSheet(){
     ['notaOn','nota','Answers questions you type or write on the page.'],
     ['textRecognitionOn','text recognition','Reads handwriting for search and text understanding.'],
     ['backgroundRemovalOn','background remover','Removes image backgrounds on this device.'],
-    ['handwritingRecognitionOn','handwriting recognition','Reads handwritten maths for automatic answers.']
+    ['handwritingRecognitionOn','handwriting recognition','Shows handwritten maths to check before you tap solve.']
   ];
   ai.innerHTML='<div class="head"><button type="button" class="menu-back" aria-label="back to menu"><i class="ph ph-arrow-left"></i></button><h2 id="'+aiTitle+'">disable AI features</h2><button type="button" class="sheet-x" aria-label="close"><i class="ph ph-x"></i></button></div>'+
     '<div class="body"><p class="sheet-notes">Choose which AI features are on. These choices apply to all notes on this device.</p>'+features.map(([key,label,detail])=>
@@ -10377,7 +10381,7 @@ function clearInk(){
 
 const STEPS = [
   { say:'type this on the line', code:'12 x 7',
-    a11y:'type 12 x 7 on the first line. if you write it with the pen instead, finish with an equals sign for the answer.' },
+    a11y:'type 12 x 7 on the first line. if you write it with the pen instead, check the reading and tap solve for the answer.' },
   { say:'name a value, then use it below', code:'pens = 3\npens x 4',
     a11y:'type pens equals 3, then on the line below type pens times 4.' },
   { say:'stuck on a step? ask for a hint with the button at the bottom right.', code:'',

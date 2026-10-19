@@ -46,7 +46,9 @@ try{
     S.strokes=[...definition,...use];S.lines=[];S.images=[];S.clusters=[];N.recog.rebuild();
     for(const cl of S.clusters)Object.assign(cl,{ascii:cl.bbox[1]<180?'xy=3':'xy*4=',needsConfirmation:false});
     S.textTranscripts=N.recog.textGroups().map(g=>({hash:g.hash,bbox:g.bbox,text:g.bbox[1]<180?'xy=3':'xy*4=',confidence:.99,modelVersion:N.recog.textVersion}));
-    N.mathcore.run();out.scope=S.scope.xy;out.answer=S.nodes.find(n=>n.ref?.ascii==='xy*4=')?.result;
+    N.mathcore.run();out.beforeSolve=S.nodes.some(n=>n.result||n.provides);
+    for(const cl of S.clusters)N.mathcore.requestSolve(cl.id);
+    out.scope=S.scope.xy;out.answer=S.nodes.find(n=>n.ref?.ascii==='xy*4=')?.result;
     return out;
   },{normal:writing('hi=4'),touching:writing('hi=4',40,140,'touch',1,.32),definition:writing('hi=4',40,100,'def'),use:writing('hi*4=',40,200,'use'),
     colonTouching:[...writing('hi=4',40,140,'colon',1,.32),stroke('colon-top',[[58,151],[58,152]],2.8,20),stroke('colon-bottom',[[58,166],[58,167]],2.8,21)]});
@@ -56,6 +58,7 @@ try{
   assert.equal(result.touchingSubscript,null);assert.equal(result.touchingSuperscript,null);
   assert.deepEqual(result.colonGeometry,{name:'hi',operator:'='});assert.equal(result.colonReading,'h:i=4');
   assert.deepEqual(result.prose,[false,false,true,true]);
+  assert.equal(result.beforeSolve,false,'Named quantities wait for explicit Solve too');
   assert.equal(result.scope,3);assert.equal(result.answer,'12');
-  console.log('Real canvas baseline, touching-script checks and automatic named-variable calculation passed.');
+  console.log('Real canvas baseline, touching-script checks and explicit named-variable calculation passed.');
 }finally{await browser.close();server.close();}

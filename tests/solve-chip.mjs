@@ -38,7 +38,7 @@ try{
     const S=N.core.S;
     const pts=[100,300,.5,160,300,.5,160,340,.5,220,340,.5];
     S.strokes=[{id,author:'user',w:2.8,t0:1,pts,bbox:[100,300,220,340]}];
-    // Automatic equals needs a written sign as well as a decoder reading.
+    // Include the actual written equals sign: it must still wait for Solve.
     if(ascii.includes('='))for(const [suffix,y] of [['top',318],['bottom',325]])S.strokes.push({id:id+'-'+suffix,author:'user',w:2.8,t0:1,pts:[230,y,.5,260,y,.5],bbox:[230,y,260,y]});
     N.recog.rebuild();
     const cl=S.clusters[0];
@@ -98,7 +98,7 @@ try{
   assert.equal(await page.evaluate(()=>N.core.S.clusters[0].asked),true,'Solve is recorded on the cluster');
   assert.equal(await page.evaluate(()=>N.recog.cache.get(N.core.S.clusters[0].hash).asked),true,'Solve is recorded in the saved transcript');
 
-  // Explicit Solve survives a regrouping that changes the cluster hash (31).
+  // New ink changes the expression and must ask for a fresh Solve.
   const kept=await page.evaluate(()=>{
     const S=N.core.S;
     S.strokes.push({id:'s1b',author:'user',w:2.8,t0:2,pts:[230,300,.5,260,300,.5,260,340,.5],bbox:[230,300,260,340]});
@@ -106,7 +106,7 @@ try{
     return {one:S.clusters.length===1,asked:S.clusters[0].asked,newHash:S.clusters[0].hash};
   });
   assert.equal(kept.one,true,'Adjacent stroke joins the same cluster');
-  assert.equal(kept.asked,true,'Solve intent survives the hash change');
+  assert.equal(kept.asked,false,'A changed expression does not inherit the previous Solve');
 
   // With the pen up, a resting chip lets the pen through to the paper; the
   // ink canvas presses it on a tap. Zoom creates a stacking context, so the
@@ -132,12 +132,21 @@ try{
   }
   await page.evaluate(()=>{N.core.setZoom(1,400,350);N.ink.setTool('text');});
 
-  // Prose stays quiet; '=' still answers by itself.
+  // Prose stays quiet; even a confident '=' reading must be checked first.
   await seed('s2','hello','hello');
   assert.equal(await page.locator('.chip').count(),0,'A word gets no chip');
   await seed('s3','6+2=','6+2=');
-  assert.equal(await page.locator('.chip.offer').count(),0,'An equals sign asks for the answer itself');
-  assert.ok(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result==='8')),'= still auto-answers');
+  assert.equal(await page.locator('.chip.offer').count(),1,'An equals sign still shows the equation and Solve');
+  assert.equal(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result)),false,'No auto-answer for an equals sign');
+  assert.ok((await page.locator('.chip.offer .reading').textContent()).replace(/\s/g,'').includes('6+2='));
+  await page.locator('.chip.offer .solve').click();
+  assert.equal(await page.locator('.chip.solved .answer').textContent(),'= 8');
+  assert.ok((await page.locator('.chip.solved .reading').textContent()).replace(/\s/g,'').includes('6+2'),'The equation remains beside the answer');
+  await page.evaluate(()=>N.recog.confirm(N.core.S.clusters[0],'6+3='));
+  assert.equal(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result)),false,'Correcting a solved equation requires Solve again');
+  assert.equal(await page.locator('.chip.offer .solve').count(),1,'Confirmed readings still offer Solve');
+  await page.locator('.chip.offer .solve').click();
+  assert.equal(await page.locator('.chip.solved .answer').textContent(),'= 9');
 
   // The offer is read and solved on the page: tapping its reading opens nothing.
   await seed('s4','6+2','6+2');

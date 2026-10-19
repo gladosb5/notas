@@ -1329,22 +1329,17 @@ function rebuild(){
   pageFrames=frames;
   const groups=splitAtBoxes(groupInk(strokes),frames.boxes);
   const previous=new Map(S.clusters.map(c=>[c.hash,c]));
-  // An explicit Solve request belongs to the ink, not to one grouping of it.
-  // Adding a digit or a bracket to an expression changes its hash, so the
-  // request is inherited from any earlier cluster that shared its strokes.
-  const askedStrokes=new Set();
-  for(const c of S.clusters)if(c.asked&&c.source==='ink')for(const id of c.strokeIds)askedStrokes.add(id);
+  // A changed expression must be checked again before another Solve.
   S.clusters=groups.map(list=>{
     const hash=hashOf(list);
     const legacyHash=list.map(s=>s.id+':'+(s.pts.length/3|0)).sort().join('|');
     const stored=cache.get(hash)||cache.get(legacyHash)||{};
     const saved=compatibleReading(stored,hash)?stored:{};
     const prior=previous.get(hash)||{};
-    const inherited=!prior.hash&&!stored.asked&&list.some(s=>askedStrokes.has(s.id));
     return {id:'cl_'+list[0].id,hash,strokeIds:list.map(s=>s.id),
       bbox:[Math.min(...list.map(s=>s.bbox[0])),Math.min(...list.map(s=>s.bbox[1])),Math.max(...list.map(s=>s.bbox[2])),Math.max(...list.map(s=>s.bbox[3]))],
       latex:saved.latex||'',ascii:saved.latex?N.mathcore.latexToMath(saved.latex):(saved.ascii||''),kind:saved.kind||'expression',confidence:saved.confidence||0,
-      needsConfirmation:!!saved.needsConfirmation,modelVersion:saved.modelVersion,alternatives:saved.alternatives||[],confirmed:!!saved.confirmed,review:false,pending:prior.pending||false,asked:!!(stored.asked||prior.asked||inherited),...(stored.dismissed||prior.dismissed?{dismissed:true}:{}),_plotVals:stored.plotVals||prior._plotVals||{},source:'ink'};
+      needsConfirmation:!!saved.needsConfirmation,modelVersion:saved.modelVersion,alternatives:saved.alternatives||[],confirmed:!!saved.confirmed,review:false,pending:prior.pending||false,asked:!!(saved.asked||prior.asked),...(stored.dismissed||prior.dismissed?{dismissed:true}:{}),_plotVals:stored.plotVals||prior._plotVals||{},source:'ink'};
   });
   // A neighbor can change expression completeness without changing this
   // cluster's own hash. Recheck cached readings after every grouping rebuild.
@@ -2161,7 +2156,7 @@ async function recognize(cl,explicit){
     const resultVersion=RESULT_VERSION.ink;
     // Uncertain readings remain visible for correction or an explicit Solve.
     // A later model version may refresh them until the user confirms the text.
-    Object.assign(live,{modelVersion:resultVersion,latex:out.latex,ascii:N.mathcore.latexToMath(out.latex),alternatives:out.alternatives||[],confidence:out.confidence,needsConfirmation:needsConfirmation(out,live),review:false,confirmed:false,pending:false});
+    Object.assign(live,{modelVersion:resultVersion,latex:out.latex,ascii:N.mathcore.latexToMath(out.latex),alternatives:out.alternatives||[],confidence:out.confidence,needsConfirmation:needsConfirmation(out,live),review:false,confirmed:false,pending:false,asked:!!explicit});
     cache.set(hash,{modelVersion:resultVersion,latex:live.latex,ascii:live.ascii,alternatives:live.alternatives,kind:live.kind,confidence:live.confidence,needsConfirmation:live.needsConfirmation,confirmed:false,asked:!!live.asked});
     C.markDirty();
   }catch(e){
@@ -2173,7 +2168,7 @@ async function recognize(cl,explicit){
 function confirm(cl,text){
   if(!S.clusters.includes(cl))return;
   text=text.trim();if(!text)return;
-  cl.ascii=text;cl.latex='';cl.alternatives=[];cl.confirmed=true;cl.needsConfirmation=false;cl.review=false;cl.pending=false;cl.error='';
+  cl.ascii=text;cl.latex='';cl.alternatives=[];cl.confirmed=true;cl.asked=false;cl.needsConfirmation=false;cl.review=false;cl.pending=false;cl.error='';
   cache.set(cl.hash,{latex:'',ascii:text,kind:'expression',confirmed:true,asked:!!cl.asked});
   attempted.add(cl.hash);
   if(cl.imageId){const im=S.images.find(i=>i.id===cl.imageId);if(im)Object.assign(im,{ascii:text,latex:'',confirmed:true,review:false});}
