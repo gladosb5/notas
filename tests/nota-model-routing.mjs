@@ -9,16 +9,17 @@ try{
  const page=await browser.newPage({serviceWorkers:'block'});
  const source=(await readFile(new URL('../nota.js',import.meta.url),'utf8')).replace('N.nota={','N.nota={stream,');
  await page.route('**/nota.js',r=>r.fulfill({contentType:'application/javascript',body:source}));
- const calls=[];let mode='ok',cfMode='ok';
+ const calls=[];let mode='ok',cfMode='ok',txMode='ok';
  const sse=delta=>'data: '+JSON.stringify({choices:[{delta}]})+'\n\ndata: [DONE]\n\n';
  await page.route(/\/nota\/chat$|api\.cerebras\.ai/,async route=>{
   const body=route.request().postDataJSON();calls.push({body,url:route.request().url()});
-  const failure=body.model===primary?mode:body.model===cloudflare?cfMode:'ok';
+  const failure=body.model===primary?mode:body.model===cloudflare?cfMode:txMode;
   if(failure==='http')return route.fulfill({status:503,body:'model unavailable'});
   if(failure==='network')return route.abort('failed');
   if(failure==='empty')return route.fulfill({contentType:'text/event-stream',body:'data: [DONE]\n\n'});
   if(failure==='error')return route.fulfill({contentType:'text/event-stream',body:'data: {"error":{"message":"unavailable"}}\n\n'});
   if(failure==='daily')return route.fulfill({status:429,contentType:'application/json',body:JSON.stringify({error:{message:'model daily token limit exceeded'}})});
+  if(failure==='payment')return route.fulfill({status:402,contentType:'application/json',body:JSON.stringify({message:'Payment required to access this resource. Visit your billing tab.',type:'payment_required_error',param:'quota',code:'payment_required'})});
   if(failure==='site')return route.fulfill({status:429,body:'nota has reached its daily allowance. try again tomorrow.'});
   if(failure==='auth')return route.fulfill({status:401,body:'key refused'});
   if(failure==='absent')return route.fulfill({status:404,body:'no forward here'});
@@ -83,5 +84,46 @@ try{
  cfMode='tool-error';
  const result=await run(false,true);assert.equal(result.error,true);assert.equal(result.grabs,3);
  assert.ok(models().slice(1).every(m=>m===cloudflare));
+ // Cerebras out of credit or out of its day: its text model would be refused
+ // too, so Cloudflare is the last attempt and is not cut off by the wait.
+ for(mode of ['payment','daily']){
+  cfMode='ok';
+  assert.deepEqual(await run(),{text:'answer',fallbacks:1,grabs:0},mode);
+  assert.deepEqual(models(),[primary,cloudflare],mode);
+  cfMode='timeout';
+  assert.deepEqual(await run(),{text:'late',fallbacks:1,grabs:0},mode+' slow Cloudflare');
+  assert.deepEqual(models(),[primary,cloudflare],mode);
+  cfMode='http';
+  const spent=await run();assert.equal(spent.error,true,mode);
+  assert.deepEqual(models(),[primary,cloudflare],mode);
+ }
+ // A typed question falls back to Cloudflare as well.
+ if(typedPrimary===textModel){
+  mode='ok';cfMode='ok';txMode='payment';
+  assert.deepEqual(await run(true),{text:'answer',fallbacks:1,grabs:0});
+  assert.deepEqual(models(),[textModel,cloudflare]);
+  txMode='ok';
+ }
+ // Cloudflare's Qwen streams its thinking for longer than the wait before
+ // its words; a model that is thinking is not abandoned for the next one.
+ mode='http';calls.length=0;
+ const thinking=await page.evaluate(async cloudflare=>{
+  const real=window.fetch;
+  window.fetch=async(url,init)=>{
+   if(JSON.parse(init.body).model!==cloudflare)return real(url,init);
+   const enc=new TextEncoder(),line=delta=>enc.encode('data: '+JSON.stringify({choices:[{delta}]})+'\n\n');
+   return new Response(new ReadableStream({async start(c){
+    c.enqueue(line({reasoning:'hmm'}));await new Promise(r=>setTimeout(r,200));
+    c.enqueue(line({content:'thought'}));c.enqueue(enc.encode('data: [DONE]\n\n'));c.close();
+   }}),{headers:{'Content-Type':'text/event-stream'}});
+  };
+  N.nota.config.visionWaitMs=50;let text='';
+  try{await N.nota.stream('what is this','page context',p=>text+=p,new AbortController().signal,null,false,()=>{});}
+  catch(e){text='error: '+e.message;}
+  finally{window.fetch=real;}
+  return text;
+ },cloudflare);
+ assert.equal(thinking,'thought');
+ assert.deepEqual(models(),[primary]);
  console.log('Three-provider routing passed: image preservation, text-only final fallback, tools, failure/timeout, site/auth, cancellation and partial answers.');
 }finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}

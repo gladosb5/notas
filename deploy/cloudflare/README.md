@@ -79,7 +79,7 @@ npx wrangler deploy --dry-run
 
 ## Nota provider fallback
 
-Qwen requests try Cerebras `qwen-3.8-27b`, then Cloudflare Workers AI `@cf/qwen/qwen3.8-27b`, then Cerebras `gpt-oss-120b`. Cloudflare keeps the page image; the final GPT-OSS attempt sends text only. Each Qwen attempt has a 12-second initial-answer deadline. Cancellation, an answer already being written, started notebook tools, site rate/budget limits, and authentication failures stop retries.
+Qwen requests try Cerebras `qwen-3.8-27b`, then Cloudflare Workers AI `@cf/qwen/qwen3.8-27b`, then Cerebras `gpt-oss-120b`. Cloudflare keeps the page image; the final GPT-OSS attempt sends text only. Each attempt but the last has 12 seconds to start streaming; the model's thinking counts, as Cloudflare's Qwen thinks for about that long before it writes. When Cerebras refuses for credit (402) or for its daily quota, the GPT-OSS attempt is skipped, so Cloudflare is the last attempt and has no such deadline. Cancellation, an answer already being written, started notebook tools, site rate/budget limits, and authentication failures stop retries.
 
 Configure these server settings alongside `CEREBRAS_API_KEY`:
 

@@ -1221,7 +1221,7 @@ async function post(tries,signal,pictured){
   throw error||new Error('nota could not reach the model.');
 }
 /* the answer's stream: each delta the model sends, until it is done */
-async function readSSE(response,onDelta){
+async function readSSE(response,onDelta,onAlive){
   const reader=response.body.getReader(),decoder=new TextDecoder();
   let buffer='',terminal=false;
   try{
@@ -1235,6 +1235,7 @@ async function readSSE(response,onDelta){
         const data=line.slice(5).trim();
         if(data==='[DONE]'){await reader.cancel();return;}
         let json;try{json=JSON.parse(data);}catch(e){continue;}
+        onAlive?.();
         if(json.error)throw Object.assign(new Error('nota model stream failed.'),{status:502});
         const reason=json.choices?.[0]?.finish_reason;
         if(reason==='length'||reason==='content_filter')throw Object.assign(new Error('nota reply was interrupted. ask again to retry.'),{interrupted:true});
@@ -1265,7 +1266,7 @@ function fitConversation(messages){
   }
   if(conversationChars(messages)>64000)throw Object.assign(new Error('the question and notes are too long. ask a shorter question.'),{textBudget:true});
 }
-async function streamTools(question,context,onDelta,signal,picture,model,{onGrab}={}){
+async function streamTools(question,context,onDelta,signal,picture,model,{onGrab}={},onAlive){
   const text=ask(context,question,'');
   const pictures=picture?[{...picture,what:'the page'}]:[];
   const messages=[{role:'system',content:SYSTEM+'\n'+TOOL_SYSTEM},{role:'user',content:pictures.length?[{type:'text',text},{type:'image_url',image_url:{url:picture.url}}]:text}];
@@ -1304,7 +1305,7 @@ async function streamTools(question,context,onDelta,signal,picture,model,{onGrab
       const lead=held.trimStart();
       if(!lead||calls.length||lead.startsWith(TOOL_TAG)||TOOL_TAG.startsWith(lead)||!last&&held.length<TOOL_HOLD)return;
       live=true;total+=held;onDelta(held,total);held='';
-    });
+    },onAlive);
     const asked=calls.filter(c=>c&&(c.name||c.args));
     const textual=!asked.length&&!live&&held.trimStart().startsWith(TOOL_TAG);
     let found=(textual?textCalls(held):asked).slice(0,TOOL_CALLS);
@@ -1341,8 +1342,12 @@ async function streamTools(question,context,onDelta,signal,picture,model,{onGrab
     }
   }
 }
+/* Cerebras out of credit (402) or out of its day's tokens: its other model
+   would be refused the same way, so Cloudflare is the last attempt. */
+function providerSpent(error){ return error.status===402||!!error.overloaded&&!error.siteLimit; }
 async function stream(question,context,onDelta,signal,picture,typed=false,onFallback,tools=null){
-  const models=typed?[CONFIG.textModel]:[CONFIG.model,CONFIG.fallbackModel,CONFIG.textModel];
+  const cerebras=m=>m!==CONFIG.fallbackModel;
+  let models=typed?[CONFIG.textModel,CONFIG.fallbackModel]:[CONFIG.model,CONFIG.fallbackModel,CONFIG.textModel];
   for(let i=0;i<models.length;i++){
     if(signal.aborted)throw new DOMException('Question withdrawn','AbortError');
     const model=models[i],last=i===models.length-1,attempt=new AbortController();
@@ -1350,23 +1355,27 @@ async function stream(question,context,onDelta,signal,picture,typed=false,onFall
     signal.addEventListener('abort',cancel,{once:true});
     let received=false;
     const timer=last?null:setTimeout(()=>attempt.abort(),CONFIG.visionWaitMs);
+    /* any chunk, the model's thinking included, shows it is answering:
+       Cloudflare's Qwen thinks for longer than the wait before its words */
+    const alive=()=>clearTimeout(timer);
     try{
       const result=await streamAttempt(question,context,(piece,total)=>{
         received=true;clearTimeout(timer);onDelta(piece,total);
-      },attempt.signal,model===CONFIG.textModel?null:picture,model,tools&&{...tools,onGrab(){received=true;clearTimeout(timer);tools.onGrab?.();}});
+      },attempt.signal,model===CONFIG.textModel?null:picture,model,tools&&{...tools,onGrab(){received=true;clearTimeout(timer);tools.onGrab?.();}},alive);
       if(!result.trim())throw new Error('nota returned an empty answer.');
       return result;
     }catch(error){
       // Never mix answers, replay tools, retry cancellation, or bypass site limits.
       if(last||received||signal.aborted||error.siteLimit||error.toolsFailed||[401,403].includes(error.status))throw error;
+      if(cerebras(model)&&providerSpent(error))models=[...models.slice(0,i+1),...models.slice(i+1).filter(m=>!cerebras(m))];
     }finally{
       clearTimeout(timer);attempt.abort();signal.removeEventListener('abort',cancel);
     }
     onFallback?.();
   }
 }
-async function streamAttempt(question,context,onDelta,signal,picture,model,tools=null){
-  if(tools)return streamTools(question,context,onDelta,signal,picture,model,tools);
+async function streamAttempt(question,context,onDelta,signal,picture,model,tools=null,onAlive){
+  if(tools)return streamTools(question,context,onDelta,signal,picture,model,tools,onAlive);
   const text=ask(context,question,'');
   const pictures=picture?[{...picture,what:'the page'}]:[];
   const body={
@@ -1384,7 +1393,7 @@ async function streamAttempt(question,context,onDelta,signal,picture,model,tools
   await readSSE(response,delta=>{
     const piece=typeof delta.content==='string'?delta.content:'';
     if(piece){total+=piece;onDelta(piece,total);}
-  });
+  },onAlive);
   return total;
 }
 
