@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v165">
+<meta name="notas-version" content="v166">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -2840,7 +2840,7 @@ function liveFrame(){
   xInk.setTransform(k,0,0,k, M.dpr*(M.colLeft-sc.scrollLeft), -M.dpr*sc.scrollTop);
 }
 let eraserCursor=null;
-function clearLive(){if(eraserCursor)eraserCursor.hidden=true;xInk.setTransform(1,0,0,1,0,0); xInk.clearRect(0,0,cInk.width,cInk.height); }
+function clearLive(){if(eraserCursor)eraserCursor.hidden=true;cInk.style.opacity='';xInk.setTransform(1,0,0,1,0,0); xInk.clearRect(0,0,cInk.width,cInk.height); }
 function visible(bbox){
   const z = M.zoom;
   const top = sc.scrollTop/z - 60, bot = (sc.scrollTop + M.vh)/z + 60;
@@ -3268,7 +3268,10 @@ function drawLive(){
   if(tapChip) return; // Keep tentative chip taps off the ink canvas.
   if(cur.erase){
     const p=cur.pts,n=p.length/3,r=cur.eraseR||9;
-    xInk.save();xInk.strokeStyle=colors.quiet;xInk.globalAlpha=.22;xInk.lineCap='round';xInk.lineJoin='round';xInk.lineWidth=r*2;
+    /* Fade the completed layer, not each segment: overlapping round caps
+       and retraced paths must keep the same shade as the rest of the band. */
+    cInk.style.opacity='.22';
+    xInk.save();xInk.strokeStyle=colors.quiet;xInk.globalAlpha=1;xInk.lineCap='round';xInk.lineJoin='round';xInk.lineWidth=r*2;
     if(n>1){const from=Math.max(1,cur.drawn||1);xInk.beginPath();xInk.moveTo(p[(from-1)*3],p[(from-1)*3+1]);for(let i=from;i<n;i++)xInk.lineTo(p[i*3],p[i*3+1]);xInk.stroke();}
     else{xInk.beginPath();xInk.arc(p[0],p[1],r,0,Math.PI*2);xInk.fillStyle=colors.quiet;xInk.fill();}
     xInk.restore();cur.drawn=n;

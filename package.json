@@ -32,7 +32,8 @@
     "test:tutorial": "node tests/tutorial.mjs",
     "test:tutorial-replies": "node tests/tutorial-replies.mjs",
     "test:image-paste": "node tests/image-paste.mjs",
-    "test:share-qr": "node tests/share-qr.mjs"
+    "test:share-qr": "node tests/share-qr.mjs",
+    "test:eraser-trail": "node tests/eraser-trail.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
