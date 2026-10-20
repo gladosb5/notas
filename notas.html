@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v163">
+<meta name="notas-version" content="v164">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -8687,15 +8687,18 @@ async function insertImages(files,at,flowLine){
   }
   return n;
 }
-/* Image files carried by a paste or drop. Chrome exposes a copied image both
-   as an item and in .files; dedupe so it is not inserted twice. Copying a
-   picture from a web page also carries text/html, so that is not a reason to
-   treat the clipboard as text. */
+/* A paste or drop exposes the same files through both items and files.
+   Use one list: clipboard File wrappers can have different timestamps/names,
+   while separate images can share all their metadata. The files list is the
+   fallback for browsers that cannot provide image items. HTML accompanying
+   a copied picture is not a reason to treat it as text. */
 function transferImages(dt){
-  const out=[],seen=new Set();
-  const add=f=>{if(!f||!/^image\//i.test(f.type||''))return;const key=f.name+'|'+f.size+'|'+f.type+'|'+f.lastModified;if(seen.has(key))return;seen.add(key);out.push(f);};
-  if(dt&&dt.items)for(const it of dt.items)if(it.kind==='file')add(it.getAsFile());
-  if(dt&&dt.files)for(const f of dt.files)add(f);
+  const out=[];
+  if(dt&&dt.items)for(const it of dt.items){
+    if(it.kind!=='file')continue;
+    const f=it.getAsFile();if(f&&/^image\//i.test(f.type||''))out.push(f);
+  }
+  if(!out.length&&dt&&dt.files)for(const f of dt.files)if(f&&/^image\//i.test(f.type||''))out.push(f);
   return out;
 }
 function transferHasText(dt){

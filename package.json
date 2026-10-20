@@ -14,7 +14,7 @@
     "test:ai-features": "node tests/ai-features.mjs && node tests/silent-calculations.mjs",
     "test:notes": "node tests/library.mjs && node tests/notes-management-regression.mjs && node tests/nota.mjs",
     "test:fast-pencil": "node tests/fast-pencil-browser.mjs",
-    "test:browser": "node tests/browser.mjs && node tests/ink-timing-browser.mjs && node tests/handwritten-variable.mjs && node tests/ux-audit.mjs && node tests/solve-chip.mjs && node tests/storage.mjs && node tests/text-index.mjs && node tests/answer-editing.mjs && node tests/line-selection.mjs && node tests/pen-solve-tap.mjs && node tests/frames.mjs && node tests/checklist-fixes.mjs && node tests/mobile-text.mjs && node tests/library.mjs && node tests/mobile-navigation.mjs && node tests/quick-maths.mjs && node tests/nota.mjs && node tests/nota-diagram.mjs && node tests/handwriting-intent.mjs",
+    "test:browser": "node tests/browser.mjs && node tests/ink-timing-browser.mjs && node tests/handwritten-variable.mjs && node tests/ux-audit.mjs && node tests/solve-chip.mjs && node tests/storage.mjs && node tests/text-index.mjs && node tests/answer-editing.mjs && node tests/line-selection.mjs && node tests/image-paste.mjs && node tests/pen-solve-tap.mjs && node tests/frames.mjs && node tests/checklist-fixes.mjs && node tests/mobile-text.mjs && node tests/library.mjs && node tests/mobile-navigation.mjs && node tests/quick-maths.mjs && node tests/nota.mjs && node tests/nota-diagram.mjs && node tests/handwriting-intent.mjs",
     "assets": "node scripts/prepare-assets.mjs",
     "test:collab": "node tests/collab.mjs",
     "test:background": "node tests/background.mjs",
@@ -30,7 +30,8 @@
     "assets:pdf": "node scripts/prepare-pdf-assets.mjs",
     "test:pdf": "node tests/pdf-notebook.mjs",
     "test:tutorial": "node tests/tutorial.mjs",
-    "test:tutorial-replies": "node tests/tutorial-replies.mjs"
+    "test:tutorial-replies": "node tests/tutorial-replies.mjs",
+    "test:image-paste": "node tests/image-paste.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
