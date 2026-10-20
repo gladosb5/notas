@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v160">
+<meta name="notas-version" content="v161">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -10436,11 +10436,12 @@ N.library = { open, close, toggle, refresh, leaving, changed, boot, importBundle
 const C=N.core,S=C.S,M=C.M,$=C.$;
 const LESSONS=[
   {say:'try this. type or write.',example:'12 x 7'},
-  {say:'name a number, then use it below.',example:'pens = 3\npens x 4'},
+  {say:'give a number a name.',example:'pens = 3'},
+  {say:'now use it.',example:'pens x 4 ='},
   {say:'ask me about your page.',example:'hey nota, explain the maths above?'}
 ];
 let on=false,step=-1,note=null,card=null,watch=null,poll=null;
-let anchor=120,inputY=240,before=new Map(),initial=new Map(),ready=false,mode='text',lastSaid='',pressing=false,releaseTimer=null;
+let anchor=120,inputY=240,before=new Map(),initial=new Map(),definitionId=null,ready=false,mode='text',lastSaid='',pressing=false,releaseTimer=null;
 function done(){try{return localStorage.getItem('notas.tut')==='done';}catch{return false;}}
 function remember(){try{localStorage.setItem('notas.tut','done');}catch{}}
 function snapshot(){
@@ -10475,13 +10476,17 @@ function build(){
   document.addEventListener('pointerup',release,true);document.addEventListener('pointercancel',release,true);
   card.querySelector('.tut-next').onclick=()=>{
     pressing=false;
-    if(step===3)return finish(true);
-    if(step===-1||ready||step===2){step++;snapshot();ready=false;anchor=freeSpace();draw(true);}
+    if(step===LESSONS.length)return finish(true);
+    if(step===-1||ready||step===3){
+      // Keep the definition and its use in the same freshness window, including
+      // a calculation the person has already typed on the next line.
+      if(step!==1)snapshot();step++;ready=false;anchor=freeSpace();draw(true);
+    }
   };
   $('#col').append(card);
   watch=new MutationObserver(()=>{
     const was=mode;mode=S.tool==='text'?'text':'pen';check();
-    if(was!==mode&&mode==='text'&&step>=0&&step<3)useTool('text',true);
+    if(was!==mode&&mode==='text'&&step>=0&&step<LESSONS.length)useTool('text',true);
   });
   watch.observe(document.body,{attributes:true,attributeFilter:['data-tool']});
   window.addEventListener('resize',place);
@@ -10504,7 +10509,7 @@ function place(){
 }
 function useTool(tool,focus){
   mode=tool;if(S.tool!==tool)N.ink.setTool(tool);
-  if(focus&&tool==='text'&&step>=0&&step<3){
+  if(focus&&tool==='text'&&step>=0&&step<LESSONS.length){
     const current=N.text.focusedLine();
     if(!current||current.y<inputY||current.tutor){
       const empty=S.lines.find(l=>!l.tutor&&!l.text?.trim()&&l.y>=inputY&&l.y<inputY+C.LINE_H);
@@ -10515,16 +10520,16 @@ function useTool(tool,focus){
 function draw(focus){
   if(!card)return;
   card.dataset.step=String(step);card.querySelector('.tut-do').textContent=LESSONS[step]?.example||'';
-  card.querySelector('.tut-skip').hidden=step===3;lastSaid='';check();place();
+  card.querySelector('.tut-skip').hidden=step===LESSONS.length;lastSaid='';check();place();
   if(!C.reducedMotion())card.animate([{opacity:0},{opacity:1}],{duration:180,easing:'ease-out'});
   if(focus){
     $('#scroller').scrollTo({top:Math.max(0,parseFloat(card.style.top)*M.zoom-110),behavior:C.reducedMotion()?'instant':'smooth'});
-    if(step<0||step===3)card.querySelector('.tut-next').focus({preventScroll:true});else useTool(mode,true);
+    if(step<0||step===LESSONS.length)card.querySelector('.tut-next').focus({preventScroll:true});else useTool(mode,true);
   }
 }
 function successful(n){return !!n.result&&!n.error&&!n.pending&&!n.ref?.review&&(n.kind!=='cluster'||n.ref?.asked);}
 function prewritten(question,where={}){
-  if(!on||note!==S.id||step<2||!question)return null;
+  if(!on||note!==S.id||step<3||!question)return null;
   const normalize=q=>String(q).toLowerCase().replace(/\s+/g,' ').trim().replace(/[.!?,;:]+$/,'').trim();
   const expected='explain the maths above';
   if(normalize(question)!==expected)return null;
@@ -10553,25 +10558,37 @@ function prewritten(question,where={}){
 function check(){
   if(!on||!card)return;
   if(S.id!==note){finish(false,false);return;}
-  let say=step===-1?'let’s write something together.':step===3?'the rest is yours.':LESSONS[step].say;
-  let next=step===-1?'start':step===3?'keep writing':'next',disabled=false;
+  let say=step===-1?'let’s write something together.':step===LESSONS.length?'the rest is yours.':LESSONS[step].say;
+  let next=step===-1?'start':step===LESSONS.length?'keep writing':'next',disabled=false;
   const nodes=S.nodes||[];
   if(step===0){
     const n=nodes.find(n=>fresh(n)&&successful(n)&&!n.provides&&/[+*/^\-]|\b(?:sqrt|sin|cos|log)\s*\(/.test(N.mathcore.normalize(n.src)));
     ready=!!n;if(ready)say='there you go.';
     else if(mode==='pen')say='write this, check it, then tap Solve.';
   }else if(step===1){
+    const n=nodes.find(n=>fresh(n)&&successful(n)&&n.provides);
+    definitionId=n?.id||null;ready=!!n;
+    if(ready)say='that’s a value.';
+    else if(mode==='pen')say='write this, check it, then tap Solve.';
+  }else if(step===2){
     let pair=null;
-    for(let i=0;i<nodes.length&&!pair;i++){
-      const a=nodes[i];if(!a.provides||!successful(a)||!fresh(a))continue;
+    const a=nodes.find(n=>n.id===definitionId&&n.provides&&successful(n)&&fresh(n));
+    if(a){
+      card.querySelector('.tut-do').textContent=a.provides+' x 4 =';
+      const i=nodes.indexOf(a);
       for(const b of nodes.slice(i+1)){
         if(!fresh(b)||!successful(b)||b.provides)continue;
-        try{if(N.mathcore.freeVars(N.mathcore.normalize(b.src)).includes(a.provides)){pair=[a,b];break;}}catch{}
+        // '=' asks for a preview; an accepted preview keeps that same source
+        // in answerPrefix. Neither is a parseable assignment's left-hand side.
+        const source=b.ref?.answerPrefix&&b.src.startsWith(b.ref.answerPrefix)?b.ref.answerPrefix:b.src;
+        const expression=N.mathcore.normalize(source).replace(/=\s*$/,'');
+        try{if(N.mathcore.freeVars(expression).includes(a.provides)){pair=[a,b];break;}}catch{}
       }
     }
     ready=!!pair;if(ready)say='they’re connected.';
-    else if(mode==='pen')say='name a number. tap Solve on each line.';
-  }else if(step===2){
+    else if(!a)say='check the value above.';
+    else if(mode==='pen')say='write this, check it, then tap Solve.';
+  }else if(step===3){
     const texts=[...S.lines.filter(l=>!l.tutor).map(l=>({key:'line:'+l.id,text:l.text,strict:true})),...(S.textTranscripts||[]).filter(t=>t.confidence>=.5).map(t=>({key:'text:'+t.hash,text:t.text,strict:false}))];
     ready=texts.some(t=>{
       if(before.get(t.key)===t.text)return false;
@@ -10583,18 +10600,18 @@ function check(){
     else if(S.settings.notaOn===false&&!prewritten('explain the maths above'))say='Nota is off. you can still practise here.';
     else if(navigator.onLine===false&&!prewritten('explain the maths above'))say='I’m offline. try me later.';
   }
-  if(step>=0&&step<3&&mode==='pen'&&!ready&&(S.settings.aiOn===false||S.settings.handwritingRecognitionOn===false||(step===2&&S.settings.textRecognitionOn===false)))say='the reader is off. type this instead.';
-  if(step>=0&&step<2)disabled=!ready;
+  if(step>=0&&step<LESSONS.length&&mode==='pen'&&!ready&&(S.settings.aiOn===false||S.settings.handwritingRecognitionOn===false||(step===3&&S.settings.textRecognitionOn===false)))say='the reader is off. type this instead.';
+  if(step>=0&&step<3)disabled=!ready;
   card.dataset.ready=String(ready);card.querySelector('.tut-say').textContent=say;
   const button=card.querySelector('.tut-next');button.textContent=next;button.disabled=disabled;
   if(lastSaid!==say){
-    announce((step>=0&&step<3?'Lesson '+(step+1)+' of 3. ':'')+say+(ready?'':LESSONS[step]?' '+LESSONS[step].example:''));lastSaid=say;
+    announce((step>=0&&step<LESSONS.length?'Lesson '+(step+1)+' of '+LESSONS.length+'. ':'')+say+(ready?'':LESSONS[step]?' '+card.querySelector('.tut-do').textContent:''));lastSaid=say;
   }
   place();
 }
 function start(force){
   if(done()&&!force)return;if(on&&note===S.id&&!force)return;
-  dispose();on=true;step=-1;note=S.id;mode=S.tool==='pen'?'pen':'text';ready=false;
+  dispose();on=true;step=-1;note=S.id;mode=S.tool==='pen'?'pen':'text';ready=false;definitionId=null;
   document.body.dataset.tutorial='on';
   if(mode==='text'&&!S.lines.some(l=>l.text?.trim())&&!S.strokes.length&&!S.images.length)document.activeElement?.blur();
   const old=S.annos.length;S.annos=S.annos.filter(a=>a.tag!=='tutorial'&&a.tag!=='tutorial-tick');

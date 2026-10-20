@@ -19,9 +19,11 @@ async function open(){
  await page.locator('.tut-next').click();
  await page.keyboard.insertText('12 x 7');await page.waitForFunction(()=>!document.querySelector('.tut-next').disabled);
  await page.locator('.tut-next').click();
- await page.evaluate(()=>{const ln=N.text.focusedLine();ln.text='pens = 3';const below=N.text.add(ln.y+40,false);below.text='pens x 4';N.text.render();N.mathcore.run();});
+ await page.evaluate(()=>{N.text.focusedLine().text='pens = 3';N.text.render();N.mathcore.run();});
  await page.locator('.tut-next').click();
- assert.equal(await page.locator('.tut').getAttribute('data-step'),'2');
+ await page.evaluate(()=>{N.text.focusedLine().text='pens x 4 =';N.text.render();N.mathcore.run();});
+ await page.locator('.tut-next').click();
+ assert.equal(await page.locator('.tut').getAttribute('data-step'),'3');
  return {context,page};
 }
 const changeValue=page=>page.evaluate(()=>{N.core.S.lines.find(l=>l.text==='pens = 3').text='pens = 4';N.text.render();N.mathcore.run();});
