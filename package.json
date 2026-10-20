@@ -31,14 +31,17 @@
     "test:pdf": "node tests/pdf-notebook.mjs",
     "test:tutorial": "node tests/tutorial.mjs",
     "test:tutorial-replies": "node tests/tutorial-replies.mjs",
-    "test:image-paste": "node tests/image-paste.mjs"
+    "test:image-paste": "node tests/image-paste.mjs",
+    "test:share-qr": "node tests/share-qr.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
+    "jsqr": "1.4.0",
     "pdf-lib": "1.17.1",
     "pdfjs-dist": "6.4.299",
     "playwright": "1.58.2",
     "pngjs": "^7.0.0",
+    "qrcode-generator": "2.0.4",
     "tar-stream": "^3.2.1",
     "unbzip2-stream": "^1.4.3",
     "y-indexeddb": "^9.0.12",

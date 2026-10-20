@@ -1167,6 +1167,8 @@ function shareSheet(){
     '<div id="share-main"'+(busy?' class="share-down" inert':'')+'>'+
     (host?'<p>anyone with this link writes on this note with you, live. keep it to people you trust.</p>'
          :'<p>you are writing on someone else\'s note. it is theirs: if they stop sharing, or you leave, it goes from this device.</p>')+
+    '<figure style="margin:12px 0 16px;text-align:center"><canvas id="share-qr" role="img" aria-label="QR code to join this shared note" style="width:224px;max-width:100%;height:auto;image-rendering:pixelated" hidden></canvas>'+
+    '<figcaption id="share-qr-caption" style="font-size:13px;color:var(--ink-2)">scan to write on this note</figcaption></figure>'+
     '<label class="mi" for="share-link"><span>link</span><input class="keyin" id="share-link" readonly value="'+esc(link)+'" style="margin:0 0 0 auto"></label>'+
     '<button class="mi" id="share-copy"><i class="ph ph-copy"></i>copy link</button>'+
     (navigator.share?'<button class="mi" id="share-send"><i class="ph ph-paper-plane-tilt"></i>send link</button>':'')+
@@ -1176,6 +1178,18 @@ function shareSheet(){
          :'<button class="mi" id="share-leave"><i class="ph ph-sign-out"></i>leave this note<span class="k">it goes from this device</span></button>')+
     '</div>');
   busyStyle();
+  /* Use the ordinary invitation, never the host key. The QR library is in
+     the collaboration bundle already loaded when this room was opened. */
+  try{
+    const qr=window.Yjs.qrcode(0,'M'); qr.addData(link); qr.make();
+    const canvas=box.querySelector('#share-qr'),count=qr.getModuleCount(),cell=4,quiet=4;
+    canvas.width=canvas.height=(count+quiet*2)*cell;
+    const ctx=canvas.getContext('2d');
+    ctx.fillStyle='#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle='#000';
+    for(let y=0;y<count;y++)for(let x=0;x<count;x++)if(qr.isDark(y,x))ctx.fillRect((x+quiet)*cell,(y+quiet)*cell,cell,cell);
+    canvas.hidden=false;
+  }catch(e){ box.querySelector('#share-qr-caption').textContent='QR code unavailable. copy the link below.'; }
   box.querySelector('#share-link').onclick=e=>e.target.select();
   box.querySelector('#share-copy').onclick=async()=>{ C.toast((await copy(link))?'link copied.':'could not copy. select the link and copy it.'); };
   const send=box.querySelector('#share-send'); if(send)send.onclick=()=>{ navigator.share({title:S.title||'notas',url:link}).catch(()=>{}); };
