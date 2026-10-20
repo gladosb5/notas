@@ -13,3 +13,5 @@ Preserve license files and notices under `assets/`, including:
 Other bundled files may contain their own license headers or adjacent license files. npm dependencies retain their package licenses. The root and deployment lockfiles record dependency versions.
 
 The handwriting stroke alphabet in `nota.js` is attributed there to Hershey glyph data from `techninja/hersheytextjs`. See the [background remover model card](docs/models/background.md) for model provenance.
+
+PDF support uses [PDF.js (Apache-2.0)](assets/pdf/PDFJS-LICENSE.txt) and [pdf-lib (MIT)](assets/pdf/PDFLIB-LICENSE.txt). Additional font, CMap and decoder notices are preserved under `assets/pdf/`.

@@ -70,3 +70,6 @@ const offline = files.filter(f => !/^assets\/fonts\/(?:icons|katex)-.*\.(?:woff|
 await writeFile(path.join(root, 'asset-manifest.json'), JSON.stringify(offline, null, 2));
 console.log(`Prepared ${files.length} assets, retaining the trained CNN.`);
 await import('./model-contract.mjs');
+
+// Include the pinned PDF engine, fonts and decoders in offline builds.
+await import('./prepare-pdf-assets.mjs');

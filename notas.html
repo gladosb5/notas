@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v154">
+<meta name="notas-version" content="v156">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -1848,7 +1848,7 @@ const CONTENT_MIN = 200, MARGIN_MIN = 96, COL_GUTTER = 12;
 
 const S = {
   id:null, title:'untitled', created:0, updated:0,
-  strokes:[], lines:[], images:[], annos:[],
+  strokes:[], lines:[], images:[], annos:[], pdf:null,
   clusters:[], nodes:[], textTranscripts:[],
   tool:'text', lastTool:'pen',
   settings:{ angle:'deg', fractions:false, aiOn:true, theme:'auto', voice:false, recognizer:'ink', touchDraw:true, animations:true, textColor:'', notaColor:'', notaFont:'', notaOn:true, textRecognitionOn:true, backgroundRemovalOn:true, handwritingRecognitionOn:true },
@@ -2061,7 +2061,7 @@ function displayTitle(title, lines, textTranscripts, transcripts){
 }
 /* a page with nothing on it and no name: not yet a note */
 function isBlank(){
-  return !S.strokes.length && !S.images.length && (!S.title || S.title === 'untitled') && S.lines.every(l=>!l.text);
+  return !S.pdf && !S.strokes.length && !S.images.length && (!S.title || S.title === 'untitled') && S.lines.every(l=>!l.text);
 }
 /* "today", "yesterday", then the date, so a list of notes reads as a diary */
 function whenLabel(t){
@@ -2079,6 +2079,7 @@ function serialize(){
   return {
     id:S.id, title:S.title, created:S.created, updated:Date.now(),
     rev:S.savedRev||0, settings:noteSettings(), docH:S.docH,
+    ...(S.pdf?{pdf:{...S.pdf,pages:S.pdf.pages.map(p=>({...p}))}}:{}),
     view:{scrollTop:sc?sc.scrollTop:0,scrollLeft:sc?sc.scrollLeft:0},
     /* a stroke nota is still writing is saved whole: the reveal is not ink */
     strokes:S.strokes.map(({_show,...st})=>({...st,pts:st.pts.slice(),bbox:st.bbox?.slice(),...(st.times?{times:st.times.slice()}:{} )})),
@@ -2545,11 +2546,13 @@ let cachedExtent=M.colW;
 function layout(light=false,rect){
   light=light===true;
   const sc = $('#scroller'); const r = rect||sc.getBoundingClientRect();
+  const previousW=M.vw;
   M.vw = r.width; M.vh = r.height; M.dpr = Math.min(window.devicePixelRatio||1, 2);
   /* The sheet is a fixed size on anything wide enough to hold it. Below that
      - a phone, a split window - it narrows to the screen instead, because a
      line you have to pan sideways to finish reading is not a line. The two
      columns shrink together so the answers stay beside the working. */
+  if(S.pdf&&previousW&&M.vw!==previousW&&Math.abs(M.zoom-Math.min(1,(previousW-24)/720))<.02)M.zoom=Math.max(.2,Math.min(1,(M.vw-24)/720));
   const was = M.contentW;
   const room = Math.round(M.vw) - COL_GUTTER*2;
   if(room >= CONTENT_MAX + MARGIN_MAX){ M.contentW = CONTENT_MAX; M.marginW = MARGIN_MAX; }
@@ -2557,6 +2560,7 @@ function layout(light=false,rect){
     M.marginW = clamp(Math.round(room*0.3), MARGIN_MIN, MARGIN_MAX);
     M.contentW = Math.max(CONTENT_MIN, room - M.marginW);
   }
+  if(S.pdf){M.contentW=720;M.marginW=0;}
   M.colW = M.contentW + M.marginW;
   const z = M.zoom;
   M.colLeft = Math.max(12,Math.round((M.vw - M.colW*z)/2));
@@ -2605,13 +2609,13 @@ function docExtent(){
    edge back up to the last line of type and the page below the ink could
    not be reached until a fresh stroke pushed it out again. */
 function growDoc(y){
-  const want = Math.max(1600, Math.ceil((y + 700)/200)*200);
+  const want = S.pdf ? S.pdf.pages.at(-1).y+S.pdf.pages.at(-1).h+32 : Math.max(1600, Math.ceil((y + 700)/200)*200);
   if(want > S.docH){ S.docH = want; $('#doc').style.height = Math.round(want*M.zoom)+'px'; $('#col').style.height = want+'px'; }
 }
 /* Zoom about a screen point: the bit of paper under the fingers stays under
    the fingers. cx/cy are client coordinates; omitted means the viewport centre. */
 function setZoom(z,cx,cy,light=false,rect){
-  z = clamp(+z || 1, ZOOM_MIN, ZOOM_MAX);
+  z = clamp(+z || 1, S.pdf ? .2 : ZOOM_MIN, ZOOM_MAX);
   if(Math.abs(z - M.zoom) < 0.0005) return false;
   const sc = $('#scroller'), r = rect||sc.getBoundingClientRect();
   const px = cx === undefined ? r.width/2 : cx - r.left, py = cy === undefined ? r.height/2 : cy - r.top;
@@ -2827,7 +2831,7 @@ function refreshColors(){
 }
 refreshColors();
 try{ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', ()=>{ refreshColors(); render(); }); }catch(e){}
-function inkColor(a){ return a === 'ai' ? colors.red : colors.graphite; }
+function inkColor(a){ return a === 'ai' ? colors.red : S.pdf ? '#1D1D1F' : colors.graphite; }
 /* Reallocating a canvas clears it and costs a texture upload, so it only
    happens when the viewport actually changed size. A zoom or a re-layout for
    any other reason just repaints. */
@@ -2947,7 +2951,7 @@ function render(onPaint){
   if(raf) return;
   raf = requestAnimationFrame(()=>{
     raf = 0;
-    frame(xCommit); drawImages(xCommit);
+    frame(xCommit); N.pdf?.draw(xCommit); drawImages(xCommit);
     /* a selection being dragged is drawn at the offset the finger is at, and
        only committed to the stroke points when the finger lifts */
     const picked = (moving && S.selection.length) ? new Set(S.selection) : null;
@@ -5875,7 +5879,7 @@ function fitLine(ln,input,shift){
   input.style.height='1px';
   const next=Math.max(C.LINE_H,Math.ceil(input.scrollHeight));
   input.style.height=next+'px';input.scrollTop=0;input.scrollLeft=0;ln.h=next;input._fitKey=key;input._fitHeight=next;
-  if(shift&&next!==old){
+  if(shift&&next!==old&&!S.pdf){
     const delta=next-old;
     for(const other of S.lines)if(other.id!==ln.id&&other.y>ln.y)other.y+=delta;
     C.growDoc(ln.y+next+200);
@@ -5888,7 +5892,7 @@ function relayout(){
   for(const ln of S.lines){
     const d = els.get(ln.id); if(!d) continue;
     const i = d.firstChild;
-    d.style.width = M.contentW+'px'; i.style.width = M.contentW+'px';
+    const available=Math.max(80,M.contentW-(ln.x||0));d.style.width = available+'px'; i.style.width = available+'px';
     d.style.setProperty('--tw', Math.round(Math.max(120, Math.min(M.contentW - 4, measure(i, ln.text) + 28)))+'px');
     fitLine(ln,i,false);
   }
@@ -5896,6 +5900,7 @@ function relayout(){
   renderPositions();
 }
 function reflow(){
+  if(S.pdf)return; // PDF annotations keep their position on the original page.
   let floor=0;
   for(const ln of S.lines.slice().sort((a,b)=>a.y-b.y)){
     const h=Math.max(C.LINE_H,ln.h||C.LINE_H);
@@ -5922,7 +5927,7 @@ function queue(){ clearTimeout(qt); qt = setTimeout(()=>{
 }, 160); }
 
 function add(y, focus){
-  const ln = { id:C.uid(), y:snap(y), text:'' };
+  const ln = { id:C.uid(), y:S.pdf?Math.max(N.pdf.pageAt(y)?.y||0,y):snap(y), text:'' };
   C.act('add line', ()=>{ if(!S.lines.some(l=>l.id===ln.id))S.lines.push(ln); }, ()=>{ S.lines = S.lines.filter(l=>l.id!==ln.id); });
   C.growDoc(ln.y + 200);
   render();
@@ -5970,8 +5975,8 @@ function keys(e, ln, input){
   if(e.key === 'Enter'){ e.preventDefault(); enter(ln, input); return; }
   /* Backspace at the very start joins the line onto the one above, the way
      Enter split it: caret at the seam, one undo step */
-  if(e.key === 'Backspace' && !mod && !e.altKey && input.selectionStart === 0 && input.selectionEnd === 0 && S.lines.length > 1){ e.preventDefault(); joinUp(ln, input); return; }
-  if(e.key === 'Delete' && !mod && !e.altKey && input.selectionStart === input.value.length && input.selectionEnd === input.value.length){
+  if(!S.pdf && e.key === 'Backspace' && !mod && !e.altKey && input.selectionStart === 0 && input.selectionEnd === 0 && S.lines.length > 1){ e.preventDefault(); joinUp(ln, input); return; }
+  if(!S.pdf && e.key === 'Delete' && !mod && !e.altKey && input.selectionStart === input.value.length && input.selectionEnd === input.value.length){
     if(joinDown(ln, input)) e.preventDefault();
     return;
   }
@@ -5986,9 +5991,9 @@ function enter(ln, input){
     const oldH=Math.max(C.LINE_H,ln.h||C.LINE_H),newId=C.uid();
     const after=before.map(l=>({...l}));
     const live=after.find(l=>l.id===ln.id);live.text=head;live.h=C.LINE_H;
-    const delta=Math.max(0,C.LINE_H*2-oldH);
+    const delta=S.pdf?0:Math.max(0,C.LINE_H*2-oldH);
     for(const l of after)if(l.id!==ln.id&&l.y>ln.y)l.y+=delta;
-    after.push({id:newId,y:ln.y+C.LINE_H,text:tail,h:C.LINE_H});
+    after.push({id:newId,y:ln.y+C.LINE_H,...(S.pdf?{x:ln.x||0}:{}),text:tail,h:C.LINE_H});
     /* render() leaves the focused textarea's value alone, and this one is
        still focused: write the head in here or the tail stays on screen as
        well, a line that then reads as duplicated and edits the wrong text */
@@ -6072,7 +6077,8 @@ doc.addEventListener('pointerup', e=>{
   if(im){ if(document.activeElement && document.activeElement.blur) document.activeElement.blur(); N.ink.pickImage(im.id); return; }
   if(w.x > M.contentW || w.x < 0) return;
   const hit = S.lines.find(l=>Math.abs(l.y - snap(w.y)) < 4);
-  if(hit) focusLine(hit.id, true); else add(w.y);
+  if(S.pdf&&!N.pdf.pageAt(w.y))return;
+  if(hit) focusLine(hit.id, true); else {const ln=add(w.y);if(S.pdf){ln.x=C.clamp(w.x,0,M.contentW-80);render();}}
 });
 doc.addEventListener('pointercancel', ()=>{ tap = null; });
 
@@ -7943,12 +7949,14 @@ function blank(id){
   N.nota?.reset();
   N.recog.reset();
   S.id = id || C.uid(); S.title = 'untitled'; S.created = Date.now();
+  S.pdf=null;N.pdf?.refresh();
   S.strokes = []; S.lines = []; S.images = []; S.annos = []; S.clusters = []; S.nodes = []; S.textTranscripts = [];
   S.dirty=false; S.savedAnswers=[]; S.savedTitle='untitled'; S.forkedFrom=null;
   S.docH = 1600; S.selection = []; S.imageSelection=null; S.savedRev=0; S.remoteRev=0;
   C.Undo.back.length = 0; C.Undo.fwd.length = 0; C.Undo.typing = null;
 }
 function paintAll(answers){
+  N.pdf?.refresh();
   $('#title').textContent = C.displayTitle(S.title, S.lines);
   C.paintUndo();
   N.text.reset(); N.mathcore.reset(); N.plot.keep(new Set());
@@ -7991,6 +7999,7 @@ async function openNote(id,opts={}){
   if(S.dirty && !await settle()) return;
   blank(id);
   S.title = doc.title || 'untitled'; S.created = doc.created || Date.now();
+  S.pdf=N.pdf?.validate(doc.pdf)||null;
   S.strokes = doc.strokes || []; S.lines = doc.lines || []; S.images = doc.images || [];
   S.textTranscripts = (doc.textTranscripts || []).filter(t=>t&&t.hash&&t.text);
   S.docH = doc.docH || 1600;
@@ -8000,7 +8009,7 @@ async function openNote(id,opts={}){
   if(!doc.localVersion)S.settings.aiOn=true;
   for(const t of (doc.transcripts||[])) N.recog.cache.set(t.hash, t);
   const view=C.getView(id)||doc.view||{};
-  M.zoom = C.clamp(+view.zoom || 1, C.ZOOM_MIN, C.ZOOM_MAX);
+  M.zoom = C.clamp(+view.zoom || (S.pdf?Math.min(1,(M.vw-24)/720):1), S.pdf?.pages.length ? .2 : C.ZOOM_MIN, C.ZOOM_MAX);
   paintAll(doc.answers);
   $('#scroller').scrollTop = Math.max(0, view.scrollTop || 0);
   $('#scroller').scrollLeft = Math.max(0, view.scrollLeft || 0);
@@ -8110,6 +8119,7 @@ function menuSheet(){
     '<button class="mi" id="im-image"><i class="ph ph-image-square"></i>insert image</button>' +
     '<button class="mi" id="paste-image"><i class="ph ph-clipboard"></i>paste<span class="k">ctrl/⌘ V</span></button>' +
     (S.images.length?'<button class="mi" id="manage-images"><i class="ph ph-frame-corners"></i>manage images<span class="k">'+S.images.length+'</span></button>':'') +
+    '<button class="mi" id="im-pdf"><i class="ph ph-file-pdf"></i>open PDF</button>' +
     '<button class="mi" id="im-note"><i class="ph ph-file-arrow-up"></i>import note<span class="k">json</span></button>' +
     '<button class="mi" id="ex-png"><i class="ph ph-image"></i>export image<span class="k">png</span></button>' +
     '<button class="mi" id="ex-json"><i class="ph ph-file-arrow-down"></i>export note<span class="k">json</span></button>' +
@@ -8296,7 +8306,9 @@ function menuSheet(){
   box.querySelector('#im-note').onclick = ()=>{ closeSheet(); chooseNoteImport(); };
   box.querySelector('#ex-png').onclick = ()=>{ closeSheet(); exportPNG(); };
   box.querySelector('#ex-json').onclick = ()=>{ closeSheet(); exportJSON(); };
-  box.querySelector('#ex-pdf').onclick = ()=>{ closeSheet(); printNote(); };
+  box.querySelector('#im-pdf').onclick = ()=>{closeSheet();N.pdf.choose();};
+  box.querySelector('#ex-pdf').onclick = ()=>{ closeSheet(); if(S.pdf)N.pdf.exportFile();else printNote(); };
+  if(S.pdf)box.querySelector('#ex-pdf').lastChild.textContent='save annotated PDF';
   box.querySelector('#mi-tut').onclick = ()=>{ closeSheet(); N.tutorial.start(true); };
   box.querySelector('#mi-keys').onclick = shortcutsSheet;
   box.querySelector('#mi-priv').onclick = privacySheet;
@@ -8392,7 +8404,7 @@ function contentBottom(){
   return y + 40;
 }
 function exportBounds(){
-  let left=0,top=0,right=M.colW,bottom=contentBottom();
+  let left=0,top=0,right=M.colW,bottom=Math.max(contentBottom(),S.pdf?S.pdf.pages.at(-1).y+S.pdf.pages.at(-1).h:0);
   const include=b=>{left=Math.min(left,b[0]);top=Math.min(top,b[1]);right=Math.max(right,b[2]);bottom=Math.max(bottom,b[3]);};
   for(const st of S.strokes)if(st.bbox)include([st.bbox[0]-st.w,st.bbox[1]-st.w,st.bbox[2]+st.w,st.bbox[3]+st.w]);
   for(const im of S.images)include(C.imageBounds(im));
@@ -8426,8 +8438,9 @@ async function renderExport(opts={}){
   cv.width = Math.round(w*scale); cv.height = Math.round(h*scale);
   const x=cv.getContext('2d');if(!x){cv.width=cv.height=0;throw Error('canvas memory exhausted');}
   const cs = getComputedStyle(document.documentElement);
-  x.fillStyle = cs.getPropertyValue('--paper').trim(); x.fillRect(0,0,cv.width,cv.height);
+  if(!opts.transparent){x.fillStyle = cs.getPropertyValue('--paper').trim(); x.fillRect(0,0,cv.width,cv.height);}
   x.scale(scale, scale); x.translate(-bounds.left,-top);
+  if(S.pdf&&!opts.noPdf)await N.pdf.paintBackground(x,top,h);
   for(const pair of loaded){
     if(!pair) continue;
     try{
@@ -8438,7 +8451,7 @@ async function renderExport(opts={}){
   }
   for(const st of S.strokes) N.ink.drawStroke(x, st);
   x.font = '400 16px '+((getComputedStyle(document.documentElement).getPropertyValue('--type')||'').trim()||'ui-monospace, monospace'); x.textBaseline = 'top';
-  for(const l of S.lines) if(l.text){ x.fillStyle = l.tutor ? N.ink.colors.red : N.ink.colors.text; drawWrapped(x,l.text,(l.x||0)+2,l.y+3,Math.max(80,M.contentW-(l.x||0))-4,22.4); }
+  for(const l of S.lines) if(l.text){ x.fillStyle = l.tutor ? N.ink.colors.red : S.pdf ? (S.settings.textColor||'#1D1D1F') : N.ink.colors.text; drawWrapped(x,l.text,(l.x||0)+2,l.y+3,Math.max(80,M.contentW-(l.x||0))-4,22.4); }
   x.fillStyle = cs.getPropertyValue('--blue').trim();
   x.font = '600 21px "Caveat","Segoe Script",system-ui,sans-serif';
   x.textBaseline='alphabetic';
@@ -8503,6 +8516,7 @@ function exportJSON(){downloadJSON((S.title||'notas')+'.notas.json',C.serialize(
 $('#save-retry').onclick=()=>C.save({announce:true});
 $('#save-export').onclick=()=>exportJSON();
 async function printNote(){
+  if(S.pdf)return N.pdf.exportFile();
   const w=window.open('','_blank');if(!w)return C.toast('allow pop-ups to print this note.');
   const canvas=document.createElement('canvas'),urls=[];
   const release=()=>{for(const url of urls)URL.revokeObjectURL(url);urls.length=0;};
@@ -8867,7 +8881,7 @@ function validateImportedNote(doc){
   }
   const answers=[]; // Imported answers are untrusted caches; calculate them here.
 
-  return {title:typeof doc.title==='string'?doc.title.slice(0,500):'imported note',strokes,lines,images,textTranscripts,transcripts,answers,
+  return {pdf:N.pdf?.validate(doc.pdf)||null,title:typeof doc.title==='string'?doc.title.slice(0,500):'imported note',strokes,lines,images,textTranscripts,transcripts,answers,
     created:Number.isFinite(Number(doc.created))&&Number(doc.created)>0?Number(doc.created):Date.now(),folder:typeof doc.folder==='string'?doc.folder.slice(0,200):'',
     docH:finite(doc.docH,2e6)?Math.max(1600,Number(doc.docH)):1600,settings};
 }
@@ -8889,13 +8903,13 @@ async function importNoteFile(f){
     S.title=typeof doc.title==='string'&&doc.title.trim()?doc.title.trim():'imported note';
     S.created=doc.created;
     if(doc.folder)S.newFolder={id:S.id,folder:doc.folder};
-    S.strokes=doc.strokes;S.lines=doc.lines;S.images=doc.images;
+    S.pdf=doc.pdf||null;S.strokes=doc.strokes;S.lines=doc.lines;S.images=doc.images;
     S.textTranscripts=doc.textTranscripts;
     S.docH=Math.max(1600,Number(doc.docH)||1600);
     if(doc.settings)for(const k of ['angle','fractions','aiOn'])if(k in doc.settings)S.settings[k]=doc.settings[k];
     C.applyPrefs();
     for(const t of doc.transcripts)N.recog.cache.set(t.hash,t);
-    if(!S.lines.length)S.lines.push({id:C.uid(),y:120,text:'',h:C.LINE_H});
+    if(!S.pdf&&!S.lines.length)S.lines.push({id:C.uid(),y:120,text:'',h:C.LINE_H});
     paintAll(doc.answers);$('#scroller').scrollTop=0;$('#scroller').scrollLeft=0;
     C.markDirty();
     if(!await C.save())return false;
@@ -10317,12 +10331,13 @@ async function exportNotes(ids,backup){
 }
 function importPick(){
   const input = document.createElement('input');
-  input.type = 'file'; input.accept = '.json,.notas.json,application/json'; input.multiple = true; input.hidden = true;
+  input.type = 'file'; input.accept = '.pdf,application/pdf,.json,.notas.json,application/json'; input.multiple = true; input.hidden = true;
   input.onchange = async()=>{
     const files = [...(input.files||[])]; input.remove();
     const notes = [],chunks=new Map();
     for(const f of files){
       try{
+        if(f.type==='application/pdf'||/\.pdf$/i.test(f.name)){await N.pdf.importFile(f);continue;}
         if(f.size > 200*1024*1024) throw new Error('too large');
         const raw = JSON.parse(await f.text());
         if(raw?.notasParts){
@@ -10353,9 +10368,9 @@ async function importBundle(raw, intoFolder){
       const id = C.uid(), now = Date.now();
       const created = Number.isFinite(Number(note.created)) && note.created > 0 ? Number(note.created) : now;
       const updated = Number.isFinite(Number(note.updated)) && note.updated > 0 ? Math.min(now, Number(note.updated)) : now;
-      if(!v.lines.length) v.lines.push({id:C.uid(), y:120, text:'', h:C.LINE_H});
+      if(!v.pdf&&!v.lines.length) v.lines.push({id:C.uid(), y:120, text:'', h:C.LINE_H});
       const doc = {id, title:v.title.trim()||'untitled', created, updated, rev:1, settings:v.settings, docH:v.docH, view:{scrollTop:0, scrollLeft:0},
-        strokes:v.strokes, lines:v.lines, images:v.images, localVersion:2, answers:v.answers, transcripts:v.transcripts, textTranscripts:v.textTranscripts};
+        pdf:v.pdf, strokes:v.strokes, lines:v.lines, images:v.images, localVersion:2, answers:v.answers, transcripts:v.transcripts, textTranscripts:v.textTranscripts};
       const folder = cleanFolder(intoFolder || note.folder);
       doc.library=folder?{folder}:{};
       if(!await C.Store.set('notas.note.'+id, doc)){ bad++; continue; }
@@ -10430,6 +10445,7 @@ N.library = { open, close, toggle, refresh, leaving, changed, boot, importBundle
 })();
 </script>
 
+<script src="./pdf-notebook.js"></script>
 <script>
 /* =========================================================================
    TUTORIAL - a coach's card beside the line it is about.

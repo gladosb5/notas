@@ -54,3 +54,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for browser tests, the project layout, an
 ## License
 
 Original project source is licensed under [MIT](LICENSE). Bundled third-party libraries, fonts, and model weights retain their own licenses; see [THIRD_PARTY.md](THIRD_PARTY.md).
+
+## PDF notebooks
+
+Choose **open PDF** from the menu, import a PDF from the notes library, or drag a PDF onto the app. Each PDF becomes its own notebook with separate pages. Use the existing pen or tap anywhere on a page with the text tool. Open the page thumbnails to jump between pages; **+** inserts a blank page after the current page, with undo/redo support.
+
+PDF notebooks autosave locally, including the original document and editable annotations. **save PDF** downloads the original pages with your writing, text and images overlaid, plus any blank pages. Original PDF text remains selectable. Export a `.notas.json` note or a library backup to preserve editable annotations when transferring devices. The PDF tools work offline after the app reports **available offline**.
+
+The first version accepts unencrypted PDFs up to 32 MB and 200 pages. Existing printed text is preserved; additions are editable in Notas. PDF notebooks can be sent using PDF or note export; live collaboration is currently available for ordinary notebooks only.
+
+PDF.js 6.4.299 and pdf-lib 1.17.1 are pinned in the development dependencies. Run `npm run assets:pdf` to reproduce the bundled PDF engine, fonts, decoders and license notices, and `npm run test:pdf` for browser and offline regression checks.

@@ -1194,6 +1194,7 @@ function shareSheet(){
   };
 }
 async function share(){
+  if(S.pdf){C.toast('PDF notebooks are saved on this device. use save PDF or export note to send a copy.',6500);return;}
   if(room){ shareSheet(); return; }
   if(!served()){ C.toast('sharing needs this notebook opened from its website.',6000); return; }
   /* A note already shared here that this device is not the host of is
