@@ -10,7 +10,7 @@
     "test:font-writing": "node tests/font-writing.mjs",
     "test:launch-handoff": "node tests/launch-handoff.mjs",
     "test:fonts-launch": "node tests/fonts-launch.mjs",
-    "test:solve-review": "node tests/review-before-solve.mjs && node tests/solve-chip.mjs && node tests/pen-solve-tap.mjs",
+    "test:solve-review": "node tests/review-before-solve.mjs && node tests/solve-chip.mjs && node tests/pen-solve-tap.mjs && node tests/lasso-solve.mjs",
     "test:ai-features": "node tests/ai-features.mjs && node tests/silent-calculations.mjs",
     "test:notes": "node tests/library.mjs && node tests/notes-management-regression.mjs && node tests/nota.mjs",
     "test:fast-pencil": "node tests/fast-pencil-browser.mjs",

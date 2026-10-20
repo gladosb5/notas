@@ -2176,12 +2176,24 @@ function confirm(cl,text){
 }
 function solveSelection(){
   if(S.settings.handwritingRecognitionOn===false){C.toast('handwriting recognition is off. enable it in the menu.');return;}
-  const cl=S.clusters.find(c=>c.strokeIds.some(id=>S.selection.includes(id)));
-  if(!cl)return C.toast('select one expression with the lasso first.');
-  // Asking to solve a selection is an explicit request, so this reading is
-  // shown and calculated even without an equals sign.
-  cl.latex='';cl.ascii='';cl.confirmed=false;cl.review=false;cl.asked=true;cache.delete(cl.hash);attempted.delete(cl.hash);
-  C.markDirty();recognize(cl,true);N.ink.clearSelection();
+  const selected=new Set(S.selection);
+  const clusters=N.mathcore.collect().filter(n=>n.kind==='cluster'&&n.ref.strokeIds.some(id=>selected.has(id))).map(n=>n.ref);
+  if(!clusters.length)return C.toast('select one expression with the lasso first.');
+  // Solve the reading already shown, just like its adjacent Solve button.
+  // Re-reading here discarded corrections and could lose a named definition.
+  // Only unread or failed ink needs recognition; several selected rows are
+  // calculated in page order so a definition is available to its uses below.
+  for(const cl of clusters){
+    if((cl.ascii||cl.latex)&&!cl.review&&!cl.pending){
+      N.mathcore.requestSolve(cl.id);
+    }else{
+      cl.latex='';cl.ascii='';cl.confirmed=false;cl.review=false;cl.asked=true;cache.delete(cl.hash);attempted.delete(cl.hash);
+      C.markDirty();recognize(cl,true);
+    }
+  }
+  const failed=(S.nodes||[]).find(n=>clusters.includes(n.ref)&&n.error);
+  if(failed)C.toast(failed.error);
+  N.ink.clearSelection();
 }
 function reset(){
   textGroupCache=null;scheduleGen++;epoch++;indexEpoch++;clearTimeout(timer);clearTimeout(textTimer);clearTimeout(indexTimer);
