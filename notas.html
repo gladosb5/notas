@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v159">
+<meta name="notas-version" content="v160">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -10440,7 +10440,7 @@ const LESSONS=[
   {say:'ask me about your page.',example:'hey nota, explain the maths above?'}
 ];
 let on=false,step=-1,note=null,card=null,watch=null,poll=null;
-let anchor=120,inputY=240,before=new Map(),ready=false,mode='text',lastSaid='',pressing=false,releaseTimer=null;
+let anchor=120,inputY=240,before=new Map(),initial=new Map(),ready=false,mode='text',lastSaid='',pressing=false,releaseTimer=null;
 function done(){try{return localStorage.getItem('notas.tut')==='done';}catch{return false;}}
 function remember(){try{localStorage.setItem('notas.tut','done');}catch{}}
 function snapshot(){
@@ -10523,6 +10523,33 @@ function draw(focus){
   }
 }
 function successful(n){return !!n.result&&!n.error&&!n.pending&&!n.ref?.review&&(n.kind!=='cluster'||n.ref?.asked);}
+function prewritten(question,where={}){
+  if(!on||note!==S.id||step<2||!question)return null;
+  const normalize=q=>String(q).toLowerCase().replace(/\s+/g,' ').trim().replace(/[.!?,;:]+$/,'').trim();
+  const expected='explain the maths above';
+  if(normalize(question)!==expected)return null;
+  const math=s=>N.mathcore.normalize(s).replace(/\s+/g,'').replace(/=$/,'').toLowerCase();
+  const allowed=new Set(['12*7','12*7=84','pens=3','pens*4','pens*4=12']);
+  const nodes=(S.nodes||[]).filter(n=>initial.get(n.kind+':'+n.id)!==n.src&&successful(n));
+  if(!nodes.some(n=>['12*7','12*7=84'].includes(math(n.src))&&n.result==='84')||
+     !nodes.some(n=>math(n.src)==='pens=3'&&n.result==='3')||
+     !nodes.some(n=>['pens*4','pens*4=12'].includes(math(n.src))&&n.result==='12'))return null;
+  // Extra working or an extended question belongs to the live model.
+  for(const ln of S.lines){
+    if(ln.tutor||!ln.text?.trim()||initial.get('line:'+ln.id)===ln.text)continue;
+    const call=N.nota?.parseCall(ln.text,true);
+    if(call&&normalize(call.question)===expected)continue;
+    if(!allowed.has(math(ln.text)))return null;
+  }
+  for(const cl of S.clusters){
+    if(initial.get('cluster:'+cl.id)===(cl.ascii||cl.latex||''))continue;
+    if(cl.strokeIds?.some(id=>where.skip?.has(id)))continue;
+    if(!allowed.has(math(cl.ascii||cl.latex||'')))return null;
+  }
+  const signature=()=>JSON.stringify([S.id,S.lines.filter(l=>!l.tutor&&l.text?.trim()).map(l=>[l.id,l.text]),S.strokes.filter(s=>s.author==='user').map(s=>[s.id,s.rev||0]),S.images.map(i=>[i.id,i.src])]);
+  const captured=signature();
+  return {question:expected,text:'12 x 7 = 84. pens = 3, so pens x 4 = 12. Change pens and the next line follows.',valid:()=>signature()===captured};
+}
 function check(){
   if(!on||!card)return;
   if(S.id!==note){finish(false,false);return;}
@@ -10553,8 +10580,8 @@ function check(){
     });
     next=ready?'done':'later';
     if(ready)say='that’s how you ask me.';
-    else if(S.settings.notaOn===false)say='Nota is off. you can still practise here.';
-    else if(navigator.onLine===false)say='I’m offline. try me later.';
+    else if(S.settings.notaOn===false&&!prewritten('explain the maths above'))say='Nota is off. you can still practise here.';
+    else if(navigator.onLine===false&&!prewritten('explain the maths above'))say='I’m offline. try me later.';
   }
   if(step>=0&&step<3&&mode==='pen'&&!ready&&(S.settings.aiOn===false||S.settings.handwritingRecognitionOn===false||(step===2&&S.settings.textRecognitionOn===false)))say='the reader is off. type this instead.';
   if(step>=0&&step<2)disabled=!ready;
@@ -10572,14 +10599,14 @@ function start(force){
   if(mode==='text'&&!S.lines.some(l=>l.text?.trim())&&!S.strokes.length&&!S.images.length)document.activeElement?.blur();
   const old=S.annos.length;S.annos=S.annos.filter(a=>a.tag!=='tutorial'&&a.tag!=='tutorial-tick');
   if(old!==S.annos.length)N.ink.renderAI();
-  snapshot();anchor=freeSpace();build();draw(!!force);poll=setInterval(check,400);
+  snapshot();initial=new Map(before);anchor=freeSpace();build();draw(!!force);poll=setInterval(check,400);
 }
 function finish(complete,save=true){
   const returnFocus=on&&card?.contains(document.activeElement)&&S.tool==='text';
   if(on&&save)remember();on=false;dispose();delete document.body.dataset.tutorial;
   announce(complete?'Tutorial complete. Keep writing.':'');if(returnFocus)N.text.focusLast();
 }
-N.tutorial={start,maybeStart(){if(!done())start(false);},check,finish,get running(){return on;}};
+N.tutorial={start,maybeStart(){if(!done())start(false);},check,finish,prewritten,get running(){return on;}};
 })();
 </script>
 

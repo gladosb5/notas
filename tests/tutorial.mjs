@@ -50,9 +50,14 @@ try{
   await next.click();await step(2);
   await type('hey nota, explain the maths above?');
   await page.waitForFunction(()=>document.querySelector('.tut-next').textContent==='done');
+  await page.waitForFunction(()=>N.core.S.lines.some(l=>l.tutor&&l.text.includes('Change pens')));
+  assert.equal(requests,0,'the exact tutorial example writes its prepared reply without an AI request');
+  const question=page.locator('.line:not(.tutor) .txt').filter({hasText:'hey nota, explain the maths above?'}).first();
+  await question.evaluate(el=>{el.focus();el.select();});
+  await type('hey nota, explain the maths above in Spanish?');
   await page.waitForFunction(()=>N.core.S.lines.some(l=>l.tutor&&l.text.includes('Twelve groups')));
   await page.waitForFunction(()=>!N.nota.busy);
-  assert.ok(requests>0,'the lesson exercises the real Nota request path with a mocked provider');
+  assert.ok(requests>0,'changing the prompt uses the real Nota request path with a mocked provider');
   await page.screenshot({path:`test-results/tutorial-nota-${width}.png`});
   await next.click();await step(3);
   await page.screenshot({path:`test-results/tutorial-complete-${width}.png`});

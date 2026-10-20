@@ -1435,10 +1435,10 @@ function noteKey(){return (S.id||'')+'|';}
 const readings=new Map();      /* hash -> {text,confidence,group} for every reading, even quiet ones */
 const pendingInk=new Map();    /* hash -> timer */
 function onTranscript(item,group){
-  if(!enabled())return;
+  if(!enabled()&&!N.tutorial?.running)return;
   if(!item||!group)return;
-  readings.set(item.hash,{text:item.text,confidence:item.confidence,group});
   const call=parseCall(item.text);
+  readings.set(item.hash,{text:item.text,confidence:item.confidence,group,prepared:N.tutorial?.prewritten?.(call?.question,{skip:new Set(group.strokeIds)})});
   /* the maths reader's chip on the call goes; the call turns blue only once
      the whole question is taken, never while it is still being written */
   if(call&&item.confidence>=0.5)N.mathcore&&N.mathcore.run();
@@ -1476,9 +1476,9 @@ function answeredBelow(bbox,rowH){
   return S.strokes.some(st=>st.author==='ai'&&st.bbox[1]>=top-2&&st.bbox[1]<=bottom&&st.bbox[2]>=bbox[0]&&st.bbox[0]<=bbox[2]+M.contentW*0.5);
 }
 async function fireInk(hash,tries){
-  if(!enabled())return;
   pendingInk.delete(hash);
   const r=readings.get(hash);if(!r)return;
+  if(!enabled()&&!r.prepared&&!N.tutorial?.running)return;
   if(askingSelection){if(tries<40)pendingInk.set(hash,setTimeout(()=>fireInk(hash,tries+1),600));return;}
   const groups=N.recog.textGroups();
   const mine=groups.find(g=>g.hash===hash);if(!mine)return;
@@ -1502,6 +1502,9 @@ async function fireInk(hash,tries){
   }
   const call=parseCall(parts.join(' '));
   if(!call||!call.question)return;
+  const candidate=N.tutorial?.prewritten?.(call.question,{skip:ids})||r.prepared;
+  let prepared=candidate?.question===normalizeQ(call.question)&&candidate.valid()?candidate.text:null;
+  if(!enabled()&&!prepared)return;
   if(sharedPage()&&![...ids].every(ownsInk))return;
   const key=inkKey(ids);
   if(asked.has(key)||[...ids].some(id=>sentInk.has(id)))return;
@@ -1513,7 +1516,8 @@ async function fireInk(hash,tries){
   claiming.add(key);
   try{claim=N.collab?await N.collab.claimNota('ink:'+Array.from(ids).sort().join(','),normalizeQ(call.question)):{state:'claimed',finish:async()=>{}};}
   catch(e){C.toast(e.message);return;}finally{claiming.delete(key);}
-  if(!enabled()||S.id!==claimingNote||noteEpoch!==claimingEpoch||![...ids].every(id=>C.strokeById(id))){if(claim.state==='claimed')await claim.finish(false).catch(()=>{});return;}
+  if(prepared&&!candidate.valid())prepared=null;
+  if((!enabled()&&!prepared)||S.id!==claimingNote||noteEpoch!==claimingEpoch||![...ids].every(id=>C.strokeById(id))){if(claim.state==='claimed')await claim.finish(false).catch(()=>{});return;}
   if(claim.state==='busy'||claim.state==='offline'){pendingInk.set(hash,setTimeout(()=>fireInk(hash,0),2000));return;}
   if(claim.state!=='claimed')return;
   asked.add(key);
@@ -1523,7 +1527,7 @@ async function fireInk(hash,tries){
   const noteId=S.id,epoch=noteEpoch;
   let wrote=false;
   const writer=Writer({x:bbox[0],y:bbox[3],right:bbox[2],rowH,skip:ids});
-  answer(call.question,{x:bbox[0],y:bbox[1],below:bbox[3],skip:ids},writer,undefined,()=>{wrote=true;rememberInk(ids);}).then(ok=>{
+  answer(call.question,{x:bbox[0],y:bbox[1],below:bbox[3],skip:ids},writer,undefined,()=>{wrote=true;rememberInk(ids);},prepared).then(ok=>{
     claim.finish(ok).catch(()=>{});
     if(S.id!==noteId||noteEpoch!==epoch)return;
     if(!ok){asked.delete(key);for(const id of ids)sentInk.delete(id);N.ink.render();return;}
@@ -1657,15 +1661,16 @@ function reset(){
   askingSelection=false;hideOverloaded();endWaiting(false);
 }
 function onTyped(ln){
-  if(!enabled())return;
   if(!ln||ln.tutor)return;
   clearTimeout(typedTimers.get(ln.id));
+  const call=parseCall(ln.text,true);
+  const prepared=N.tutorial?.prewritten?.(call?.question,{lineId:ln.id});
+  if(!enabled()&&!prepared)return;
   let run=typedRuns.get(ln.id);
   if(run&&!run.reply.alive()){
     run.abort(); typedRuns.delete(ln.id);
     asked.delete(noteKey()+'typed:'+ln.id+':'+normalizeQ(run.question)); run=null;
   }
-  const call=parseCall(ln.text,true);
   /* the reply is part of the note; an edit to its question leaves it alone.
      Removing the call while the reply is still arriving stops it; a
      different question replaces the reply that stood for the old one */
@@ -1674,13 +1679,14 @@ function onTyped(ln){
   if(run&&!run.failed&&normalizeQ(run.question)===normalizeQ(call.question))return;
   if(!call.question||call.question.split(/\s+/).length<2)return;
   const delay=/\?\s*$/.test(ln.text)?500:1500;
-  typedTimers.set(ln.id,setTimeout(()=>fireTyped(ln.id),delay));
+  typedTimers.set(ln.id,setTimeout(()=>fireTyped(ln.id,prepared),delay));
 }
-async function fireTyped(id){
-  if(!enabled())return;
+async function fireTyped(id,candidate=null){
   typedTimers.delete(id);
   const ln=S.lines.find(l=>l.id===id);if(!ln)return;
   const call=parseCall(ln.text,true);if(!call||!call.question)return;
+  let prepared=candidate?.question===normalizeQ(call.question)&&candidate.valid()?candidate.text:null;
+  if(!enabled()&&!prepared)return;
   const key=noteKey()+'typed:'+id+':'+normalizeQ(call.question);
   if(asked.has(key)||ln.notaAsked===normalizeQ(call.question)||claiming.has(key))return;
   const noteId=S.id,epoch=noteEpoch,question=normalizeQ(call.question);
@@ -1689,7 +1695,8 @@ async function fireTyped(id){
   try{claim=N.collab?await N.collab.claimNota(id,question):{state:'claimed',finish:async()=>{}};}
   catch(e){if(noteEpoch===epoch)C.toast(e.message);return;}
   finally{if(noteEpoch===epoch)claiming.delete(key);}
-  if(!enabled()||noteEpoch!==epoch||S.id!==noteId||asked.has(key)||S.lines.find(l=>l.id===id)?.notaAsked===question||normalizeQ(parseCall(S.lines.find(l=>l.id===id)?.text||'',true)?.question||'')!==question){
+  if(prepared&&!candidate.valid())prepared=null;
+  if((!enabled()&&!prepared)||noteEpoch!==epoch||S.id!==noteId||asked.has(key)||S.lines.find(l=>l.id===id)?.notaAsked===question||normalizeQ(parseCall(S.lines.find(l=>l.id===id)?.text||'',true)?.question||'')!==question){
     if(claim.state==='claimed')await claim.finish(false).catch(()=>{});
     return;
   }
@@ -1700,7 +1707,7 @@ async function fireTyped(id){
        who may: the question waits, and the page says which, once */
     if(claim.state==='offline'&&!waitingRoom.has(key)){ waitingRoom.add(key); C.status('nota waits for the shared note to reconnect.'); }
     clearTimeout(typedTimers.get(id));
-    typedTimers.set(id,setTimeout(()=>fireTyped(id),claim.state==='offline'?2000:1000));
+    typedTimers.set(id,setTimeout(()=>fireTyped(id,candidate),claim.state==='offline'?2000:1000));
     return;
   }
   waitingRoom.delete(key);
@@ -1729,7 +1736,7 @@ async function fireTyped(id){
       source.notaAsked=question;run.wrote=true;C.markDirty();return true;
     }
     return false;
-  });
+  },prepared);
   run.done=completed;
   await claim.finish(completed).catch(()=>{});
   if(noteEpoch===epoch&&!run.done)asked.delete(key);
@@ -1848,10 +1855,10 @@ function selectedBox(ids){
 }
 
 const LABEL_WAIT=2500;
-async function answer(question,where,writer,control,onWrite){
-  if(!enabled()){writer.failed?.();return false;}
-  if(!navigator.onLine){C.toast('nota needs a connection.');writer.failed?.();return false;}
-  if(holdBack()){writer.failed?.();showOverloaded(messageAt(where));return false;}
+async function answer(question,where,writer,control,onWrite,prepared=null){
+  if(!enabled()&&!prepared){writer.failed?.();return false;}
+  if(!prepared&&!navigator.onLine){C.toast('nota needs a connection.');writer.failed?.();return false;}
+  if(!prepared&&holdBack()){writer.failed?.();showOverloaded(messageAt(where));return false;}
   control=control||new AbortController();
   const epoch=noteEpoch;
   activeAnswers.add(control);
@@ -1864,22 +1871,22 @@ async function answer(question,where,writer,control,onWrite){
   let text='',complete=false,remembered=false;
   const remember=()=>{if(!remembered&&text.trim()&&(writer.count??1)>0)remembered=onWrite?.()!==false;};
   try{
-    /* the drawings' labels the page has not read yet are read now, for a
-       couple of seconds at most, while the paper turns over */
-    const drawings=await readDrawings(where.skip||new Set(),LABEL_WAIT);
-    const context=pageRows({...where,diagrams:drawings});
-    let picture=null;try{picture=await pagePicture(where,drawings);}catch(e){console.warn('nota: no picture of the page',e);}
     if(noteEpoch!==epoch||writer.aborted||control.signal.aborted)throw new DOMException('Question withdrawn','AbortError');
     const feed=piece=>{
       if(noteEpoch!==epoch||control.signal.aborted||writer.aborted){control.abort();return;}
       arm();
-      if(!text&&overloaded())setOverloaded(false);
+      if(!prepared&&!text&&overloaded())setOverloaded(false);
       text+=piece;writer.feed(piece);C.status('nota is writing.');say('nota is writing…',false);
     };
-    /* while notes are fetched, the paper keeps turning and the words say so */
-    const grab=()=>{arm();C.status(GRAB_TEXT);say(GRAB_TEXT,true);};
-    /* the model asks for the notes it needs (see NOTE_TOOLS) */
-    await stream(question,context,feed,control.signal,picture,false,arm,sharedPage()?null:{onGrab:grab});
+    if(prepared)feed(prepared);
+    else{
+      const drawings=await readDrawings(where.skip||new Set(),LABEL_WAIT);
+      const context=pageRows({...where,diagrams:drawings});
+      let picture=null;try{picture=await pagePicture(where,drawings);}catch(e){console.warn('nota: no picture of the page',e);}
+      if(noteEpoch!==epoch||writer.aborted||control.signal.aborted)throw new DOMException('Question withdrawn','AbortError');
+      const grab=()=>{arm();C.status(GRAB_TEXT);say(GRAB_TEXT,true);};
+      await stream(question,context,feed,control.signal,picture,false,arm,sharedPage()?null:{onGrab:grab});
+    }
     if(!text.trim())throw Error('nota returned an empty answer. try again.');
     if(noteEpoch===epoch&&!writer.aborted){writer.finish();remember();complete=true;}
   }catch(e){
