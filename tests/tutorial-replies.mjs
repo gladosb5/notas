@@ -7,7 +7,7 @@ import {writing} from './fixtures/math-notes.mjs';
 const server=await startServer(0),browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
 const base=`http://127.0.0.1:${server.address().port}`,LIVE='This is the live model answer.';
 const calls=[],errors=[];
-async function open(){
+async function open(expression='(12 / 2) + 6 * 4 ='){
  const context=await browser.newContext({viewport:{width:1000,height:900},serviceWorkers:'block',reducedMotion:'reduce'}),page=await context.newPage();
  page.on('pageerror',e=>errors.push(e.message));
  await page.addInitScript(()=>localStorage.setItem('notas.prefs',JSON.stringify({notaOn:true,handwritingRecognitionOn:false,textRecognitionOn:false,backgroundRemovalOn:false,animations:false})));
@@ -19,15 +19,13 @@ async function open(){
  await page.locator('.tut-next').click();
  await page.keyboard.insertText('12 x 7');await page.waitForFunction(()=>!document.querySelector('.tut-next').disabled);
  await page.locator('.tut-next').click();
- await page.evaluate(()=>{N.text.focusedLine().text='pens = 3';N.text.render();N.mathcore.run();});
+ await page.evaluate(text=>{N.text.focusedLine().text=text;N.text.render();N.mathcore.run();},expression);
  await page.locator('.tut-next').click();
- await page.evaluate(()=>{N.text.focusedLine().text='pens x 4 =';N.text.render();N.mathcore.run();});
- await page.locator('.tut-next').click();
- assert.equal(await page.locator('.tut').getAttribute('data-step'),'3');
+ assert.equal(await page.locator('.tut').getAttribute('data-step'),'2');
  return {context,page};
 }
-const changeValue=page=>page.evaluate(()=>{N.core.S.lines.find(l=>l.text==='pens = 3').text='pens = 4';N.text.render();N.mathcore.run();});
-const waitReply=page=>page.waitForFunction(()=>N.core.S.lines.some(l=>l.tutor&&l.text.includes('Change pens')));
+const changeValue=page=>page.evaluate(()=>{N.core.S.lines.find(l=>l.text==='(12 / 2) + 6 * 4 =').text='(12 / 3) + 6 * 4 =';N.text.render();N.mathcore.run();});
+const waitReply=page=>page.waitForFunction(()=>N.core.S.lines.some(l=>l.tutor&&l.text.includes('brackets first')));
 async function ink(page,parts){
  await page.evaluate(({parts,strokes})=>{
   const S=N.core.S;S.strokes.push(...strokes);N.recog.rebuild();
@@ -54,8 +52,14 @@ try{
   const q=page.locator('.line:not(.tutor) .txt').filter({hasText:'Hey Nota, EXPLAIN the maths above?!'});
   await q.evaluate(el=>{el.focus();el.select();});await page.keyboard.insertText('hey nota, explain the maths above and give another example?');
   await page.waitForFunction(text=>N.core.S.lines.some(l=>l.tutor&&l.text===text),LIVE);
-  assert.equal(calls.length,before+1);assert.equal(await page.evaluate(()=>N.core.S.lines.some(l=>l.tutor&&l.text.includes('Change pens'))),false);
+  assert.equal(calls.length,before+1);assert.equal(await page.evaluate(()=>N.core.S.lines.some(l=>l.tutor&&l.text.includes('brackets first'))),false);
   await context.close();console.log('Prepared typed reply: offline, AI disabled, quick finish, and editing into a live question passed');
+ }
+ {
+  const {context,page}=await open('((12)/(2))+6*4=');const before=calls.length;
+  await page.keyboard.insertText('hey nota, explain the maths above?');await waitReply(page);
+  assert.equal(calls.length,before,'equivalent handwritten fraction notation uses the prepared explanation');
+  await context.close();console.log('Equivalent fraction notation uses the prepared explanation');
  }
  for(const timing of ['before question','while queued']){
   const {context,page}=await open();const before=calls.length;
@@ -63,7 +67,7 @@ try{
   await page.keyboard.insertText('hey nota, explain the maths above?');
   if(timing==='while queued')await changeValue(page);
   await page.waitForFunction(text=>N.core.S.lines.some(l=>l.tutor&&l.text===text),LIVE);
-  assert.equal(calls.length,before+1);assert.equal(await page.evaluate(()=>N.core.S.lines.some(l=>l.tutor&&l.text.includes('Change pens'))),false);
+  assert.equal(calls.length,before+1);assert.equal(await page.evaluate(()=>N.core.S.lines.some(l=>l.tutor&&l.text.includes('brackets first'))),false);
   await context.close();console.log('Changed working '+timing+' uses the live model');
  }
  {

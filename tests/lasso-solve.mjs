@@ -50,21 +50,18 @@ try{
   assert.ok(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result==='12')),'one selection solves both rows in reading order');
   const [unknown]=await seed(['pens x 4 =']);await lasso([unknown.bbox]);await solve();
   assert.equal(await page.locator('#toast').textContent(),'pens has no value yet','an unavailable definition gives feedback after an explicit Solve');
-  // The same lasso action must unlock each tutorial lesson, including the
-  // definition followed by the separately revealed use ending with equals.
+  // The grouped calculation must unlock the tutorial through lasso Solve too.
   await page.evaluate(()=>N.tutorial.start(true));await page.locator('.tut-next').click();
   const [first]=await seed(['12 x 7']);await lasso([first.bbox]);await solve();
   await page.locator('.tut-next').click();
   assert.equal(await page.locator('.tut').getAttribute('data-step'),'1');
-  const [definition,use]=await seed(['pens = 3','pens x 4 =']);
-  await lasso([definition.bbox]);await solve();await page.locator('.tut-next').click();
-  assert.equal(await page.locator('.tut').getAttribute('data-step'),'2');
-  assert.equal(await page.locator('.tut-next').isDisabled(),true,'the use still needs its own Solve');
-  await lasso([use.bbox]);await solve();
-  assert.equal(await page.locator(`#margin .chip[data-node="${use.id}"]`).textContent(),'12');
-  assert.equal(await page.locator('.tut-next').isDisabled(),false,'lasso Solve unlocks the named-value lesson');
+  const [grouped]=await seed(['(12 / 2) + 6 * 4 =']);
+  assert.equal(await page.locator('.tut-next').isDisabled(),true,'the grouped expression needs Solve');
+  await lasso([grouped.bbox]);await solve();
+  assert.equal(await page.locator(`#margin .chip[data-node="${grouped.id}"]`).textContent(),'30');
+  assert.equal(await page.locator('.tut-next').isDisabled(),false,'lasso Solve unlocks the grouped calculation lesson');
   await page.locator('.tut-next').click();
-  assert.equal(await page.locator('.tut').getAttribute('data-step'),'3','the tutorial reaches Hey Nota');
+  assert.equal(await page.locator('.tut').getAttribute('data-step'),'2','the tutorial reaches Hey Nota');
   assert.equal(await page.evaluate(()=>window.__readerStarts),0,'existing readings never restart either handwriting model');
   assert.deepEqual(errors,[]);
   console.log(`Lasso Solve: named definitions, trailing equals, corrections, multiple rows and saved readings pass at ${width}px`);

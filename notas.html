@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v162">
+<meta name="notas-version" content="v163">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -10436,12 +10436,11 @@ N.library = { open, close, toggle, refresh, leaving, changed, boot, importBundle
 const C=N.core,S=C.S,M=C.M,$=C.$;
 const LESSONS=[
   {say:'try this. type or write.',example:'12 x 7'},
-  {say:'give a number a name.',example:'pens = 3'},
-  {say:'now use it.',example:'pens x 4 ='},
+  {say:'try a little more.',example:'(12 ÷ 2) + 6 × 4 ='},
   {say:'ask me about your page.',example:'hey nota, explain the maths above?'}
 ];
 let on=false,step=-1,note=null,card=null,watch=null,poll=null;
-let anchor=120,inputY=240,before=new Map(),initial=new Map(),definitionId=null,ready=false,mode='text',lastSaid='',pressing=false,releaseTimer=null;
+let anchor=120,inputY=240,before=new Map(),initial=new Map(),ready=false,mode='text',lastSaid='',pressing=false,releaseTimer=null;
 function done(){try{return localStorage.getItem('notas.tut')==='done';}catch{return false;}}
 function remember(){try{localStorage.setItem('notas.tut','done');}catch{}}
 function snapshot(){
@@ -10477,10 +10476,8 @@ function build(){
   card.querySelector('.tut-next').onclick=()=>{
     pressing=false;
     if(step===LESSONS.length)return finish(true);
-    if(step===-1||ready||step===3){
-      // Keep the definition and its use in the same freshness window, including
-      // a calculation the person has already typed on the next line.
-      if(step!==1)snapshot();step++;ready=false;anchor=freeSpace();draw(true);
+    if(step===-1||ready||step===2){
+      snapshot();step++;ready=false;anchor=freeSpace();draw(true);
     }
   };
   $('#col').append(card);
@@ -10529,16 +10526,15 @@ function draw(focus){
 }
 function successful(n){return !!n.result&&!n.error&&!n.pending&&!n.ref?.review&&(n.kind!=='cluster'||n.ref?.asked);}
 function prewritten(question,where={}){
-  if(!on||note!==S.id||step<3||!question)return null;
+  if(!on||note!==S.id||step<2||!question)return null;
   const normalize=q=>String(q).toLowerCase().replace(/\s+/g,' ').trim().replace(/[.!?,;:]+$/,'').trim();
   const expected='explain the maths above';
   if(normalize(question)!==expected)return null;
-  const math=s=>N.mathcore.normalize(s).replace(/\s+/g,'').replace(/=$/,'').toLowerCase();
-  const allowed=new Set(['12*7','12*7=84','pens=3','pens*4','pens*4=12']);
+  const math=s=>N.mathcore.normalize(s).replace(/\s+/g,'').replace(/=$/,'').replace(/\((\d+(?:\.\d+)?)\)/g,'$1').toLowerCase();
+  const allowed=new Set(['12*7','12*7=84','(12/2)+6*4','(12/2)+6*4=30','12/2+6*4','12/2+6*4=30']);
   const nodes=(S.nodes||[]).filter(n=>initial.get(n.kind+':'+n.id)!==n.src&&successful(n));
   if(!nodes.some(n=>['12*7','12*7=84'].includes(math(n.src))&&n.result==='84')||
-     !nodes.some(n=>math(n.src)==='pens=3'&&n.result==='3')||
-     !nodes.some(n=>['pens*4','pens*4=12'].includes(math(n.src))&&n.result==='12'))return null;
+     !nodes.some(n=>['(12/2)+6*4','(12/2)+6*4=30','12/2+6*4','12/2+6*4=30'].includes(math(n.src))&&n.result==='30'))return null;
   // Extra working or an extended question belongs to the live model.
   for(const ln of S.lines){
     if(ln.tutor||!ln.text?.trim()||initial.get('line:'+ln.id)===ln.text)continue;
@@ -10553,7 +10549,7 @@ function prewritten(question,where={}){
   }
   const signature=()=>JSON.stringify([S.id,S.lines.filter(l=>!l.tutor&&l.text?.trim()).map(l=>[l.id,l.text]),S.strokes.filter(s=>s.author==='user').map(s=>[s.id,s.rev||0]),S.images.map(i=>[i.id,i.src])]);
   const captured=signature();
-  return {question:expected,text:'12 x 7 = 84. pens = 3, so pens x 4 = 12. Change pens and the next line follows.',valid:()=>signature()===captured};
+  return {question:expected,text:'12 x 7 = 84. In (12 / 2) + 6 x 4, do the brackets first: 12 / 2 = 6. Then 6 x 4 = 24, so 6 + 24 = 30.',valid:()=>signature()===captured};
 }
 function check(){
   if(!on||!card)return;
@@ -10566,29 +10562,15 @@ function check(){
     ready=!!n;if(ready)say='there you go.';
     else if(mode==='pen')say='write this, check it, then tap Solve.';
   }else if(step===1){
-    const n=nodes.find(n=>fresh(n)&&successful(n)&&n.provides);
-    definitionId=n?.id||null;ready=!!n;
-    if(ready)say='that’s a value.';
+    const n=nodes.find(n=>{
+      if(!fresh(n)||!successful(n)||n.provides)return false;
+      const source=n.ref?.answerPrefix&&n.src.startsWith(n.ref.answerPrefix)?n.ref.answerPrefix:n.src;
+      const expression=N.mathcore.normalize(source).replace(/=\s*$/,'');
+      return /\([^)]*\)/.test(expression)&&(expression.match(/[+*/^\-]/g)||[]).length>=2;
+    });
+    ready=!!n;if(ready)say='it keeps the order.';
     else if(mode==='pen')say='write this, check it, then tap Solve.';
   }else if(step===2){
-    let pair=null;
-    const a=nodes.find(n=>n.id===definitionId&&n.provides&&successful(n)&&fresh(n));
-    if(a){
-      card.querySelector('.tut-do').textContent=a.provides+' x 4 =';
-      const i=nodes.indexOf(a);
-      for(const b of nodes.slice(i+1)){
-        if(!fresh(b)||!successful(b)||b.provides)continue;
-        // '=' asks for a preview; an accepted preview keeps that same source
-        // in answerPrefix. Neither is a parseable assignment's left-hand side.
-        const source=b.ref?.answerPrefix&&b.src.startsWith(b.ref.answerPrefix)?b.ref.answerPrefix:b.src;
-        const expression=N.mathcore.normalize(source).replace(/=\s*$/,'');
-        try{if(N.mathcore.freeVars(expression).includes(a.provides)){pair=[a,b];break;}}catch{}
-      }
-    }
-    ready=!!pair;if(ready)say='they’re connected.';
-    else if(!a)say='check the value above.';
-    else if(mode==='pen')say='write this, check it, then tap Solve.';
-  }else if(step===3){
     const texts=[...S.lines.filter(l=>!l.tutor).map(l=>({key:'line:'+l.id,text:l.text,strict:true})),...(S.textTranscripts||[]).filter(t=>t.confidence>=.5).map(t=>({key:'text:'+t.hash,text:t.text,strict:false}))];
     ready=texts.some(t=>{
       if(before.get(t.key)===t.text)return false;
@@ -10600,8 +10582,8 @@ function check(){
     else if(S.settings.notaOn===false&&!prewritten('explain the maths above'))say='Nota is off. you can still practise here.';
     else if(navigator.onLine===false&&!prewritten('explain the maths above'))say='I’m offline. try me later.';
   }
-  if(step>=0&&step<LESSONS.length&&mode==='pen'&&!ready&&(S.settings.aiOn===false||S.settings.handwritingRecognitionOn===false||(step===3&&S.settings.textRecognitionOn===false)))say='the reader is off. type this instead.';
-  if(step>=0&&step<3)disabled=!ready;
+  if(step>=0&&step<LESSONS.length&&mode==='pen'&&!ready&&(S.settings.aiOn===false||S.settings.handwritingRecognitionOn===false||(step===2&&S.settings.textRecognitionOn===false)))say='the reader is off. type this instead.';
+  if(step>=0&&step<2)disabled=!ready;
   card.dataset.ready=String(ready);card.querySelector('.tut-say').textContent=say;
   const button=card.querySelector('.tut-next');button.textContent=next;button.disabled=disabled;
   if(lastSaid!==say){
@@ -10611,7 +10593,7 @@ function check(){
 }
 function start(force){
   if(done()&&!force)return;if(on&&note===S.id&&!force)return;
-  dispose();on=true;step=-1;note=S.id;mode=S.tool==='pen'?'pen':'text';ready=false;definitionId=null;
+  dispose();on=true;step=-1;note=S.id;mode=S.tool==='pen'?'pen':'text';ready=false;
   document.body.dataset.tutorial='on';
   if(mode==='text'&&!S.lines.some(l=>l.text?.trim())&&!S.strokes.length&&!S.images.length)document.activeElement?.blur();
   const old=S.annos.length;S.annos=S.annos.filter(a=>a.tag!=='tutorial'&&a.tag!=='tutorial-tick');
