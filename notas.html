@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v157">
+<meta name="notas-version" content="v158">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -1085,48 +1085,64 @@ body:has(.sheet:not(.leave)) #toast{top:calc(var(--safe-t) + 12px)}
 #selbar button:hover{background:var(--tint)}
 #selbar button:active{transform:scale(.95)}
 
-/* ---- tutorial: a coach's card in the margin, beside the line it is about ---- */
-/* It lives inside the column, so it scrolls and zooms with the paper like a
-   result chip does. One red mark shows the line to write on; the card sits
-   under that line, aligned with the text, and says what to write in the same
-   type the student will see when they type it. */
+/* ---- tutorial: a quiet introduction written into the page ---- */
 .tut{
-  position:absolute;z-index:4;width:224px;box-sizing:border-box;
-  padding:12px 14px 10px;border-radius:var(--r-card);
-  font:400 13px/1.4 var(--ui);color:var(--ink-2);letter-spacing:-.005em;
-  animation:chipIn .32s var(--pop);
-  transition:opacity .18s ease,transform .22s var(--spring);
+  position:absolute;z-index:4;box-sizing:border-box;padding:20px 0 4px;
+  border:0;border-top:1px solid var(--rule);border-radius:0;
+  background:none;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;
+  color:var(--ink-2);font:400 14px/1.55 var(--ui);letter-spacing:0;
 }
-/* the column rule that lets the card take taps outranks a plain class, so a
-   card on its way out kept swallowing the first stroke drawn after skip */
-.tut.leave,#col .tut.leave{opacity:0;transform:translateY(4px);pointer-events:none}
-.tut-lite{width:max-content;max-width:280px;padding:10px 14px;pointer-events:none}
-.tut-steps{display:flex;gap:4px;margin-right:auto}
-.tut-steps i{display:block;width:14px;height:3px;border-radius:2px;background:var(--rule);transition:background-color .3s ease}
-.tut-steps i.on{background:var(--graphite)}
-.tut-say{margin:0;color:var(--graphite)}
-.tut-do{margin:6px 0 0;font:400 16px/1.4 var(--type);color:var(--graphite);letter-spacing:0;white-space:pre;transition:color .2s ease}
+.tut::after{display:none}
+body[data-tutorial] .txt[data-placeholder]::before{display:none}
+.tut [hidden]{display:none!important}
+.tut-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.tut-kicker{font-size:12px;line-height:1.4;color:var(--ink-2)}
+.tut button{font:500 13px/1.3 var(--ui);min-height:44px;cursor:pointer}
+.tut button:focus-visible{outline:2px solid var(--blue);outline-offset:4px}
+.tut-skip{color:var(--ink-2);white-space:nowrap;padding:8px 0 8px 12px}
+.tut-skip:hover{color:var(--graphite);text-decoration:underline;text-underline-offset:4px}
+.tut-steps{list-style:none;display:flex;gap:16px;padding:0;margin:16px 0 26px}
+.tut-steps li{flex:1;min-width:0;border-top:2px solid var(--rule);padding-top:8px;font-size:12px;color:var(--ink-2)}
+.tut-steps li span{margin-right:5px;font-variant-numeric:tabular-nums}
+.tut-steps li.current{border-color:var(--red);color:var(--graphite)}
+.tut-steps li.passed{border-color:var(--graphite);color:var(--graphite)}
+.tut-say{margin:0;max-width:480px;font:500 clamp(25px,3.2vw,34px)/1.14 var(--ui);letter-spacing:-.045em;color:var(--graphite);text-wrap:balance}
+.tut-say:focus{outline:none}
+.tut-body{max-width:460px;margin:14px 0 0;text-wrap:pretty}
+.tut-do{margin:24px 0;font:400 clamp(19px,2.6vw,27px)/1.65 var(--type);letter-spacing:-.04em;color:var(--graphite);white-space:pre-wrap;overflow-wrap:anywhere}
 .tut-do:empty{display:none}
-.tut-hint{margin:8px 0 0}
+.tut-welcome .tut-do{font-size:clamp(25px,4vw,38px);letter-spacing:-.055em;color:var(--red);margin:26px 0 28px}
+.tut-tools{display:flex;align-items:center;flex-wrap:wrap;gap:12px;font-size:12px}
+.tut-mode{display:flex;border:1px solid var(--rule);border-radius:var(--r-pill);padding:3px;gap:2px}
+.tut-mode button{min-width:65px;min-height:36px;padding:7px 16px;border-radius:var(--r-pill);color:var(--ink-2)}
+.tut-mode button[aria-pressed="true"]{background:var(--graphite);color:var(--paper)}
+.tut-mode button:hover:not([aria-pressed="true"]){background:var(--tint)}
+.tut-hint{max-width:460px;margin:14px 0 0;font-size:13px;line-height:1.55}
 .tut-hint:empty{display:none}
-.tut-foot{display:flex;align-items:center;gap:8px;min-height:24px;margin-top:8px}
-.tut-ok{display:none;width:24px;height:24px;border-radius:var(--r-pill);background:var(--red);color:#fff;place-items:center;font-size:14px;animation:chipIn .28s var(--pop)}
-.tut-ok .fb{display:none;font:600 13px var(--ui)}
-body.noicons .tut-ok i{display:none}
-body.noicons .tut-ok .fb{display:block}
-.tut-skip{font:500 13px var(--ui);color:var(--ink-2);padding:5px 10px;margin-right:-8px;border-radius:var(--r-pill);transition:background-color .15s ease,color .15s ease,transform .18s var(--pop)}
-.tut-skip:hover{background:var(--tint);color:var(--graphite)}
-.tut-skip:active{transform:scale(.96)}
-.tut.done .tut-do{color:var(--ink-2)}
-.tut.done .tut-ok{display:grid}
-.tut.done .tut-skip{display:none}
-.tut-mark{
-  position:absolute;z-index:3;width:3px;border-radius:2px;background:var(--red);
-  animation:chipIn .32s var(--pop);
-  transition:opacity .18s ease;
+.tut-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:24px;padding-top:16px;border-top:1px solid var(--rule)}
+.tut-status{margin:0;max-width:330px;font-size:12px;line-height:1.5}
+.tut-ready .tut-status{color:var(--red)}
+.tut-next{flex:none;min-width:92px;padding:11px 18px;border-radius:var(--r-pill);background:var(--graphite);color:var(--paper);transition:opacity .18s,transform .18s}
+.tut-next:hover{opacity:.8}
+.tut-next:active{transform:translateY(1px)}
+.tut-next:disabled{background:var(--tint);color:var(--ink-2);cursor:default;opacity:.6}
+.tut-mark{position:absolute;z-index:2;pointer-events:none;color:var(--ink-2)}
+.tut-mark span{display:block;font:400 11px/20px var(--ui);letter-spacing:.015em}
+.tut-mark i{display:block;height:29px;border-bottom:1px dashed var(--rule)}
+.tut.done .tut-steps li{border-color:var(--graphite)}
+@media(max-width:600px){
+  .tut{padding-top:12px;font-size:14px}
+  .tut-top{gap:6px;align-items:flex-start}
+  .tut-kicker{max-width:170px;padding-top:12px}
+  .tut-steps{gap:10px;margin:10px 0 18px}
+  .tut-steps li span{display:block;margin:0 0 3px}
+  .tut-body{margin-top:12px;line-height:1.45}
+  .tut-do{margin:16px 0}
+  .tut-foot{align-items:flex-start;gap:12px;margin-top:16px;padding-top:12px}
+  .tut-next{min-width:80px;padding:11px 14px;max-width:150px}
+  .tut-mode button{min-height:44px}
 }
-.tut-mark.leave{opacity:0}
-@media (pointer:coarse){.tut{width:240px;font-size:14px}.tut-skip{font-size:15px;padding:10px 14px;min-height:44px}}
+@media(prefers-reduced-motion:reduce){.tut-next{transition:none}}
 
 /* ---- self test ---- */
 #selftest{padding:24px;font:400 13px/1.6 var(--mono);max-width:820px;margin:0 auto;overflow:auto;height:100%}
@@ -10448,226 +10464,199 @@ N.library = { open, close, toggle, refresh, leaving, changed, boot, importBundle
 <script src="./pdf-notebook.js"></script>
 <script>
 /* =========================================================================
-   TUTORIAL - a coach's card beside the line it is about.
-   Never modal, never dims the page, always skippable. The card lives inside
-   the column so it scrolls and zooms with the paper; a red mark in the
-   gutter shows which line to write on, and the card moves on as each step
-   is done.
+   TUTORIAL - three small discoveries on the actual page.
+   Typing and handwriting share the same completion checks. Nothing is inserted
+   except an empty typing line; lesson examples are never saved as user content.
    ========================================================================= */
 (function(){
 'use strict';
-const C = N.core, S = C.S, M = C.M, $ = C.$;
-/* tags left on the ink layer by the older red-pen tutorial; still cleared */
-const TAG = 'tutorial', TICK = 'tutorial-tick';
-let on = false, step = 0, total = 2, startStrokes = 0, idle = null, idleHint = false;
-/* what the note already said when the lesson began: only maths written since
-   then counts, so a note that already holds answers cannot finish the lesson
-   before the student has typed a thing */
-let before = new Map();
-function fresh(n){ return n.kind === 'cluster' ? !before.has(n.id) : before.get(n.id) !== n.src; }
-let card = null, mark = null, anchor = { y:120, h:C.LINE_H }, watch = null;
-
-function done(){ try{ return localStorage.getItem('notas.tut') === 'done'; }catch(e){ return false; } }
-function setDone(){ try{ localStorage.setItem('notas.tut','done'); }catch(e){} }
-function clearInk(){
-  const n = S.annos.length;
-  S.annos = S.annos.filter(a=> a.tag !== TAG && a.tag !== TICK);
-  if(S.annos.length !== n) N.ink.renderAI();
-}
-
-const STEPS = [
-  { say:'type this on the line', code:'12 x 7',
-    a11y:'type 12 x 7 on the first line. if you write it with the pen instead, check the reading and tap solve for the answer.' },
-  { say:'name a value, then use it below', code:'pens = 3\npens x 4',
-    a11y:'type pens equals 3, then on the line below type pens times 4.' },
-  { say:'stuck on a step? ask for a hint with the button at the bottom right.', code:'',
-    a11y:'if you are stuck, open the hint helper at the bottom right.' }
+const C=N.core,S=C.S,M=C.M,$=C.$;
+const LESSONS=[
+  {title:'a little less mental arithmetic.',body:'Try this calculation on the page. The answer appears beside your working.',example:'12 x 7',name:'calculate'},
+  {title:'give a number a name.',body:'Set a value on one line, then use its name on the next. Change the value later and the maths follows.',example:'pens = 3\npens x 4',name:'connect'},
+  {title:'a question belongs on the page, too.',body:'Start a line with “hey nota,” and ask about your notes. Nota replies right here.',example:'hey nota, explain the maths above?',name:'ask nota'}
 ];
-
-/* ---- the card ---- */
+let on=false,step=-1,note=null,card=null,mark=null,watch=null,poll=null;
+let anchor=120,before=new Map(),ready=false,mode='text',lastStatus='',questionSeen=false,pressing=false,releaseTimer=null;
+function done(){try{return localStorage.getItem('notas.tut')==='done';}catch{return false;}}
+function remember(){try{localStorage.setItem('notas.tut','done');}catch{}}
+function snapshot(){
+  before=new Map();
+  for(const ln of S.lines)before.set('line:'+ln.id,ln.text);
+  for(const cl of S.clusters)before.set('cluster:'+cl.id,cl.ascii||cl.latex||'');
+  for(const t of S.textTranscripts||[])before.set('text:'+t.hash,t.text);
+}
+function fresh(n){return before.get(n.kind+':'+n.id)!==n.src;}
+function freeSpace(){
+  let bottom=100;
+  for(const l of S.lines)if(l.text?.trim())bottom=Math.max(bottom,l.y+Math.max(C.LINE_H,l.h||0));
+  for(const s of S.strokes)if(s.bbox)bottom=Math.max(bottom,s.bbox[3]+12);
+  for(const i of S.images){const b=C.imageBounds(i);if(b)bottom=Math.max(bottom,b[3]+12);}
+  // PDF annotations remain on their page; the guide uses the current view.
+  if(S.pdf)bottom=Math.max(100,($('#scroller').scrollTop+80)/M.zoom);
+  return Math.ceil((bottom+30)/C.LINE_H)*C.LINE_H;
+}
+function announce(text){const el=$('#tutorial-text');if(el&&el.textContent!==text)el.textContent=text;}
+function dispose(){
+  clearInterval(poll);poll=null;
+  watch?.disconnect();watch=null;
+  window.removeEventListener('resize',place);
+  document.removeEventListener('pointerup',release,true);document.removeEventListener('pointercancel',release,true);
+  clearTimeout(releaseTimer);pressing=false;
+  card?.remove();mark?.remove();card=mark=null;
+}
 function build(){
-  if(card) return;
-  const col = $('#col');
-  mark = document.createElement('div');
-  mark.className = 'tut-mark'; mark.setAttribute('aria-hidden','true');
-  card = document.createElement('div');
-  card.className = 'tut';
-  card.innerHTML =
-    '<p class="tut-say"></p>' +
-    '<pre class="tut-do"></pre>' +
-    '<p class="tut-hint"></p>' +
-    '<div class="tut-foot">' +
-      '<div class="tut-steps" aria-hidden="true"></div>' +
-      '<span class="tut-ok" aria-hidden="true"><i class="ph ph-check"></i><span class="fb">&#10003;</span></span>' +
-      '<button class="tut-skip" type="button">skip</button>' +
-    '</div>';
-  card.querySelector('.tut-skip').onclick = ()=>finish(false);
-  col.appendChild(mark); col.appendChild(card);
+  const col=$('#col');
+  mark=document.createElement('div');mark.className='tut-mark';mark.setAttribute('aria-hidden','true');
+  mark.innerHTML='<span>your turn · type or write here</span><i></i><i></i><i></i>';
+  card=document.createElement('section');card.className='tut';card.setAttribute('aria-label','a small introduction to notas');
+  card.innerHTML=
+    '<div class="tut-top"><span class="tut-kicker">a small introduction</span><button class="tut-skip" type="button">skip tutorial</button></div>'+
+    '<ol class="tut-steps" aria-label="tutorial progress">'+LESSONS.map((l,i)=>'<li><span>0'+(i+1)+'</span> '+l.name+'</li>').join('')+'</ol>'+
+    '<h2 class="tut-say" tabindex="-1"></h2><p class="tut-body"></p>'+
+    '<pre class="tut-do"></pre>'+
+    '<div class="tut-tools"><div class="tut-mode" role="group" aria-label="how to try this lesson"><button type="button" data-mode="text">type</button><button type="button" data-mode="pen">write</button></div><span>switch whenever you like</span></div>'+
+    '<p class="tut-hint"></p><div class="tut-foot"><p class="tut-status"></p><button class="tut-next" type="button"></button></div>';
+  card.querySelector('.tut-skip').onclick=()=>finish(false);
+  // Tutorial controls are inside the document, but are not taps on the paper.
+  card.addEventListener('pointerdown',e=>{pressing=true;e.stopPropagation();});
+  card.addEventListener('pointerup',e=>e.stopPropagation());
+  document.addEventListener('pointerup',release,true);document.addEventListener('pointercancel',release,true);
+  card.querySelector('.tut-next').onclick=()=>{
+    pressing=false;
+    if(step===3)return finish(true);
+    if(step===-1||ready){step++;snapshot();ready=false;questionSeen=false;anchor=freeSpace();draw(true);}
+    // Nota is optional, including on offline and self-hosted notebooks.
+    else if(step===2){step=3;draw(true);}
+  };
+  for(const button of card.querySelectorAll('[data-mode]'))button.onclick=()=>useTool(button.dataset.mode,true);
+  col.append(mark,card);
+  watch=new MutationObserver(()=>{mode=S.tool==='text'?'text':'pen';check();});
+  watch.observe(document.body,{attributes:true,attributeFilter:['data-tool']});
+  window.addEventListener('resize',place);
 }
-function tear(){
-  clearTimeout(idle);
-  if(watch){ watch.disconnect(); watch = null; }
-  window.removeEventListener('resize', place);
-  if(card){ card.remove(); card = null; }
-  if(mark){ mark.remove(); mark = null; }
+function release(){
+  clearTimeout(releaseTimer);
+  releaseTimer=setTimeout(()=>{pressing=false;place();},0);
 }
-function hide(){
-  if(!card) return;
-  card.classList.add('leave'); mark.classList.add('leave');
-  setTimeout(tear, 220);
-}
-
-/* where the step happens, in column coordinates */
-function spot(){
-  const ls = S.lines.slice().sort((a,b)=>a.y-b.y);
-  if(step < 2){
-    /* the next free line: the slot after the last written line, or an empty
-       line already waiting there */
-    const last = ls[ls.length-1], h = step === 0 ? C.LINE_H : C.LINE_H*2;
-    if(!last) return { y:120, h };
-    const y = last.text ? last.y + Math.max(C.LINE_H, last.h||C.LINE_H) : last.y;
-    return { y, h };
-  }
-  const sc = $('#scroller');
-  return { y: Math.max(120, (sc.scrollTop + M.vh)/M.zoom - 170), h:0 };
-}
-/* under the marked line, aligned with the text, so mark and card read as one */
 function place(){
-  if(!card) return;
-  const t = anchor;
-  if(t.h){
-    mark.hidden = false;
-    mark.style.left = (M.colLeft > 24 ? -14 : -8)+'px';
-    mark.style.top = (t.y + 5)+'px';
-    mark.style.height = (t.h - 10)+'px';
-  } else mark.hidden = true;
-  card.style.left = '0px';
-  card.style.top = (t.y + (t.h || 0) + 12)+'px';
-}
-function hintFor(){
-  const touch = matchMedia('(pointer:coarse)').matches;
-  const typeIt = touch ? 'tap T in the toolbar' : 'press T';
-  const typing = document.body.dataset.tool === 'text';
-  const drew = S.strokes.length > startStrokes;
-  if(step === 0 && !typing && !drew) return typeIt+' to type, or write it with the pen.';
-  if(step === 0 && drew && !N.ai.enabled()) return 'check the reading, or '+typeIt+' to type.';
-  if(idleHint) return 'no rush. skip whenever you like.';
-  return '';
-}
-function render(st){
-  const steps = card.querySelector('.tut-steps');
-  steps.innerHTML = Array.from({length:total}, (_,i)=>'<i'+(i < step ? ' class="on"' : '')+'></i>').join('');
-  card.querySelector('.tut-say').textContent = st.say;
-  card.querySelector('.tut-do').textContent = st.code || '';
-  card.querySelector('.tut-hint').textContent = hintFor();
-  card.classList.remove('done');
-}
-function refreshHint(){ if(card && on) card.querySelector('.tut-hint').textContent = hintFor(); }
-
-function start(force){
-  if(done() && !force) return;
-  tear();
-  on = true; step = 0; idleHint = false;
-  startStrokes = S.strokes.length;
-  /* read from the lines and ink directly: the maths may not have run yet */
-  before = new Map();
-  for(const ln of S.lines) before.set(ln.id, ln.text);
-  for(const cl of S.clusters) before.set(cl.id, true);
-  const dot = $('#ask-dot');
-  total = (dot && !dot.hidden) ? 3 : 2;
-  clearInk(); build();
-  /* the hint follows the tool in hand, so it says "press T" only while that is true */
-  watch = new MutationObserver(refreshHint);
-  watch.observe(document.body, { attributes:true, attributeFilter:['data-tool'] });
-  window.addEventListener('resize', place);
-  draw();
-}
-function maybeStart(){ if(!done()) start(false); }
-
-function draw(){
-  if(!card) return;
-  const st = STEPS[step];
-  anchor = spot();
-  render(st); place();
-  const a11y = $('#tutorial-text');
-  if(a11y) a11y.textContent = 'tutorial step '+(step+1)+' of '+total+'. '+st.a11y;
-  /* the bar may already be open, and then the step is done the moment it appears */
-  if(step === 2 && !$('#askbar').hidden) setTimeout(()=>check('ask'), 500);
-  armIdle();
-}
-function armIdle(){
-  clearTimeout(idle); idleHint = false;
-  idle = setTimeout(()=>{ if(!on) return; idleHint = true; refreshHint(); }, 15000);
-}
-/* fade out, change, fade back in the new place */
-function swap(fn){
-  if(!card) return fn();
-  card.classList.add('leave');
-  setTimeout(()=>{ if(!card) return; fn(); card.classList.remove('leave'); }, 200);
-}
-function advance(){
-  clearTimeout(idle);
-  step++;
-  if(card){
-    card.classList.add('done');
-    const seg = card.querySelector('.tut-steps').children[step-1];
-    if(seg) seg.classList.add('on');
-    card.querySelector('.tut-hint').textContent = '';
+  if(!card||pressing)return;
+  const width=Math.max(200,Math.min(560,M.colW-8));
+  card.style.width=width+'px';card.style.left='0px';
+  const practicing=step>=0&&step<3;
+  // The open strip above the guide is real paper, reachable with either tool.
+  let top=anchor+(practicing?120:0);
+  if(practicing){
+    for(const l of S.lines)if(l.y>=anchor&&l.text?.trim())top=Math.max(top,l.y+Math.max(C.LINE_H,l.h||0)+32);
+    for(const s of S.strokes)if(s.bbox&&s.bbox[3]>=anchor)top=Math.max(top,s.bbox[3]+32);
   }
-  const a11y = $('#tutorial-text');
-  if(a11y) a11y.textContent = 'step done.';
-  setTimeout(()=>{
-    if(!on) return;
-    if(step >= total) return finish(true);
-    swap(draw);
-  }, 750);
+  card.style.top=top+'px';
+  mark.hidden=!practicing||ready;
+  mark.style.top=(anchor-27)+'px';mark.style.left='0px';
+  mark.style.width=Math.max(180,Math.min(M.contentW,width))+'px';
+  C.growDoc(parseFloat(card.style.top)+card.offsetHeight+140);
 }
-
-function usesEarlier(){
-  const ns = (S.nodes || []).filter(n=>n.src && n.src.trim());
-  for(let i=0;i<ns.length;i++){
-    const p = ns[i].provides; if(!p) continue;
-    for(let j=i+1;j<ns.length;j++){
-      if(!fresh(ns[j])) continue;
-      const vars = N.mathcore.freeVars(N.mathcore.normalize(ns[j].src));
-      if(vars.includes(p)) return [ns[i], ns[j]];
+function reveal(){
+  place();
+  const sc=$('#scroller'),top=Math.max(0,anchor*M.zoom-90);
+  sc.scrollTo({top,behavior:C.reducedMotion()?'instant':'smooth'});
+}
+function useTool(tool,focus){
+  mode=tool;N.ink.setTool(tool);
+  if(focus&&tool==='text'&&step>=0&&step<3){
+    const empty=S.lines.find(l=>!l.tutor&&!l.text?.trim()&&l.y>=anchor&&l.y<anchor+100);
+    const ln=empty||N.text.add(anchor,false);N.text.focusLine(ln.id,undefined,true);
+  }
+  check();
+}
+function draw(focus){
+  if(!card)return;
+  const welcome=step===-1,finished=step===3,lesson=LESSONS[step];
+  card.dataset.step=String(step);card.classList.toggle('tut-welcome',welcome);card.classList.toggle('done',finished);
+  card.querySelector('.tut-kicker').textContent=welcome?'your notebook, with a little company':finished?'a good place to begin':'a small introduction · '+(step+1)+' / 3';
+  card.querySelector('.tut-say').textContent=welcome?'make yourself at home.':finished?'the rest is your page.':lesson.title;
+  card.querySelector('.tut-body').textContent=welcome?'A calculation, a connected idea, a question. Try three small things in your own notebook. Type everything, write everything, or mix the two.':finished?'Your working stays here and saves in this browser. Open the notes library to start another page, or the menu to try PDFs, pictures and more.':lesson.body;
+  card.querySelector('.tut-do').textContent=welcome?'12 × 7 = 84':finished?'':lesson.example;
+  card.querySelector('.tut-tools').hidden=welcome||finished;
+  for(const [i,el] of [...card.querySelectorAll('.tut-steps li')].entries()){
+    el.classList.toggle('passed',i<step);el.classList.toggle('current',i===step);
+    if(i===step)el.setAttribute('aria-current','step');else el.removeAttribute('aria-current');
+  }
+  card.querySelector('.tut-skip').hidden=finished;
+  lastStatus='';check();place();
+  if(!C.reducedMotion())card.animate([{opacity:0,transform:'translateY(7px)'},{opacity:1,transform:'none'}],{duration:240,easing:'cubic-bezier(.22,1,.36,1)'});
+  announce(welcome?'Welcome to notas. Three short lessons. Type or write; either works.':finished?'Tutorial complete. Your working is saved in this browser.':'Lesson '+(step+1)+' of 3. '+lesson.title+' '+lesson.body+' Try '+lesson.example+'.');
+  if(focus){reveal();if(welcome||finished)card.querySelector('.tut-next').focus({preventScroll:true});else useTool(mode,true);}
+}
+function successful(n){return !!n.result&&!n.error&&!n.pending&&!n.ref?.review&&(n.kind!=='cluster'||n.ref?.asked);}
+function check(){
+  if(!on||!card)return;
+  if(S.id!==note){finish(false,false);return;}
+  let hint='',status='',next='next',disabled=false;
+  const nodes=S.nodes||[];
+  if(step===-1){next='let’s begin';status='three small discoveries · at your pace';}
+  else if(step===3){next='keep writing';status='ready when you are';}
+  else{
+    for(const b of card.querySelectorAll('[data-mode]'))b.setAttribute('aria-pressed',String(b.dataset.mode===mode));
+    if(step===0){
+      // A lone digit or a definition must not finish a calculation lesson.
+      const n=nodes.find(n=>fresh(n)&&successful(n)&&!n.provides&&/[+*/^\-]|\b(?:sqrt|sin|cos|log)\s*\(/.test(N.mathcore.normalize(n.src)));
+      ready=!!n;status=n?'✓ '+n.result+' — there it is.':'try the calculation in the space above';
+      hint=mode==='text'?'Type 12 x 7. Add = to preview the answer inline; press Space to keep it.':'Write 12 × 7. Check the recognised equation, correct it if needed, then tap Solve.';
+    }else if(step===1){
+      let pair=null;
+      for(let i=0;i<nodes.length&&!pair;i++){
+        const a=nodes[i];if(!a.provides||!successful(a)||!fresh(a))continue;
+        for(const b of nodes.slice(i+1)){
+          if(!fresh(b)||!successful(b)||b.provides)continue;
+          try{if(N.mathcore.freeVars(N.mathcore.normalize(b.src)).includes(a.provides)){pair=[a,b];break;}}catch{}
+        }
+      }
+      ready=!!pair;status=pair?'✓ '+pair[0].provides+' carries through. '+pair[1].result+' follows.':'two lines, one connected idea';
+      hint=mode==='text'?'Press Enter between the two lines. Try changing 3 to another number afterwards.':'Write the two lines. Check each reading and tap Solve on the definition, then on the calculation.';
+    }else{
+      const texts=[...S.lines.filter(l=>!l.tutor).map(l=>({key:'line:'+l.id,text:l.text,strict:true})),...(S.textTranscripts||[]).filter(t=>t.confidence>=.5).map(t=>({key:'text:'+t.hash,text:t.text,strict:false}))];
+      questionSeen=texts.some(t=>{
+        if(before.get(t.key)===t.text)return false;
+        const call=N.nota?.parseCall(t.text,t.strict);
+        return call&&call.question.trim().split(/\s+/).length>=2;
+      });
+      ready=questionSeen;next=ready?'finish introduction':'try nota later';
+      status=ready?'✓ that’s how you ask nota.':'optional · you can come back to this';
+      hint='Type or write the question above. Nota uses an internet connection and a configured AI service. You can finish this introduction without an answer.';
+      if(S.settings.notaOn===false)hint='Nota is off in the menu’s AI settings. You can still practise the question here, or try Nota later.';
+      else if(navigator.onLine===false)hint='You’re offline. Practise the question here; Nota can answer when you’re connected. Or try it later.';
     }
+    if(mode==='pen'&&(S.settings.aiOn===false||S.settings.handwritingRecognitionOn===false||(step===2&&S.settings.textRecognitionOn===false))){
+      hint='The handwriting reader is off. Choose type to complete this lesson, or enable recognition in the menu’s AI settings.';
+    }
+    disabled=step<2&&!ready;
   }
-  return null;
+  card.classList.toggle('tut-ready',ready&&step>=0&&step<3);
+  card.querySelector('.tut-hint').textContent=hint;
+  card.querySelector('.tut-status').textContent=status;
+  const button=card.querySelector('.tut-next');button.textContent=next;button.disabled=disabled;
+  if(lastStatus!==status){if(ready)announce(status+' Continue when you’re ready.');lastStatus=status;}
+  place();
 }
-function check(kind){
-  if(!on) return;
-  if(step === 0){
-    /* ignored the tutorial and just started working: retire quietly */
-    if(S.strokes.length - startStrokes > 10) return finish(false);
-    refreshHint();
-    if((S.nodes || []).find(n=>n.result && !n.error && fresh(n))) advance();
-    return;
-  }
-  if(step === 1){
-    if(usesEarlier()) advance();
-    return;
-  }
-  if(step === 2 && kind === 'ask') advance();
+function start(force){
+  if(done()&&!force)return;
+  if(on&&note===S.id&&!force)return;
+  dispose();on=true;step=-1;note=S.id;mode=S.tool==='pen'?'pen':'text';ready=false;questionSeen=false;
+  document.body.dataset.tutorial='on';
+  // Remove only obsolete tutorial decorations, never the user's practice.
+  const old=S.annos.length;S.annos=S.annos.filter(a=>a.tag!=='tutorial'&&a.tag!=='tutorial-tick');
+  if(old!==S.annos.length)N.ink.renderAI();
+  snapshot();anchor=freeSpace();build();draw(!!force);
+  poll=setInterval(check,400);
 }
-function finish(complete){
-  clearTimeout(idle);
-  const a11y = $('#tutorial-text'); if(a11y) a11y.textContent = complete ? 'tutorial complete.' : '';
-  if(!on){ tear(); return; }
-  on = false; setDone(); clearInk();
-  if(complete && card){
-    /* the card ends where it stands: every segment on, one closing line, then it goes */
-    swap(()=>{
-      render({ say:'that is the whole idea. write maths, and the answer follows. more is in the menu, top right.', code:'' });
-      card.classList.add('done');
-      for(const i of card.querySelectorAll('.tut-steps i')) i.classList.add('on');
-      mark.classList.add('leave');
-    });
-    setTimeout(hide, 2400);
-  } else hide();
+function finish(complete,save=true){
+  const returnFocus=on&&card?.contains(document.activeElement)&&S.tool==='text';
+  if(on&&save)remember();on=false;dispose();delete document.body.dataset.tutorial;
+  announce(complete?'Tutorial complete. Keep writing.':'');
+  if(returnFocus)N.text.focusLast();
 }
-
-N.tutorial = { start, maybeStart, check, finish, get running(){ return on; } };
+N.tutorial={start,maybeStart(){if(!done())start(false);},check,finish,get running(){return on;}};
 })();
 </script>
 

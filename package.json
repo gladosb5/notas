@@ -28,7 +28,8 @@
     "test:handwriting": "node scripts/model-contract.mjs --check && node --test tests/handwriting-intent.test.cjs && node tests/handwriting-intent.mjs",
     "test:audit-report": "node scripts/model-contract.mjs --check && node --test tests/audit-report.test.cjs tests/collab-usage.test.mjs tests/ink-offline.test.cjs tests/memory-recovery.test.mjs tests/nota-proxy.test.mjs && node tests/audit-report-browser.mjs",
     "assets:pdf": "node scripts/prepare-pdf-assets.mjs",
-    "test:pdf": "node tests/pdf-notebook.mjs"
+    "test:pdf": "node tests/pdf-notebook.mjs",
+    "test:tutorial": "node tests/tutorial.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
