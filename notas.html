@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v156">
+<meta name="notas-version" content="v157">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -5836,7 +5836,7 @@ function render(){
 /* the invitation belongs to an empty page only: once anything is drawn or
    pasted the page is no longer blank, and the words would sit beside the ink */
 function placeholderFor(ln){
-  return (S.lines.length === 1 && !ln.text && !S.strokes.length && !S.images.length) ? 'write / draw anything.' : '';
+  return (!S.pdf && S.lines.length === 1 && !ln.text && !S.strokes.length && !S.images.length) ? 'write / draw anything.' : '';
 }
 function refreshPlaceholder(){
   if(S.lines.length !== 1) return;
