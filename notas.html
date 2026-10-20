@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v166">
+<meta name="notas-version" content="v167">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -3221,7 +3221,17 @@ function tidyShape(pts){
         const x0=Math.min(...uv.map(v=>v[0])),x1=Math.max(...uv.map(v=>v[0])),y0=Math.min(...uv.map(v=>v[1])),y1=Math.max(...uv.map(v=>v[1]));
         const rect=[[x0,y0],[x1,y0],[x1,y1],[x0,y1]].map(([x,y])=>[x*ux-y*uy,x*uy+y*ux]);
         /* a box drawn a little crooked is squared; a real trapezium or kite is kept as drawn */
-        if(corners.every(v=>Math.min(...rect.map(q=>distance(v,q)))<size*.16))corners=rect;
+        if(corners.every(v=>Math.min(...rect.map(q=>distance(v,q)))<size*.16)){
+          corners=rect;
+          /* Prefer level boxes within 22.5 degrees of either page axis.
+             Keep the fitted centre and side lengths, so straightening a
+             square does not enlarge it. Deliberate diagonals stay tilted. */
+          if(Math.min(Math.abs(ux),Math.abs(uy))<=Math.sin(Math.PI/8)){
+            const mx=(rect[0][0]+rect[2][0])/2,my=(rect[0][1]+rect[2][1])/2;
+            const horizontal=Math.abs(ux)>=Math.abs(uy),w=horizontal?x1-x0:y1-y0,h=horizontal?y1-y0:x1-x0;
+            corners=[[mx-w/2,my-h/2],[mx+w/2,my-h/2],[mx+w/2,my+h/2],[mx-w/2,my+h/2]];
+          }
+        }
       }
       return [...corners,corners[0]].flatMap(v=>[v[0],v[1],.5]);
     }
@@ -4516,6 +4526,31 @@ function pointInPoly(x, y, poly){
   return inside;
 }
 
+/* Select the ink inside the loop, rather than the empty centre of its box.
+   Split segments at lasso crossings so sparse, tidied shapes behave like
+   densely sampled handwriting. More than half the stroke must be enclosed. */
+function strokeInPoly(pts,poly){
+  let total=0,inside=0;
+  for(let i=3;i<pts.length;i+=3){
+    const ax=pts[i-3],ay=pts[i-2],dx=pts[i]-ax,dy=pts[i+1]-ay,len=Math.hypot(dx,dy);
+    if(!len)continue;
+    const cuts=[0,1];
+    for(let j=0,k=poly.length-2;j<poly.length;k=j,j+=2){
+      const ex=poly[j]-poly[k],ey=poly[j+1]-poly[k+1],den=dx*ey-dy*ex;
+      if(Math.abs(den)<1e-9)continue;
+      const qx=poly[k]-ax,qy=poly[k+1]-ay,t=(qx*ey-qy*ex)/den,u=(qx*dy-qy*dx)/den;
+      if(t>0&&t<1&&u>=0&&u<=1)cuts.push(t);
+    }
+    cuts.sort((a,b)=>a-b);
+    for(let j=1;j<cuts.length;j++){
+      const t=(cuts[j-1]+cuts[j])/2;
+      if(pointInPoly(ax+dx*t,ay+dy*t,poly))inside+=len*(cuts[j]-cuts[j-1]);
+    }
+    total+=len;
+  }
+  return total?inside>total/2:pts.length>=3&&pointInPoly(pts[0],pts[1],poly);
+}
+
 /* ---- pointer diagnostics ----
    Open the page with ?debug=pointers to get a live log of what the digitiser
    actually reports and what this code did with it. Pen behaviour differs enough
@@ -5076,7 +5111,7 @@ function endPointer(ev){
     if(poly.length > 8){
       S.imageSelection=null;
       S.selection = S.strokes.filter(s=>(s.author==='user' || s.author==='ai')&&inBounds(s.bbox)&&
-        pointInPoly((s.bbox[0]+s.bbox[2])/2, (s.bbox[1]+s.bbox[3])/2, poly)).map(s=>s.id);
+        strokeInPoly(s.pts,poly)).map(s=>s.id);
       for(const ln of S.lines){const b=selectedLineBox(ln);if(ln.text&&inBounds(b)&&pointInPoly((b[0]+b[2])/2,(b[1]+b[3])/2,poly))S.selection.push(ln.id);}
       /* a loop round a picture and no ink selects the picture (the topmost
          one whose centre it encloses), with its own bar: remove background,
