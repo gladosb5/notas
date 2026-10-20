@@ -24,7 +24,11 @@ try{
   const type=async text=>{await page.keyboard.insertText(text);await page.waitForTimeout(250);};
   const selectLine=()=>page.locator('.line .txt').last().evaluate(el=>{el.focus();el.select();});
   await step(-1);
-  assert.match(await page.locator('.tut-body').textContent(),/Type everything/);
+  assert.equal(await page.locator('.tut-say').textContent(),'let’s write something together.');
+  assert.equal(await page.locator('.tut-body,.tut-hint,.tut-status,.tut-steps,.tut-tools,.tut-mark').count(),0,'no panel copy, progress rail or duplicate tool controls');
+  assert.equal(await page.locator('.tut').evaluate(el=>{const s=getComputedStyle(el);return s.backgroundImage==='none'&&s.boxShadow==='none'&&parseFloat(s.borderTopWidth)===0;}),true,'guidance has no surface or border');
+  assert.ok((await page.locator('.tut').boundingBox()).height<120,'the introduction is a short note on the paper');
+  await page.emulateMedia({media:'print'});assert.equal(await page.locator('.tut').isVisible(),false,'temporary guidance never prints');await page.emulateMedia({media:'screen'});
   await page.screenshot({path:`test-results/tutorial-welcome-${width}.png`});
   await next.click();await step(0);
   assert.equal(await page.evaluate(()=>N.core.S.tool),'text');
@@ -33,17 +37,19 @@ try{
   await selectLine();await type('12 x');assert.equal(await next.isDisabled(),true);
   await selectLine();await type('12 x 7');
   await page.waitForFunction(()=>!document.querySelector('.tut-next').disabled);
-  assert.match(await page.locator('.tut-status').textContent(),/84/);
+  assert.equal(await page.locator('.tut-say').textContent(),'there you go.');
+  assert.ok(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result==='84')));
   await page.screenshot({path:`test-results/tutorial-calculate-${width}.png`});
   await next.click();await step(1);assert.equal(await next.isDisabled(),true);
   await type('pens = 3');await page.keyboard.press('Enter');await type('pens / 0');
   assert.equal(await next.isDisabled(),true,'a dependency with a calculation error cannot pass');
   await selectLine();await type('pens x 4');
   await page.waitForFunction(()=>!document.querySelector('.tut-next').disabled);
-  assert.match(await page.locator('.tut-status').textContent(),/12 follows/);
+  assert.equal(await page.locator('.tut-say').textContent(),'they’re connected.');
+  assert.ok(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result==='12'&&!n.provides)));
   await next.click();await step(2);
   await type('hey nota, explain the maths above?');
-  await page.waitForFunction(()=>document.querySelector('.tut-next').textContent==='finish introduction');
+  await page.waitForFunction(()=>document.querySelector('.tut-next').textContent==='done');
   await page.waitForFunction(()=>N.core.S.lines.some(l=>l.tutor&&l.text.includes('Twelve groups')));
   await page.waitForFunction(()=>!N.nota.busy);
   assert.ok(requests>0,'the lesson exercises the real Nota request path with a mocked provider');
@@ -58,9 +64,10 @@ try{
   await page.evaluate(()=>N.tutorial.start(true));await step(-1);
   assert.deepEqual(await page.evaluate(()=>({lines:N.core.S.lines.map(l=>l.text).filter(Boolean),ink:N.core.S.strokes.length})),content);
   await next.click();await step(0);assert.equal(await next.isDisabled(),true);
-  await page.locator('.tut [data-mode="pen"]').click();
-  assert.match(await page.locator('.tut-hint').textContent(),/reader is off/);
-  await page.locator('.tut [data-mode="text"]').click();assert.equal(await page.evaluate(()=>N.core.S.tool),'text');
+  await page.locator('#pill .tool[data-tool="pen"]').click();
+  await page.waitForFunction(()=>document.querySelector('.tut-say').textContent.includes('reader is off'));
+  await page.keyboard.press('Escape');
+  await page.locator('#pill .tool[data-tool="text"]').click();assert.equal(await page.evaluate(()=>N.core.S.tool),'text');
   assert.equal(await next.isDisabled(),true);
   // Replaying several times cannot leave a delayed dismissal from an old run.
   await page.evaluate(()=>{N.tutorial.finish(false);N.tutorial.start(true);N.tutorial.finish(false);N.tutorial.start(true);});
@@ -85,7 +92,7 @@ try{
  };
  await page.addInitScript(()=>localStorage.setItem('notas.prefs',JSON.stringify({handwritingRecognitionOn:false,textRecognitionOn:false,backgroundRemovalOn:false,notaOn:false})));
  await page.goto(base+'/notas.html');await page.waitForFunction(()=>N.tutorial?.running&&document.querySelector('#preparing').classList.contains('done'));
- await page.locator('.tut-next').click();await page.locator('.tut [data-mode="pen"]').click();
+ await page.locator('.tut-next').click();await page.locator('#pill .tool[data-tool="pen"]').click();await page.keyboard.press('Escape');
  const seed=async expressions=>page.evaluate(({expressions,strokes})=>{
   const S=N.core.S;S.strokes.push(...strokes);N.recog.rebuild();
   const targets=S.clusters.filter(cl=>cl.strokeIds.some(id=>id.startsWith('lesson-'))).sort((a,b)=>a.bbox[1]-b.bbox[1]);
@@ -99,7 +106,8 @@ try{
  assert.equal(await page.locator('.tut-next').isDisabled(),true,'reading alone is not success');
  await solve();
  await page.waitForFunction(()=>!document.querySelector('.tut-next').disabled);
- assert.match(await page.locator('.tut-status').textContent(),/84/);
+ assert.equal(await page.locator('.tut-say').textContent(),'there you go.');
+ assert.ok(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result==='84')));
  await page.locator('.tut-next').click();
  // Clear the previous exercise's injected clusters before adding two new rows.
  await page.evaluate(()=>{N.core.S.strokes=[];N.core.S.clusters=[];N.recog.reset();N.mathcore.run();});
@@ -112,7 +120,7 @@ try{
  await page.locator('.tut-next').click();
  // A recognised handwritten question can finish even with Nota switched off.
  await page.evaluate(()=>{N.core.S.textTranscripts.push({hash:'tutorial-question',text:'hey nota, explain this maths?',confidence:.95});N.tutorial.check('text');});
- assert.equal(await page.locator('.tut-next').textContent(),'finish introduction');
+ assert.equal(await page.locator('.tut-next').textContent(),'done');
  await page.locator('.tut-next').click();assert.equal(await page.locator('.tut').getAttribute('data-step'),'3');
  await page.locator('.tut-next').click();
  // The optional AI lesson is also skippable, without a fake answer or question.
@@ -120,7 +128,7 @@ try{
  await page.evaluate(()=>{const a=N.text.add(700,false);a.text='6*7';N.text.render();N.mathcore.run();});
  await page.locator('.tut-next').click();
  await page.evaluate(()=>{const a=N.text.add(800,false);a.text='cups=2';const b=N.text.add(840,false);b.text='cups*3';N.text.render();N.mathcore.run();});
- await page.locator('.tut-next').click();assert.equal(await page.locator('.tut-next').textContent(),'try nota later');
+ await page.locator('.tut-next').click();assert.equal(await page.locator('.tut-next').textContent(),'later');
  await page.locator('.tut-next').click();assert.equal(await page.locator('.tut').getAttribute('data-step'),'3');
  await page.locator('.tut-next').click();await context.close();
  console.log('Tutorial ink/Solve path, >10 strokes, handwritten Nota, disabled AI and optional AI completion passed');

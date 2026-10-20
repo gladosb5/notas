@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v158">
+<meta name="notas-version" content="v159">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -264,7 +264,7 @@ Object.assign(launch,{open,finished,stylesReady,cacheReady,everything,skip:skipp
   --red-edge:rgba(208,70,59,.40);
   --red-glow:rgba(208,70,59,.16);
   /* nota's hand; a colour chosen in settings is set on the root over this */
-  --nota:var(--red);
+  --nota-default:#A6534C; --nota:var(--nota-default);
   --rule:rgba(60,60,67,.16);
   --rule-2:rgba(60,60,67,.08);
   --panel:#FFFFFF;
@@ -310,7 +310,7 @@ Object.assign(launch,{open,finished,stylesReady,cacheReady,everything,skip:skipp
     --paper:#151517; --graphite:#F2F2F4;
     --ink-2:rgba(235,235,245,.62); --ink-3:rgba(235,235,245,.34);
     --blue:#9CC4F0; --blue-quiet:#9AA6B4; --blue-soft:rgba(156,196,240,.14);
-    --red:#F0655A; --red-soft:rgba(240,101,90,.12); --red-edge:rgba(240,101,90,.46); --red-glow:rgba(240,101,90,.22);
+    --red:#F0655A; --nota-default:#D58B83; --red-soft:rgba(240,101,90,.12); --red-edge:rgba(240,101,90,.46); --red-glow:rgba(240,101,90,.22);
     --rule:rgba(235,235,245,.14); --rule-2:rgba(235,235,245,.07);
     --panel:#232326; --tint:rgba(242,242,244,.08); --tint-2:rgba(242,242,244,.14);
     --glass:rgba(32,34,39,.58); --glass-2:rgba(32,34,39,.82);
@@ -327,7 +327,7 @@ Object.assign(launch,{open,finished,stylesReady,cacheReady,everything,skip:skipp
   --paper:#151517; --graphite:#F2F2F4;
   --ink-2:rgba(235,235,245,.62); --ink-3:rgba(235,235,245,.34);
   --blue:#9CC4F0; --blue-quiet:#9AA6B4; --blue-soft:rgba(156,196,240,.14);
-  --red:#F0655A; --red-soft:rgba(240,101,90,.12); --red-edge:rgba(240,101,90,.46); --red-glow:rgba(240,101,90,.22);
+  --red:#F0655A; --nota-default:#D58B83; --red-soft:rgba(240,101,90,.12); --red-edge:rgba(240,101,90,.46); --red-glow:rgba(240,101,90,.22);
   --rule:rgba(235,235,245,.14); --rule-2:rgba(235,235,245,.07);
   --panel:#232326; --tint:rgba(242,242,244,.08); --tint-2:rgba(242,242,244,.14);
   --glass:rgba(32,34,39,.58); --glass-2:rgba(32,34,39,.82);
@@ -392,7 +392,7 @@ input:focus-visible,textarea:focus-visible{outline:none}
 /* The frost diffuses actual content behind the surface. Reflections stay at the
    curved perimeter instead of painting a moving white hotspot across the face.
    The fine grain is fixed, so it never shimmers while writing or scrolling. */
-.glass,#topbar,#pill,#penpop,#textpop,#dlpop,#selbar,#toast,#save-alert,#askbar,.sheet .box,.tut,#local-status,#offline-status{
+.glass,#topbar,#pill,#penpop,#textpop,#dlpop,#selbar,#toast,#save-alert,#askbar,.sheet .box,#local-status,#offline-status{
   background-color:var(--glass);
   background-image:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath fill='%23808b9b' opacity='.025' filter='url(%23n)' d='M0 0h128v128H0z'/%3E%3C/svg%3E"),
@@ -403,7 +403,7 @@ input:focus-visible,textarea:focus-visible{outline:none}
 }
 /* A masked hairline follows the real radius, including the pill ends. It sits
    above the fill without intercepting controls or clipping their focus rings. */
-.glass::after,#topbar::after,#pill::after,#penpop::after,#textpop::after,#dlpop::after,#selbar::after,#toast::after,#save-alert::after,#askbar::after,.sheet .box::after,.tut::after,#local-status::after,#offline-status::after{
+.glass::after,#topbar::after,#pill::after,#penpop::after,#textpop::after,#dlpop::after,#selbar::after,#toast::after,#save-alert::after,#askbar::after,.sheet .box::after,#local-status::after,#offline-status::after{
   content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;
   pointer-events:none;
   background:linear-gradient(155deg,var(--glass-rim) 0%,var(--glass-rim-soft) 32%,transparent 50%,var(--glass-bounce) 78%,var(--glass-rim-soft) 100%);
@@ -414,13 +414,13 @@ input:focus-visible,textarea:focus-visible{outline:none}
 }
 .sheet .box{position:relative}
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
-  .glass,#topbar,#pill,#penpop,#textpop,#dlpop,#selbar,#toast,#save-alert,#askbar,.sheet .box,.tut,#local-status,#offline-status{background:var(--panel)}
+  .glass,#topbar,#pill,#penpop,#textpop,#dlpop,#selbar,#toast,#save-alert,#askbar,.sheet .box,#local-status,#offline-status{background:var(--panel)}
 }
 @media (prefers-reduced-transparency: reduce){
-  .glass,#topbar,#pill,#penpop,#textpop,#dlpop,#selbar,#toast,#save-alert,#askbar,.sheet .box,.tut,#local-status,#offline-status{
+  .glass,#topbar,#pill,#penpop,#textpop,#dlpop,#selbar,#toast,#save-alert,#askbar,.sheet .box,#local-status,#offline-status{
     background:var(--panel) !important;-webkit-backdrop-filter:none;backdrop-filter:none;
   }
-  .glass::after,#topbar::after,#pill::after,#penpop::after,#textpop::after,#dlpop::after,#selbar::after,#toast::after,#save-alert::after,#askbar::after,.sheet .box::after,.tut::after,#local-status::after,#offline-status::after{display:none}
+  .glass::after,#topbar::after,#pill::after,#penpop::after,#textpop::after,#dlpop::after,#selbar::after,#toast::after,#save-alert::after,#askbar::after,.sheet .box::after,#local-status::after,#offline-status::after{display:none}
   .sheet{-webkit-backdrop-filter:none !important;backdrop-filter:none !important}
 }
 
@@ -1085,64 +1085,27 @@ body:has(.sheet:not(.leave)) #toast{top:calc(var(--safe-t) + 12px)}
 #selbar button:hover{background:var(--tint)}
 #selbar button:active{transform:scale(.95)}
 
-/* ---- tutorial: a quiet introduction written into the page ---- */
+/* ---- tutorial: nota writes a few words on the paper ---- */
 .tut{
-  position:absolute;z-index:4;box-sizing:border-box;padding:20px 0 4px;
-  border:0;border-top:1px solid var(--rule);border-radius:0;
+  position:absolute;z-index:4;padding:0;border:0;border-radius:0;
   background:none;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;
-  color:var(--ink-2);font:400 14px/1.55 var(--ui);letter-spacing:0;
+  color:var(--graphite);font:400 16px/1.6 var(--type);
 }
+#col .tut:not(.tut-lite){pointer-events:none}
+#col .tut button{pointer-events:auto}
 .tut::after{display:none}
 body[data-tutorial] .txt[data-placeholder]::before{display:none}
 .tut [hidden]{display:none!important}
-.tut-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.tut-kicker{font-size:12px;line-height:1.4;color:var(--ink-2)}
-.tut button{font:500 13px/1.3 var(--ui);min-height:44px;cursor:pointer}
-.tut button:focus-visible{outline:2px solid var(--blue);outline-offset:4px}
-.tut-skip{color:var(--ink-2);white-space:nowrap;padding:8px 0 8px 12px}
-.tut-skip:hover{color:var(--graphite);text-decoration:underline;text-underline-offset:4px}
-.tut-steps{list-style:none;display:flex;gap:16px;padding:0;margin:16px 0 26px}
-.tut-steps li{flex:1;min-width:0;border-top:2px solid var(--rule);padding-top:8px;font-size:12px;color:var(--ink-2)}
-.tut-steps li span{margin-right:5px;font-variant-numeric:tabular-nums}
-.tut-steps li.current{border-color:var(--red);color:var(--graphite)}
-.tut-steps li.passed{border-color:var(--graphite);color:var(--graphite)}
-.tut-say{margin:0;max-width:480px;font:500 clamp(25px,3.2vw,34px)/1.14 var(--ui);letter-spacing:-.045em;color:var(--graphite);text-wrap:balance}
-.tut-say:focus{outline:none}
-.tut-body{max-width:460px;margin:14px 0 0;text-wrap:pretty}
-.tut-do{margin:24px 0;font:400 clamp(19px,2.6vw,27px)/1.65 var(--type);letter-spacing:-.04em;color:var(--graphite);white-space:pre-wrap;overflow-wrap:anywhere}
+.tut-say{margin:0;color:var(--nota);font:400 26px/1.25 var(--hand);letter-spacing:0;overflow-wrap:anywhere}
+.tut-do{margin:10px 0 0;color:var(--graphite);font:inherit;white-space:pre-wrap;overflow-wrap:anywhere}
 .tut-do:empty{display:none}
-.tut-welcome .tut-do{font-size:clamp(25px,4vw,38px);letter-spacing:-.055em;color:var(--red);margin:26px 0 28px}
-.tut-tools{display:flex;align-items:center;flex-wrap:wrap;gap:12px;font-size:12px}
-.tut-mode{display:flex;border:1px solid var(--rule);border-radius:var(--r-pill);padding:3px;gap:2px}
-.tut-mode button{min-width:65px;min-height:36px;padding:7px 16px;border-radius:var(--r-pill);color:var(--ink-2)}
-.tut-mode button[aria-pressed="true"]{background:var(--graphite);color:var(--paper)}
-.tut-mode button:hover:not([aria-pressed="true"]){background:var(--tint)}
-.tut-hint{max-width:460px;margin:14px 0 0;font-size:13px;line-height:1.55}
-.tut-hint:empty{display:none}
-.tut-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:24px;padding-top:16px;border-top:1px solid var(--rule)}
-.tut-status{margin:0;max-width:330px;font-size:12px;line-height:1.5}
-.tut-ready .tut-status{color:var(--red)}
-.tut-next{flex:none;min-width:92px;padding:11px 18px;border-radius:var(--r-pill);background:var(--graphite);color:var(--paper);transition:opacity .18s,transform .18s}
-.tut-next:hover{opacity:.8}
-.tut-next:active{transform:translateY(1px)}
-.tut-next:disabled{background:var(--tint);color:var(--ink-2);cursor:default;opacity:.6}
-.tut-mark{position:absolute;z-index:2;pointer-events:none;color:var(--ink-2)}
-.tut-mark span{display:block;font:400 11px/20px var(--ui);letter-spacing:.015em}
-.tut-mark i{display:block;height:29px;border-bottom:1px dashed var(--rule)}
-.tut.done .tut-steps li{border-color:var(--graphite)}
-@media(max-width:600px){
-  .tut{padding-top:12px;font-size:14px}
-  .tut-top{gap:6px;align-items:flex-start}
-  .tut-kicker{max-width:170px;padding-top:12px}
-  .tut-steps{gap:10px;margin:10px 0 18px}
-  .tut-steps li span{display:block;margin:0 0 3px}
-  .tut-body{margin-top:12px;line-height:1.45}
-  .tut-do{margin:16px 0}
-  .tut-foot{align-items:flex-start;gap:12px;margin-top:16px;padding-top:12px}
-  .tut-next{min-width:80px;padding:11px 14px;max-width:150px}
-  .tut-mode button{min-height:44px}
-}
-@media(prefers-reduced-motion:reduce){.tut-next{transition:none}}
+.tut-actions{display:flex;align-items:center;gap:20px;margin-top:8px}
+.tut button{padding:8px 0;min-height:44px;border:0;border-radius:0;background:none;box-shadow:none;color:var(--ink-2);font:400 13px/1.4 var(--ui);cursor:pointer}
+.tut-next:not(:disabled){color:var(--graphite);text-decoration:underline;text-underline-offset:4px;text-decoration-color:var(--rule)}
+.tut button:hover:not(:disabled){text-decoration:underline;text-underline-offset:4px}
+.tut button:focus-visible{outline:2px solid var(--blue);outline-offset:4px}
+.tut-next:disabled{color:var(--ink-3);cursor:default}
+@media(max-width:600px){.tut-say{font-size:25px}}
 
 /* ---- self test ---- */
 #selftest{padding:24px;font:400 13px/1.6 var(--mono);max-width:820px;margin:0 auto;overflow:auto;height:100%}
@@ -8157,7 +8120,7 @@ function menuSheet(){
       '<button data-v="auto" aria-pressed="'+(S.settings.theme==='auto')+'">auto</button>' +
       '<button data-v="light" aria-pressed="'+(S.settings.theme==='light')+'">light</button>' +
       '<button data-v="dark" aria-pressed="'+(S.settings.theme==='dark')+'">dark</button></span></span></div>' +
-    colorRow('nota\'s handwriting', 'nota-colour', S.settings.notaColor, [['','nota red','var(--red)'],['#2F6FB3','blue','#2F6FB3'],['#2E8B57','green','#2E8B57'],['#7B4FBF','purple','#7B4FBF'],['#E08A1E','orange','#E08A1E'],['#1C1C1E','black','#1C1C1E']]) +
+    colorRow('nota\'s handwriting', 'nota-colour', S.settings.notaColor, [['','nota red','var(--nota-default)'],['#2F6FB3','blue','#2F6FB3'],['#2E8B57','green','#2E8B57'],['#7B4FBF','purple','#7B4FBF'],['#E08A1E','orange','#E08A1E'],['#1C1C1E','black','#1C1C1E']]) +
     '<label class="mi" for="nota-font"><span>nota\'s font</span><select class="keyin" id="nota-font" style="max-width:190px;margin-left:auto" aria-label="nota\'s font"></select></label>' +
     '<div id="nota-font-preview" style="padding:8px 14px;color:var(--nota);overflow-wrap:anywhere" aria-label="font preview">a page that writes back.</div>' +
     '<div style="display:flex;flex-wrap:wrap;gap:8px"><button class="mi" id="nota-font-import" type="button" style="width:auto">import font<span class="k">ttf, otf, woff</span></button><button class="mi" id="nota-font-remove" type="button" style="width:auto" hidden>remove font</button></div>' +
@@ -10464,20 +10427,20 @@ N.library = { open, close, toggle, refresh, leaving, changed, boot, importBundle
 <script src="./pdf-notebook.js"></script>
 <script>
 /* =========================================================================
-   TUTORIAL - three small discoveries on the actual page.
-   Typing and handwriting share the same completion checks. Nothing is inserted
-   except an empty typing line; lesson examples are never saved as user content.
+   TUTORIAL - nota writes with you, directly on the paper.
+   Either input method completes every lesson. The prompts are temporary;
+   only the user's own practice is saved, shared or included in undo history.
    ========================================================================= */
 (function(){
 'use strict';
 const C=N.core,S=C.S,M=C.M,$=C.$;
 const LESSONS=[
-  {title:'a little less mental arithmetic.',body:'Try this calculation on the page. The answer appears beside your working.',example:'12 x 7',name:'calculate'},
-  {title:'give a number a name.',body:'Set a value on one line, then use its name on the next. Change the value later and the maths follows.',example:'pens = 3\npens x 4',name:'connect'},
-  {title:'a question belongs on the page, too.',body:'Start a line with “hey nota,” and ask about your notes. Nota replies right here.',example:'hey nota, explain the maths above?',name:'ask nota'}
+  {say:'try this. type or write.',example:'12 x 7'},
+  {say:'name a number, then use it below.',example:'pens = 3\npens x 4'},
+  {say:'ask me about your page.',example:'hey nota, explain the maths above?'}
 ];
-let on=false,step=-1,note=null,card=null,mark=null,watch=null,poll=null;
-let anchor=120,before=new Map(),ready=false,mode='text',lastStatus='',questionSeen=false,pressing=false,releaseTimer=null;
+let on=false,step=-1,note=null,card=null,watch=null,poll=null;
+let anchor=120,inputY=240,before=new Map(),ready=false,mode='text',lastSaid='',pressing=false,releaseTimer=null;
 function done(){try{return localStorage.getItem('notas.tut')==='done';}catch{return false;}}
 function remember(){try{localStorage.setItem('notas.tut','done');}catch{}}
 function snapshot(){
@@ -10488,173 +10451,133 @@ function snapshot(){
 }
 function fresh(n){return before.get(n.kind+':'+n.id)!==n.src;}
 function freeSpace(){
-  let bottom=100;
+  let bottom=90;
   for(const l of S.lines)if(l.text?.trim())bottom=Math.max(bottom,l.y+Math.max(C.LINE_H,l.h||0));
   for(const s of S.strokes)if(s.bbox)bottom=Math.max(bottom,s.bbox[3]+12);
   for(const i of S.images){const b=C.imageBounds(i);if(b)bottom=Math.max(bottom,b[3]+12);}
-  // PDF annotations remain on their page; the guide uses the current view.
-  if(S.pdf)bottom=Math.max(100,($('#scroller').scrollTop+80)/M.zoom);
+  if(S.pdf)bottom=Math.max(90,($('#scroller').scrollTop+80)/M.zoom);
   return Math.ceil((bottom+30)/C.LINE_H)*C.LINE_H;
 }
 function announce(text){const el=$('#tutorial-text');if(el&&el.textContent!==text)el.textContent=text;}
 function dispose(){
-  clearInterval(poll);poll=null;
-  watch?.disconnect();watch=null;
+  clearInterval(poll);poll=null;watch?.disconnect();watch=null;
   window.removeEventListener('resize',place);
   document.removeEventListener('pointerup',release,true);document.removeEventListener('pointercancel',release,true);
-  clearTimeout(releaseTimer);pressing=false;
-  card?.remove();mark?.remove();card=mark=null;
+  clearTimeout(releaseTimer);pressing=false;card?.remove();card=null;
 }
 function build(){
-  const col=$('#col');
-  mark=document.createElement('div');mark.className='tut-mark';mark.setAttribute('aria-hidden','true');
-  mark.innerHTML='<span>your turn · type or write here</span><i></i><i></i><i></i>';
-  card=document.createElement('section');card.className='tut';card.setAttribute('aria-label','a small introduction to notas');
-  card.innerHTML=
-    '<div class="tut-top"><span class="tut-kicker">a small introduction</span><button class="tut-skip" type="button">skip tutorial</button></div>'+
-    '<ol class="tut-steps" aria-label="tutorial progress">'+LESSONS.map((l,i)=>'<li><span>0'+(i+1)+'</span> '+l.name+'</li>').join('')+'</ol>'+
-    '<h2 class="tut-say" tabindex="-1"></h2><p class="tut-body"></p>'+
-    '<pre class="tut-do"></pre>'+
-    '<div class="tut-tools"><div class="tut-mode" role="group" aria-label="how to try this lesson"><button type="button" data-mode="text">type</button><button type="button" data-mode="pen">write</button></div><span>switch whenever you like</span></div>'+
-    '<p class="tut-hint"></p><div class="tut-foot"><p class="tut-status"></p><button class="tut-next" type="button"></button></div>';
+  card=document.createElement('section');card.className='tut';card.setAttribute('aria-label','write with nota');
+  card.innerHTML='<p class="tut-say"></p><pre class="tut-do"></pre>'+
+    '<div class="tut-actions"><button class="tut-next" type="button"></button><button class="tut-skip" type="button">skip</button></div>';
   card.querySelector('.tut-skip').onclick=()=>finish(false);
-  // Tutorial controls are inside the document, but are not taps on the paper.
   card.addEventListener('pointerdown',e=>{pressing=true;e.stopPropagation();});
   card.addEventListener('pointerup',e=>e.stopPropagation());
   document.addEventListener('pointerup',release,true);document.addEventListener('pointercancel',release,true);
   card.querySelector('.tut-next').onclick=()=>{
     pressing=false;
     if(step===3)return finish(true);
-    if(step===-1||ready){step++;snapshot();ready=false;questionSeen=false;anchor=freeSpace();draw(true);}
-    // Nota is optional, including on offline and self-hosted notebooks.
-    else if(step===2){step=3;draw(true);}
+    if(step===-1||ready||step===2){step++;snapshot();ready=false;anchor=freeSpace();draw(true);}
   };
-  for(const button of card.querySelectorAll('[data-mode]'))button.onclick=()=>useTool(button.dataset.mode,true);
-  col.append(mark,card);
-  watch=new MutationObserver(()=>{mode=S.tool==='text'?'text':'pen';check();});
+  $('#col').append(card);
+  watch=new MutationObserver(()=>{
+    const was=mode;mode=S.tool==='text'?'text':'pen';check();
+    if(was!==mode&&mode==='text'&&step>=0&&step<3)useTool('text',true);
+  });
   watch.observe(document.body,{attributes:true,attributeFilter:['data-tool']});
   window.addEventListener('resize',place);
 }
-function release(){
-  clearTimeout(releaseTimer);
-  releaseTimer=setTimeout(()=>{pressing=false;place();},0);
-}
+function release(){clearTimeout(releaseTimer);releaseTimer=setTimeout(()=>{pressing=false;place();},0);}
 function place(){
   if(!card||pressing)return;
-  const width=Math.max(200,Math.min(560,M.colW-8));
-  card.style.width=width+'px';card.style.left='0px';
-  const practicing=step>=0&&step<3;
-  // The open strip above the guide is real paper, reachable with either tool.
-  let top=anchor+(practicing?120:0);
-  if(practicing){
-    for(const l of S.lines)if(l.y>=anchor&&l.text?.trim())top=Math.max(top,l.y+Math.max(C.LINE_H,l.h||0)+32);
-    for(const s of S.strokes)if(s.bbox&&s.bbox[3]>=anchor)top=Math.max(top,s.bbox[3]+32);
+  card.style.width=Math.max(180,Math.min(460,M.contentW))+'px';card.style.left='0px';
+  let top=anchor;
+  // Reflowed working, including a streamed Nota reply, stays clear of the prompt.
+  for(const l of S.lines)if(l.text?.trim()&&l.y<anchor)top=Math.max(top,l.y+Math.max(C.LINE_H,l.h||0)+24);
+  const bottom=top+card.offsetHeight;
+  for(const l of S.lines)if(l.y>=anchor&&l.y<bottom&&l.text?.trim()){
+    top=Math.max(top,l.y+Math.max(C.LINE_H,l.h||0)+24);
   }
+  for(const s of S.strokes)if(s.bbox&&s.bbox[1]<top+card.offsetHeight&&s.bbox[3]>=top)top=Math.max(top,s.bbox[3]+24);
   card.style.top=top+'px';
-  mark.hidden=!practicing||ready;
-  mark.style.top=(anchor-27)+'px';mark.style.left='0px';
-  mark.style.width=Math.max(180,Math.min(M.contentW,width))+'px';
-  C.growDoc(parseFloat(card.style.top)+card.offsetHeight+140);
-}
-function reveal(){
-  place();
-  const sc=$('#scroller'),top=Math.max(0,anchor*M.zoom-90);
-  sc.scrollTo({top,behavior:C.reducedMotion()?'instant':'smooth'});
+  inputY=Math.ceil((top+card.offsetHeight+18)/C.LINE_H)*C.LINE_H;
+  C.growDoc(inputY+180);
 }
 function useTool(tool,focus){
-  mode=tool;N.ink.setTool(tool);
+  mode=tool;if(S.tool!==tool)N.ink.setTool(tool);
   if(focus&&tool==='text'&&step>=0&&step<3){
-    const empty=S.lines.find(l=>!l.tutor&&!l.text?.trim()&&l.y>=anchor&&l.y<anchor+100);
-    const ln=empty||N.text.add(anchor,false);N.text.focusLine(ln.id,undefined,true);
+    const current=N.text.focusedLine();
+    if(!current||current.y<inputY||current.tutor){
+      const empty=S.lines.find(l=>!l.tutor&&!l.text?.trim()&&l.y>=inputY&&l.y<inputY+C.LINE_H);
+      const ln=empty||N.text.add(inputY,false);N.text.focusLine(ln.id,undefined,true);
+    }
   }
-  check();
 }
 function draw(focus){
   if(!card)return;
-  const welcome=step===-1,finished=step===3,lesson=LESSONS[step];
-  card.dataset.step=String(step);card.classList.toggle('tut-welcome',welcome);card.classList.toggle('done',finished);
-  card.querySelector('.tut-kicker').textContent=welcome?'your notebook, with a little company':finished?'a good place to begin':'a small introduction · '+(step+1)+' / 3';
-  card.querySelector('.tut-say').textContent=welcome?'make yourself at home.':finished?'the rest is your page.':lesson.title;
-  card.querySelector('.tut-body').textContent=welcome?'A calculation, a connected idea, a question. Try three small things in your own notebook. Type everything, write everything, or mix the two.':finished?'Your working stays here and saves in this browser. Open the notes library to start another page, or the menu to try PDFs, pictures and more.':lesson.body;
-  card.querySelector('.tut-do').textContent=welcome?'12 × 7 = 84':finished?'':lesson.example;
-  card.querySelector('.tut-tools').hidden=welcome||finished;
-  for(const [i,el] of [...card.querySelectorAll('.tut-steps li')].entries()){
-    el.classList.toggle('passed',i<step);el.classList.toggle('current',i===step);
-    if(i===step)el.setAttribute('aria-current','step');else el.removeAttribute('aria-current');
+  card.dataset.step=String(step);card.querySelector('.tut-do').textContent=LESSONS[step]?.example||'';
+  card.querySelector('.tut-skip').hidden=step===3;lastSaid='';check();place();
+  if(!C.reducedMotion())card.animate([{opacity:0},{opacity:1}],{duration:180,easing:'ease-out'});
+  if(focus){
+    $('#scroller').scrollTo({top:Math.max(0,parseFloat(card.style.top)*M.zoom-110),behavior:C.reducedMotion()?'instant':'smooth'});
+    if(step<0||step===3)card.querySelector('.tut-next').focus({preventScroll:true});else useTool(mode,true);
   }
-  card.querySelector('.tut-skip').hidden=finished;
-  lastStatus='';check();place();
-  if(!C.reducedMotion())card.animate([{opacity:0,transform:'translateY(7px)'},{opacity:1,transform:'none'}],{duration:240,easing:'cubic-bezier(.22,1,.36,1)'});
-  announce(welcome?'Welcome to notas. Three short lessons. Type or write; either works.':finished?'Tutorial complete. Your working is saved in this browser.':'Lesson '+(step+1)+' of 3. '+lesson.title+' '+lesson.body+' Try '+lesson.example+'.');
-  if(focus){reveal();if(welcome||finished)card.querySelector('.tut-next').focus({preventScroll:true});else useTool(mode,true);}
 }
 function successful(n){return !!n.result&&!n.error&&!n.pending&&!n.ref?.review&&(n.kind!=='cluster'||n.ref?.asked);}
 function check(){
   if(!on||!card)return;
   if(S.id!==note){finish(false,false);return;}
-  let hint='',status='',next='next',disabled=false;
+  let say=step===-1?'let’s write something together.':step===3?'the rest is yours.':LESSONS[step].say;
+  let next=step===-1?'start':step===3?'keep writing':'next',disabled=false;
   const nodes=S.nodes||[];
-  if(step===-1){next='let’s begin';status='three small discoveries · at your pace';}
-  else if(step===3){next='keep writing';status='ready when you are';}
-  else{
-    for(const b of card.querySelectorAll('[data-mode]'))b.setAttribute('aria-pressed',String(b.dataset.mode===mode));
-    if(step===0){
-      // A lone digit or a definition must not finish a calculation lesson.
-      const n=nodes.find(n=>fresh(n)&&successful(n)&&!n.provides&&/[+*/^\-]|\b(?:sqrt|sin|cos|log)\s*\(/.test(N.mathcore.normalize(n.src)));
-      ready=!!n;status=n?'✓ '+n.result+' — there it is.':'try the calculation in the space above';
-      hint=mode==='text'?'Type 12 x 7. Add = to preview the answer inline; press Space to keep it.':'Write 12 × 7. Check the recognised equation, correct it if needed, then tap Solve.';
-    }else if(step===1){
-      let pair=null;
-      for(let i=0;i<nodes.length&&!pair;i++){
-        const a=nodes[i];if(!a.provides||!successful(a)||!fresh(a))continue;
-        for(const b of nodes.slice(i+1)){
-          if(!fresh(b)||!successful(b)||b.provides)continue;
-          try{if(N.mathcore.freeVars(N.mathcore.normalize(b.src)).includes(a.provides)){pair=[a,b];break;}}catch{}
-        }
+  if(step===0){
+    const n=nodes.find(n=>fresh(n)&&successful(n)&&!n.provides&&/[+*/^\-]|\b(?:sqrt|sin|cos|log)\s*\(/.test(N.mathcore.normalize(n.src)));
+    ready=!!n;if(ready)say='there you go.';
+    else if(mode==='pen')say='write this, check it, then tap Solve.';
+  }else if(step===1){
+    let pair=null;
+    for(let i=0;i<nodes.length&&!pair;i++){
+      const a=nodes[i];if(!a.provides||!successful(a)||!fresh(a))continue;
+      for(const b of nodes.slice(i+1)){
+        if(!fresh(b)||!successful(b)||b.provides)continue;
+        try{if(N.mathcore.freeVars(N.mathcore.normalize(b.src)).includes(a.provides)){pair=[a,b];break;}}catch{}
       }
-      ready=!!pair;status=pair?'✓ '+pair[0].provides+' carries through. '+pair[1].result+' follows.':'two lines, one connected idea';
-      hint=mode==='text'?'Press Enter between the two lines. Try changing 3 to another number afterwards.':'Write the two lines. Check each reading and tap Solve on the definition, then on the calculation.';
-    }else{
-      const texts=[...S.lines.filter(l=>!l.tutor).map(l=>({key:'line:'+l.id,text:l.text,strict:true})),...(S.textTranscripts||[]).filter(t=>t.confidence>=.5).map(t=>({key:'text:'+t.hash,text:t.text,strict:false}))];
-      questionSeen=texts.some(t=>{
-        if(before.get(t.key)===t.text)return false;
-        const call=N.nota?.parseCall(t.text,t.strict);
-        return call&&call.question.trim().split(/\s+/).length>=2;
-      });
-      ready=questionSeen;next=ready?'finish introduction':'try nota later';
-      status=ready?'✓ that’s how you ask nota.':'optional · you can come back to this';
-      hint='Type or write the question above. Nota uses an internet connection and a configured AI service. You can finish this introduction without an answer.';
-      if(S.settings.notaOn===false)hint='Nota is off in the menu’s AI settings. You can still practise the question here, or try Nota later.';
-      else if(navigator.onLine===false)hint='You’re offline. Practise the question here; Nota can answer when you’re connected. Or try it later.';
     }
-    if(mode==='pen'&&(S.settings.aiOn===false||S.settings.handwritingRecognitionOn===false||(step===2&&S.settings.textRecognitionOn===false))){
-      hint='The handwriting reader is off. Choose type to complete this lesson, or enable recognition in the menu’s AI settings.';
-    }
-    disabled=step<2&&!ready;
+    ready=!!pair;if(ready)say='they’re connected.';
+    else if(mode==='pen')say='name a number. tap Solve on each line.';
+  }else if(step===2){
+    const texts=[...S.lines.filter(l=>!l.tutor).map(l=>({key:'line:'+l.id,text:l.text,strict:true})),...(S.textTranscripts||[]).filter(t=>t.confidence>=.5).map(t=>({key:'text:'+t.hash,text:t.text,strict:false}))];
+    ready=texts.some(t=>{
+      if(before.get(t.key)===t.text)return false;
+      const call=N.nota?.parseCall(t.text,t.strict);
+      return call&&call.question.trim().split(/\s+/).length>=2;
+    });
+    next=ready?'done':'later';
+    if(ready)say='that’s how you ask me.';
+    else if(S.settings.notaOn===false)say='Nota is off. you can still practise here.';
+    else if(navigator.onLine===false)say='I’m offline. try me later.';
   }
-  card.classList.toggle('tut-ready',ready&&step>=0&&step<3);
-  card.querySelector('.tut-hint').textContent=hint;
-  card.querySelector('.tut-status').textContent=status;
+  if(step>=0&&step<3&&mode==='pen'&&!ready&&(S.settings.aiOn===false||S.settings.handwritingRecognitionOn===false||(step===2&&S.settings.textRecognitionOn===false)))say='the reader is off. type this instead.';
+  if(step>=0&&step<2)disabled=!ready;
+  card.dataset.ready=String(ready);card.querySelector('.tut-say').textContent=say;
   const button=card.querySelector('.tut-next');button.textContent=next;button.disabled=disabled;
-  if(lastStatus!==status){if(ready)announce(status+' Continue when you’re ready.');lastStatus=status;}
+  if(lastSaid!==say){
+    announce((step>=0&&step<3?'Lesson '+(step+1)+' of 3. ':'')+say+(ready?'':LESSONS[step]?' '+LESSONS[step].example:''));lastSaid=say;
+  }
   place();
 }
 function start(force){
-  if(done()&&!force)return;
-  if(on&&note===S.id&&!force)return;
-  dispose();on=true;step=-1;note=S.id;mode=S.tool==='pen'?'pen':'text';ready=false;questionSeen=false;
+  if(done()&&!force)return;if(on&&note===S.id&&!force)return;
+  dispose();on=true;step=-1;note=S.id;mode=S.tool==='pen'?'pen':'text';ready=false;
   document.body.dataset.tutorial='on';
-  // Remove only obsolete tutorial decorations, never the user's practice.
+  if(mode==='text'&&!S.lines.some(l=>l.text?.trim())&&!S.strokes.length&&!S.images.length)document.activeElement?.blur();
   const old=S.annos.length;S.annos=S.annos.filter(a=>a.tag!=='tutorial'&&a.tag!=='tutorial-tick');
   if(old!==S.annos.length)N.ink.renderAI();
-  snapshot();anchor=freeSpace();build();draw(!!force);
-  poll=setInterval(check,400);
+  snapshot();anchor=freeSpace();build();draw(!!force);poll=setInterval(check,400);
 }
 function finish(complete,save=true){
   const returnFocus=on&&card?.contains(document.activeElement)&&S.tool==='text';
   if(on&&save)remember();on=false;dispose();delete document.body.dataset.tutorial;
-  announce(complete?'Tutorial complete. Keep writing.':'');
-  if(returnFocus)N.text.focusLast();
+  announce(complete?'Tutorial complete. Keep writing.':'');if(returnFocus)N.text.focusLast();
 }
 N.tutorial={start,maybeStart(){if(!done())start(false);},check,finish,get running(){return on;}};
 })();

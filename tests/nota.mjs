@@ -92,7 +92,7 @@ try{
   assert.equal(typed[2].tutor,true,'the reply is a tutor line');
   assert.equal(typed[2].wait,false,'the dots are gone once words arrive');
   assert.equal(await page.evaluate(()=>document.querySelector('.line.tutor.wait')),null,'no line breathes any more');
-  assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('.line.tutor .txt')).color),await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--red').trim()).then(c=>{const m=c.match(/^#([0-9a-f]{6})$/i);return m?`rgb(${parseInt(m[1].slice(0,2),16)}, ${parseInt(m[1].slice(2,4),16)}, ${parseInt(m[1].slice(4,6),16)})`:c;}),'the line is drawn in the tutor red');
+  assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('.line.tutor .txt')).color),await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--nota').trim()).then(c=>{const m=c.match(/^#([0-9a-f]{6})$/i);return m?`rgb(${parseInt(m[1].slice(0,2),16)}, ${parseInt(m[1].slice(2,4),16)}, ${parseInt(m[1].slice(4,6),16)})`:c;}),'the line is drawn in Nota’s muted red');
   assert.equal(await page.evaluate(()=>N.core.S.nodes.some(n=>n.kind==='line'&&n.ref.tutor)),false,'the calculator never reads nota\'s lines');
 
   /* the caret still sits on the question; the arrow reaches the reply */
