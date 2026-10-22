@@ -17,7 +17,7 @@ const here=path.resolve(import.meta.dirname);
 const root=path.resolve(here,'../..');
 const out=path.join(here,'public');
 
-const SHELL=['notas.html','sw.js','model-contract.js','local-recognition.js','ink-worker.js',
+const SHELL=['app-install.js','app-install.css','notas.html','sw.js','model-contract.js','local-recognition.js','ink-worker.js',
   'ink-features.js','model-store.js','text-worker.js','bg-worker.js','local-math-help.js','diagram.js','nota.js','nota-fonts.js','manifest.webmanifest','asset-manifest.json',
   'assets/icon-16.png','assets/icon-32.png','assets/icon-192.png','assets/icon-512.png',
   'assets/icon-maskable-512.png','assets/apple-touch-icon.png','assets/logo.png','assets/nota-thinking.png'];
@@ -63,7 +63,7 @@ for(const rel of [...wanted].sort()){
 // multi-threaded; the shell is revalidated on every load so a new build is
 // picked up; the model files are content-addressed (?v=<hash>) so they
 // may be cached for good.
-const noCache=['/','/notas.html','/sw.js','/model-contract.js','/asset-manifest.json','/manifest.webmanifest',
+const noCache=['/app-install.js','/app-install.css','/','/notas.html','/sw.js','/model-contract.js','/asset-manifest.json','/manifest.webmanifest',
   '/local-recognition.js','/ink-worker.js','/ink-features.js','/model-store.js','/text-worker.js','/bg-worker.js','/local-math-help.js','/nota.js'];
 const onnx=[...wanted].filter(f=>f.endsWith('.onnx')).map(f=>'/'+f);
 // The policy is per path, never under /*: two matching rules would send two

@@ -1,0 +1,22 @@
+#app-recommendation{position:fixed;right:calc(var(--safe-r) + 16px);bottom:calc(var(--safe-b) + 104px);z-index:35;box-sizing:border-box;width:min(360px,calc(100vw - 32px));padding:18px;background:var(--panel);color:var(--graphite);border:1px solid var(--rule);border-radius:var(--r-card);box-shadow:var(--shadow);font:400 14px/1.45 var(--ui)}
+#app-recommendation strong{font-weight:600;font-size:15px}
+#app-recommendation p{margin:5px 0 14px;color:var(--ink-2)}
+.app-actions{display:flex;flex-wrap:wrap;gap:8px}
+.app-actions button,.app-guide button{min-height:44px;padding:10px 14px;border:1px solid var(--rule);border-radius:var(--r-input);background:var(--tint);color:var(--graphite);font:500 14px/1.4 var(--ui);cursor:pointer}
+.app-actions button.app-primary,.app-guide button.app-primary{background:var(--graphite);color:var(--paper);border-color:transparent}
+.app-actions button:hover,.app-guide button:hover{filter:brightness(.9)}
+.app-actions button:focus-visible,.app-guide :is(button,select,input,summary):focus-visible{outline:2px solid var(--graphite);outline-offset:3px}
+.app-guide{font:400 15px/1.6 var(--ui);overflow-wrap:anywhere}
+.app-guide>p:first-child{margin-top:0;color:var(--ink-2)}
+.app-guide ol{padding-left:24px;margin:16px 0 24px}
+.app-guide li{padding:4px 0 4px 4px}
+.app-device{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:20px}
+.app-guide select,.app-guide input{box-sizing:border-box;min-height:44px;padding:8px 12px;border:1px solid var(--rule);border-radius:var(--r-input);background:var(--panel);color:var(--graphite);font:inherit;max-width:100%}
+.app-guide input{display:block;width:100%;margin:8px 0}
+.app-guide details{border-top:1px solid var(--rule);padding-top:16px}
+.app-guide summary{cursor:pointer;font-weight:500;min-height:32px}
+.app-guide .sheet-notes{margin:18px 0 0}
+body:has(.sheet:not(.leave)) #app-recommendation{display:none}
+@media(max-width:600px){#app-recommendation{right:16px;bottom:calc(var(--safe-b) + 126px);padding:14px}}
+@media(max-height:500px){#app-recommendation{bottom:calc(var(--safe-b) + 74px);padding:12px}#app-recommendation p{display:none}.app-actions{margin-top:8px}}
+@media print{#app-recommendation{display:none!important}}

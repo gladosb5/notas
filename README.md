@@ -64,3 +64,41 @@ PDF notebooks autosave locally, including the original document and editable ann
 The first version accepts unencrypted PDFs up to 32 MB and 200 pages. Existing printed text is preserved; additions are editable in Notas. PDF notebooks can be sent using PDF or note export; live collaboration is currently available for ordinary notebooks only.
 
 PDF.js 6.4.299 and pdf-lib 1.17.1 are pinned in the development dependencies. Run `npm run assets:pdf` to reproduce the bundled PDF engine, fonts, decoders and license notices, and `npm run test:pdf` for browser and offline regression checks.
+
+## Download as an app
+
+Open **… → download as an app** for instructions, or use the dismissible
+recommendation in the notebook. Where the browser supports it, **Download as
+an app** opens its installation prompt after you click.
+
+- **Android (Chrome):** tap **⋮ → Install app** or **Add to Home screen**, then
+  confirm **Install**. Some versions use **Install and create shortcut → Install**.
+- **iPad / iPhone (Safari):** tap **Share** (then **View More** if needed), choose
+  **Add to Home Screen**, keep **Open as Web App** enabled if shown, then **Add**.
+- **Computer:** use Chrome or Edge’s install control in the address bar/browser
+  menu. On a Mac in Safari, use **File → Add to Dock**.
+
+Installation guidance was checked against [Apple’s iPad guide](https://support.apple.com/guide/ipad/ipad8f1f7a29/ipados),
+[Google’s Android instructions](https://support.google.com/chrome/answer/9658361?co=GENIE.Platform%3DAndroid&hl=en),
+and [Apple’s Mac instructions](https://support.apple.com/104996).
+
+Shared invitations offer an app choice even after the ordinary recommendation
+was dismissed. An already-open app can accept the complete invitation (query
+and host fragment included) through the service worker, after both notebooks
+save successfully. Ordinary visits focus the open app without replacing its note.
+The app manifest also supports browser-managed link launches in a new window.
+Opening a closed app and automatic link capture depend on the browser and user
+settings; the website cannot force either. Safari on iPad/iPhone does not offer
+a reliable website-to-app launch API. Use the browser’s **Open in app** option
+when available, or copy the invitation and paste it into **… → open a shared
+link** inside the app. Invitations are never stored by the installation UI.
+
+Notes remain in their browser/app storage; installation does not migrate notes.
+Safari’s Home Screen app may have separate storage, so export/import existing
+notes when needed. The ordinary recommendation waits a week after dismissal
+and stays hidden inside the app; the menu remains available.
+
+Run `npm run test:app-install` for responsive guidance, installation-event,
+dismissal, shared-link validation, and real service-worker handoff coverage.
+Standalone display, native install events, and OS focus permission are emulated in those tests;
+OS installation and browser/OS link capture require testing on actual devices.

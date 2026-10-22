@@ -2,10 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v171">
+<meta name="notas-version" content="v172">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
+<link rel="stylesheet" href="./app-install.css">
+<script src="./app-install.js" defer></script>
 <link rel="icon" type="image/png" sizes="32x32" href="./assets/icon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="./assets/icon-16.png">
 <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png">
@@ -8318,6 +8320,8 @@ function menuSheet(){
       '<p>a local text recogniser powers handwriting search and helps keep variable names. it never changes your ink.</p>' +
       '<p>maths hints use local rules for arithmetic and linear equations.</p></div>' +
     '<hr>' +
+    '<button class="mi" id="mi-app"><i class="ph ph-device-mobile"></i>download as an app</button>' +
+    '<button class="mi" id="mi-shared-link"><i class="ph ph-link"></i>open a shared link</button>' +
     '<button class="mi" id="mi-tut"><i class="ph ph-graduation-cap"></i>replay the tutorial</button>' +
     '<button class="mi" id="mi-keys"><i class="ph ph-keyboard"></i>keyboard shortcuts<span class="k">?</span></button>' +
     '<button class="mi" id="mi-priv"><i class="ph ph-lock-simple"></i>privacy</button>' +
@@ -8467,6 +8471,9 @@ function menuSheet(){
   box.querySelector('#im-pdf').onclick = ()=>{closeSheet();N.pdf.choose();};
   box.querySelector('#ex-pdf').onclick = ()=>{ closeSheet(); if(S.pdf)N.pdf.exportFile();else printNote(); };
   if(S.pdf)box.querySelector('#ex-pdf').lastChild.textContent='save annotated PDF';
+  box.querySelector('#mi-app').onclick = ()=>N.appInstall.show();
+  box.querySelector('#mi-shared-link').onclick = ()=>N.appInstall.openShared();
+  if(navigator.standalone||matchMedia('(display-mode: standalone)').matches)box.querySelector('#mi-app').lastChild.textContent='notas app';
   box.querySelector('#mi-tut').onclick = ()=>{ closeSheet(); N.tutorial.start(true); };
   box.querySelector('#mi-keys').onclick = shortcutsSheet;
   box.querySelector('#mi-priv').onclick = privacySheet;
@@ -11121,6 +11128,7 @@ async function openNotebook(){
   const launchReading=beginLaunchReading();
   appReady=true;
   finishPreparing();
+  N.appInstall?.start();
   /* The stroke reader is the largest first-run transfer. Avoid competing with
      it for bandwidth and memory on a tablet; offline setup begins as soon as
      it settles. The algebra system is small enough to fetch

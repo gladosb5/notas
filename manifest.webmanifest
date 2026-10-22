@@ -32,5 +32,15 @@
       "type": "image/png",
       "purpose": "maskable"
     }
+  ],
+  "launch_handler": {
+    "client_mode": "navigate-new"
+  },
+  "related_applications": [
+    {
+      "platform": "webapp",
+      "url": "./manifest.webmanifest",
+      "id": "./notas.html"
+    }
   ]
 }

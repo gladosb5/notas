@@ -6,6 +6,7 @@
     "start": "node scripts/serve.mjs",
     "test": "node --test tests/audit-report.test.cjs tests/local.test.cjs tests/math-notes.test.cjs tests/handwriting-intent.test.cjs tests/ink-timing.test.cjs tests/ink-decode.test.cjs tests/ink-offline.test.cjs tests/no-fast-production.test.mjs tests/slide-surface.test.cjs tests/math-edge-cases.test.cjs tests/workers-edge.test.mjs tests/background-runtime.test.mjs tests/memory-recovery.test.mjs tests/collab-usage.test.mjs tests/diagram.test.cjs tests/nota-body.test.mjs tests/nota-proxy.test.mjs",
     "test:nota-replay": "node tests/nota-replay.mjs",
+    "test:app-install": "node tests/app-install.mjs",
     "test:app-update": "node tests/hold-update.mjs && node tests/app-update.mjs",
     "test:font-writing": "node tests/font-writing.mjs",
     "test:launch-handoff": "node tests/launch-handoff.mjs",
