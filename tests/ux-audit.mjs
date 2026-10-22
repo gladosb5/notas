@@ -40,15 +40,16 @@ try{
   assert.equal(await page.locator('.chip.error').count(),0,'Invalid maths stays silent after blur');
   assert.doesNotMatch(await page.locator('#page-accessible').textContent(),/calculation issue|cannot calculate/);
 
-  // Finding 1 coverage: Ctrl+Z remains the line's native history, rather
-  // than consuming notebook-level ink/history actions.
+  // Finding 1 coverage: Ctrl+Z in a line takes back the latest typing first
+  // (one history with the ink, a piece of typing at a time), rather than
+  // an older notebook action.
   await input.fill('abc');
   await input.focus();
   await input.pressSequentially('d');
   const undoDepth=await page.evaluate(()=>N.core.Undo.back.length);
   await page.keyboard.press('Control+Z');
   assert.equal(await input.evaluate(el=>el.value),'abc','Ctrl+Z undoes the typed edit');
-  assert.equal(await page.evaluate(()=>N.core.Undo.back.length),undoDepth,'Native typing undo does not consume notebook history');
+  assert.equal(await page.evaluate(()=>N.core.Undo.back.length),undoDepth,'Undoing the typing leaves the notebook history as it was');
 
   // Findings 14/33: Enter splits at the actual caret, while a composition Enter
   // is ignored by the line editor so an IME can commit its candidate normally.
@@ -272,7 +273,7 @@ try{
   assert.equal(quiet.auto,'','Autosave does not flash a status');
   assert.equal(quiet.explicit,'saved.','An explicit save confirms');
 
-  console.log('UX audit regressions passed: silent calculation failures, native typing undo, graph persistence/export/samples, mobile reach, image manipulation, safe import recovery, panel motion, text-tool taps, scroll momentum, pinch zoom, and quiet autosave');
+  console.log('UX audit regressions passed: silent calculation failures, typing undo, graph persistence/export/samples, mobile reach, image manipulation, safe import recovery, panel motion, text-tool taps, scroll momentum, pinch zoom, and quiet autosave');
 }finally{
   await context.close();await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));
 }

@@ -1,6 +1,6 @@
-// Pasted words are a step of their own: Ctrl+Z takes the paste back (not the
-// letters typed before it), the browser's own undo carries on with the typing
-// after that, and Ctrl+Y / Ctrl+Shift+Z bring both back in order.
+// Undo in the text is the page's one history: Ctrl+Z takes back a paste (not
+// the letters typed before it), typing a word at a time, a stroke drawn
+// between, a split line; Ctrl+Y / Ctrl+Shift+Z bring them back in order.
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import {startServer} from '../scripts/serve.mjs';
@@ -29,7 +29,7 @@ try{
   await page.keyboard.press('Control+z');
   assert.deepEqual(await texts(),['abc '],'Ctrl+Z takes back the paste');
   await page.keyboard.press('Control+z');
-  assert.deepEqual(await texts(),['abc'],'the next Ctrl+Z takes back the typing before it');
+  assert.deepEqual(await texts(),[''],'the next Ctrl+Z takes back the word typed before it');
   await page.keyboard.press('Control+y');
   assert.deepEqual(await texts(),['abc '],'Ctrl+Y brings the typing back');
   await page.keyboard.press('Control+Shift+z');
@@ -59,7 +59,43 @@ try{
   await page.keyboard.press('Control+y');
   assert.deepEqual(await texts(),['one 2 3 four'],'Ctrl+Y pastes again');
 
-  // 4. the undo button takes a paste back as well
+  // 4. typing is undone a word at a time, the caret at the end of what came back
+  await reset([{id:'f',y:60,text:'',h:30}]);
+  await page.keyboard.type('hello big world');
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await texts(),['hello big '],'Ctrl+Z takes back the last word');
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await texts(),['hello '],'and the word before it');
+  await page.keyboard.press('Control+Shift+z');
+  assert.deepEqual(await texts(),['hello big '],'redo brings a word back');
+  await page.keyboard.type('x');
+  assert.deepEqual(await texts(),['hello big x'],'the caret is at the end of the redone word');
+
+  // 5. paste, draw, come back to the line: Ctrl+Z takes the stroke, then the paste
+  await reset([{id:'g',y:60,text:'ab',h:30}]);
+  await paste('cd');
+  await page.evaluate(()=>{document.activeElement.blur?.();N.ink.setTool('pen');});
+  await page.mouse.move(300,500);await page.mouse.down();await page.mouse.move(380,540,{steps:8});await page.mouse.up();
+  await page.waitForFunction(()=>N.core.S.strokes.some(s=>s.author==='user'));
+  await page.evaluate(()=>{N.ink.setTool('text');N.text.focusLine('g',true);});
+  await page.keyboard.press('Control+z');
+  assert.equal(await page.evaluate(()=>N.core.S.strokes.filter(s=>s.author==='user').length),0,'Ctrl+Z in the line takes back the stroke drawn last');
+  assert.deepEqual(await texts(),['abcd'],'and leaves the paste');
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await texts(),['ab'],'the next Ctrl+Z takes back the paste');
+  await page.keyboard.press('Control+y');await page.keyboard.press('Control+y');
+  assert.equal(await page.evaluate(()=>N.core.S.strokes.filter(s=>s.author==='user').length),1,'redo brings the stroke back too');
+
+  // 6. Enter split the line: Ctrl+Z on the new line joins it back
+  await reset([{id:'h',y:60,text:'',h:30}]);
+  await page.keyboard.type('left right');
+  for(let i=0;i<5;i++)await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('Enter');
+  assert.deepEqual(await texts(),['left ','right'],'Enter splits the line');
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await texts(),['left right'],'Ctrl+Z joins it back');
+
+  // 7. the undo button takes a paste back as well
   await reset([{id:'e',y:60,text:'x',h:30}]);
   await paste('yz');
   await page.evaluate(()=>document.getElementById('btn-undo').click());
