@@ -6,17 +6,48 @@
 .app-actions button.app-primary,.app-guide button.app-primary{background:var(--graphite);color:var(--paper);border-color:transparent}
 .app-actions button:hover,.app-guide button:hover{filter:brightness(.9)}
 .app-actions button:focus-visible,.app-guide :is(button,select,input,summary):focus-visible{outline:2px solid var(--graphite);outline-offset:3px}
-.app-guide{font:400 15px/1.6 var(--ui);overflow-wrap:anywhere}
-.app-guide>p:first-child{margin-top:0;color:var(--ink-2)}
-.app-guide ol{padding-left:24px;margin:16px 0 24px}
-.app-guide li{padding:4px 0 4px 4px}
-.app-device{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:20px}
+.app-actions button,.app-guide button{display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.app-actions button i,.app-guide button i{font-size:18px}
+.app-guide{padding:0 10px 8px;font:400 15px/1.55 var(--ui);overflow-wrap:anywhere}
+.app-guide p{margin:6px 0}
+.app-hero{display:flex;align-items:center;gap:14px;margin:2px 0 18px}
+.app-hero img{flex:none;width:52px;height:52px;border-radius:12px;box-shadow:0 0 0 1px var(--rule-2),0 2px 8px rgba(0,0,0,.08)}
+.app-hero p{margin:0;color:var(--ink-2)}
+.app-lead{margin:0 0 18px}
+.app-lead button{flex:1 1 auto}
+.app-card{margin:0 0 14px;padding:14px 16px 16px;border-radius:var(--r-card);background:var(--tint)}
+.sheet .app-card h3{margin:0 0 10px;font-size:13px;font-weight:600;color:var(--graphite);letter-spacing:0}
+.app-card p{font-size:14px}
+.app-card button:not(.app-primary){background:var(--panel)}
+.app-seg{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;padding:3px;border-radius:var(--r-input);background:var(--tint)}
+.app-seg label{position:relative;display:flex;align-items:center;justify-content:center;gap:6px;min-height:40px;padding:6px 8px;border-radius:9px;color:var(--ink-2);font:500 13px/1.2 var(--ui);text-align:center;overflow-wrap:normal;cursor:pointer;transition:background-color .15s ease,color .15s ease}
+.app-seg label:hover{color:var(--graphite)}
+.app-seg label:has(input:checked){background:var(--panel);color:var(--graphite);box-shadow:0 1px 3px rgba(0,0,0,.1),0 0 0 .5px var(--rule)}
+.app-seg label:has(input:focus-visible){outline:2px solid var(--graphite);outline-offset:1px}
+.app-seg input{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
+.app-seg i{font-size:17px}
+.app-guide ol{list-style:none;counter-reset:step;padding:0;margin:14px 0 0}
+.app-guide li{counter-increment:step;position:relative;padding:3px 0 3px 36px;margin:0 0 8px;font-size:14px}
+.app-guide li::before{content:counter(step);position:absolute;left:0;top:2px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:var(--graphite);color:var(--paper);font:600 12px/1 var(--ui)}
+.app-guide li strong{font-weight:600;color:var(--graphite)}
+.app-guide li i{font-size:16px;vertical-align:-2px}
+.app-tip{margin:10px 0 0;padding-top:10px;border-top:1px solid var(--rule-2);font-size:13px!important}
 .app-guide select,.app-guide input{box-sizing:border-box;min-height:44px;padding:8px 12px;border:1px solid var(--rule);border-radius:var(--r-input);background:var(--panel);color:var(--graphite);font:inherit;max-width:100%}
 .app-guide input{display:block;width:100%;margin:8px 0}
-.app-guide details{border-top:1px solid var(--rule);padding-top:16px}
-.app-guide summary{cursor:pointer;font-weight:500;min-height:32px}
-.app-guide .sheet-notes{margin:18px 0 0}
+.app-guide details{margin:0 0 6px;padding:2px 16px;border-radius:var(--r-card);border:1px solid var(--rule-2)}
+.app-guide details[open]{padding-bottom:12px}
+.app-guide summary{display:flex;align-items:center;gap:8px;min-height:44px;cursor:pointer;font-weight:500;font-size:14px;list-style:none}
+.app-guide summary::-webkit-details-marker{display:none}
+.app-guide summary::after{content:"";margin-left:auto;width:7px;height:7px;border:solid var(--ink-2);border-width:0 1.5px 1.5px 0;transform:translateY(-2px) rotate(45deg);transition:transform .2s ease}
+.app-guide details[open] summary::after{transform:translateY(2px) rotate(-135deg)}
+.app-guide details p{font-size:14px}
+.app-status:empty{display:none}
+.app-foot{display:flex;gap:8px;margin:14px 0 0!important;font-size:13px!important;line-height:1.5!important;color:var(--ink-2)}
+.app-foot i{flex:none;font-size:16px;margin-top:1px}
+@media(max-width:480px){.app-seg label{flex-direction:column;gap:3px;min-height:52px;padding:6px 4px;font-size:12px}.app-guide{padding:0 4px 8px}.app-card{padding:12px 12px 14px}}
+:root[data-motion="off"] .app-seg label,:root[data-motion="off"] .app-guide summary::after{transition:none}
+@media(prefers-reduced-motion:reduce){.app-seg label,.app-guide summary::after{transition:none}}
 body:has(.sheet:not(.leave)) #app-recommendation{display:none}
 @media(max-width:600px){#app-recommendation{right:16px;bottom:calc(var(--safe-b) + 126px);padding:14px}}
-@media(max-height:500px){#app-recommendation{bottom:calc(var(--safe-b) + 74px);padding:12px}#app-recommendation p{display:none}.app-actions{margin-top:8px}}
+@media(max-height:500px){#app-recommendation{bottom:calc(var(--safe-b) + 74px);padding:12px}#app-recommendation p{display:none}.app-actions{margin-top:8px}.app-hero img{display:none}}
 @media print{#app-recommendation{display:none!important}}

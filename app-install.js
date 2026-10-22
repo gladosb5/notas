@@ -96,31 +96,42 @@ async function openApp(){
     else{running=false;show(true);}
   }finally{busy=false;}
 }
+const DEVICES=[['apple','iPhone & iPad','ph-apple-logo'],['android','Android','ph-android-logo'],['desktop','Computer','ph-desktop']];
+const STEPS={
+  apple:['<ol><li>Open this Notas address in <strong>Safari</strong>.</li><li>Tap <strong>Share</strong> <i class="ph ph-export" aria-hidden="true"></i>. Tap <strong>View More</strong> if needed.</li><li>Choose <strong>Add to Home Screen</strong>, not Add Bookmark.</li><li>Keep <strong>Open as Web App</strong> on if shown, then tap <strong>Add</strong>.</li></ol>','Notas then opens from its icon on your Home Screen.'],
+  android:['<ol><li>Open this Notas address in <strong>Chrome</strong>.</li><li>Tap <strong>⋮</strong> beside the address bar.</li><li>Choose <strong>Install app</strong> or <strong>Add to Home screen</strong>. Some versions say <strong>Install and create shortcut → Install</strong>.</li><li>Tap <strong>Install</strong>.</li></ol>','Notas then opens from your Home screen and app list.'],
+  desktop:['<ol><li>Open Notas in <strong>Chrome</strong> or <strong>Edge</strong>.</li><li>Click the install icon in the address bar, or choose <strong>Install Notas</strong> / <strong>Install this site as an app</strong> from the browser menu.</li><li>Confirm <strong>Install</strong>.</li></ol>','On a Mac in Safari, choose File → Add to Dock.']
+};
 function show(opening=false){
   const N=window.N;if(!N?.ui)return;
-  const opened=standalone();
-  const box=N.ui.openSheet('<h2>'+(opened?'Notas app':opening||installed||running?'Open Notas as an app':'Download Notas as an app')+'</h2>'+
-    '<div class="app-guide"><p>'+(opened?'You’re already using Notas as an app.':opening?'Your browser could not switch to the app. Use the options below, or keep writing here.':'Add Notas to your Home Screen and open it like your other apps.')+'</p>'+
-    (!opened?'<div class="app-actions">'+(running?'<button type="button" class="app-primary" id="app-open-now">Open in app</button>':'')+(deferred?'<button type="button" class="app-primary" id="app-install-now">Download as an app</button>':'')+'</div>':'')+
-    '<label class="app-device">Instructions for <select id="app-device"><option value="android">Android</option><option value="apple">iPad / iPhone</option><option value="desktop">Computer</option></select></label>'+
-    '<div id="app-device-steps"></div>'+
-    '<details'+(opening||installed||running||shared?' open':'')+'><summary>Already downloaded the app?</summary><p>Use your browser’s “Open in app” option if it appears. On Android, check the ⋮ menu; on a computer, check the address bar. Your browser decides whether links can open in the app.</p><p>On iPad or iPhone, open Notas from your Home Screen. Safari cannot reliably send this page to the app.</p>'+
-    (shared?'<p>To keep this shared invitation, copy its link below. Open the Notas app, choose … → open a shared link, and paste it there.</p><button type="button" id="app-copy-link">Copy shared link</button><p id="app-copy-status" role="status"></p>':'')+
-    '</details><p class="sheet-notes">Notes stay in the browser or app where you created them. Installation does not move your existing notes between browsers. On iPad and iPhone, export and import notes if you need them in the app.</p></div>',{fit:true});
-  const select=box.querySelector('#app-device');select.value=apple?'apple':android?'android':'desktop';
+  const opened=standalone(),toOpen=!opened&&(opening||installed||running);
+  // How to reach an app that is already on this device. Browsers, not Notas,
+  // decide whether a tab can be handed over.
+  const openHelp='<p>Use your browser’s <strong>Open in app</strong> option if it appears: on Android it is in the ⋮ menu, on a computer in the address bar. Your browser decides whether links can open in the app.</p><p>On iPad or iPhone, open Notas from your Home Screen. Safari cannot reliably send this page to the app.</p>'+
+    (shared?'<p>To keep this shared invitation, copy its link. In the Notas app, choose … → open a shared link, and paste it there.</p><div class="app-actions"><button type="button" id="app-copy-link"><i class="ph ph-copy" aria-hidden="true"></i>Copy shared link</button></div><p id="app-copy-status" class="app-status" role="status"></p>':'');
+  const actions=running||deferred?'<div class="app-actions app-lead">'+(running?'<button type="button" class="app-primary" id="app-open-now"><i class="ph ph-arrow-square-out" aria-hidden="true"></i>Open in app</button>':'')+(deferred&&!opened?'<button type="button" class="app-primary" id="app-install-now"><i class="ph ph-download-simple" aria-hidden="true"></i>Download as an app</button>':'')+'</div>':'';
+  const box=N.ui.openSheet('<h2>'+(opened?'Notas app':toOpen?'Open Notas as an app':'Download Notas as an app')+'</h2>'+
+    '<div class="app-guide"><div class="app-hero"><img src="./assets/icon-192.png" alt="" width="52" height="52"><p>'+(opened?'You’re already using Notas as an app.':opening?'Your browser could not switch to the app. Open it yourself, or keep writing here.':toOpen?'Notas is set up as an app. Open it to keep writing in its own window.':'Open Notas from your Home Screen or app list, in its own window, like your other apps.')+'</p></div>'+
+    (opened?'':actions)+
+    (toOpen?'<section class="app-card" aria-labelledby="app-open-title"><h3 id="app-open-title">Opening the app</h3>'+openHelp+'</section>':'')+
+    '<section class="app-card" aria-labelledby="app-steps-title"><h3 id="app-steps-title">'+(opened||toOpen?'Download on another device':'How to download')+'</h3>'+
+    '<div class="app-seg" id="app-device" role="radiogroup" aria-label="Instructions for">'+DEVICES.map(([value,label,icon])=>'<label><input type="radio" name="app-device" value="'+value+'"><i class="ph '+icon+'" aria-hidden="true"></i><span>'+label+'</span></label>').join('')+'</div>'+
+    '<div id="app-device-steps" aria-live="polite"></div></section>'+
+    (opened||toOpen?'':'<details'+(shared?' open':'')+'><summary>Already downloaded the app?</summary>'+openHelp+'</details>')+
+    '<p class="app-foot"><i class="ph ph-info" aria-hidden="true"></i><span>Notes stay in the browser or app where you created them. Installing does not move them between browsers. On iPad and iPhone, export and import notes to bring them into the app.</span></p></div>',{fit:true});
+  const device=apple?'apple':android?'android':'desktop';
   const steps=()=>{
-    box.querySelector('#app-device-steps').innerHTML=select.value==='apple'
-      ?'<ol><li>Open this Notas address in <strong>Safari</strong>.</li><li>Tap <strong>Share</strong> (the square with an upward arrow). Tap <strong>View More</strong> if needed.</li><li>Choose <strong>Add to Home Screen</strong>.</li><li>Keep <strong>Open as Web App</strong> on if shown, then tap <strong>Add</strong>.</li></ol><p class="sheet-notes">Choose Add to Home Screen, rather than Add Bookmark. Then tap the Notas icon on your Home Screen.</p>'
-      :select.value==='android'
-      ?'<ol><li>Open this Notas address in <strong>Chrome</strong>.</li><li>Tap <strong>⋮</strong> beside the address bar.</li><li>Choose <strong>Install app</strong> or <strong>Add to Home screen</strong>. In some versions, choose <strong>Install and create shortcut → Install</strong>.</li><li>Tap <strong>Install</strong> and follow the instructions.</li></ol>'
-      :'<ol><li>Open Notas in <strong>Chrome</strong> or <strong>Edge</strong>.</li><li>Click the install icon in the address bar, or choose <strong>Install Notas</strong> / <strong>Install this site as an app</strong> from the browser menu.</li><li>Confirm <strong>Install</strong>.</li></ol><p class="sheet-notes">On a Mac in Safari, choose File → Add to Dock.</p>';
+    const value=box.querySelector('#app-device input:checked').value,[list,tip]=STEPS[value];
+    box.querySelector('#app-device-steps').innerHTML=list+'<p class="app-tip">'+tip+'</p>';
   };
-  select.onchange=steps;steps();
+  box.querySelector('#app-device input[value="'+device+'"]').checked=true;
+  box.querySelector('#app-device').onchange=steps;steps();
   const launch=box.querySelector('#app-open-now');if(launch)launch.onclick=openApp;
   const download=box.querySelector('#app-install-now');if(download)download.onclick=install;
   const copy=box.querySelector('#app-copy-link');if(copy)copy.onclick=async()=>{
-    try{await navigator.clipboard.writeText(entryURL);box.querySelector('#app-copy-status').textContent='Link copied. Paste it in the app’s “open a shared link” menu.';}
-    catch{box.querySelector('#app-copy-status').textContent='Copy the link from this field:';const input=document.createElement('input');input.value=entryURL;input.readOnly=true;input.setAttribute('aria-label','shared link');box.querySelector('#app-copy-status').appendChild(input);input.select();}
+    const status=box.querySelector('#app-copy-status');
+    try{await navigator.clipboard.writeText(entryURL);status.textContent='Link copied. Paste it in the app’s “open a shared link” menu.';}
+    catch{status.textContent='Copy the link from this field:';const input=document.createElement('input');input.value=entryURL;input.readOnly=true;input.setAttribute('aria-label','shared link');status.appendChild(input);input.select();}
   };
 }
 // Receive only messages from this origin's service worker, never window messages.

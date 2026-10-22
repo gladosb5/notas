@@ -49,12 +49,12 @@ try{
     assert.match(await page.locator('#app-recommendation').innerText(),/Download Notas as an app/);
     await page.screenshot({path:`test-results/app-recommendation-${width}.png`});
     await page.click('#app-recommend-action');
-    await page.selectOption('#app-device','apple');
+    await page.click('#app-device label:has(input[value="apple"])');
     assert.match(await page.locator('#app-device-steps').innerText(),/Safari[\s\S]*Share[\s\S]*Add to Home Screen[\s\S]*Open as Web App/);
     assert.doesNotMatch(await page.locator('.app-guide').innerText(),/\bpwa\b/i);
     await page.screenshot({path:`test-results/app-ipad-guide-${width}.png`});
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'guide fits the viewport');
-    await page.selectOption('#app-device','android');
+    await page.click('#app-device label:has(input[value="android"])');
     assert.match(await page.locator('#app-device-steps').innerText(),/Chrome[\s\S]*⋮[\s\S]*Install app/);
     await page.keyboard.press('Escape');
     await page.click('#app-stay');await page.reload();
@@ -68,7 +68,7 @@ try{
   const ipad=await context({viewport:{width:1024,height:768},permissions:['clipboard-read','clipboard-write']});
   await ipad.addInitScript(()=>{Object.defineProperty(navigator,'platform',{value:'MacIntel'});Object.defineProperty(navigator,'maxTouchPoints',{value:5});});
   const ipadPage=await ipad.newPage();await load(ipadPage);await ipadPage.click('#app-recommend-action');
-  assert.equal(await ipadPage.inputValue('#app-device'),'apple','desktop-class iPad gets iPad instructions');
+  assert.equal(await ipadPage.inputValue('#app-device input:checked'),'apple','desktop-class iPad gets iPad instructions');
   await ipadPage.evaluate(()=>N.ui.closeSheet(true));
   const appleInvitation=base+'/notas.html?share=abcdefgh&gen=1234#host=apple-private-token';
   await load(ipadPage,appleInvitation);
