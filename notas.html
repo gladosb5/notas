@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v168">
+<meta name="notas-version" content="v169">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -2446,17 +2446,19 @@ const Undo = { back:[], fwd:[], typing:null };
    finger tap after Enter) restored a page from before the words, and they
    were gone with no redo. The step holds only the lines typed in, so a
    shared note never takes back someone else's line with it. */
-function typed(ln, next){
+function typed(ln, next, history){
   if(!Undo.typing){
     Undo.typing = new Map();
     /* the letter that replaces a selection belongs to the step that removed it */
     const top = Undo.back[Undo.back.length-1];
     Undo.typing.into = top && top.typingJoins && performance.now() - top.typingJoins < 1000 ? top : null;
     if(top) delete top.typingJoins;
-    /* new words after an undo end what could be redone, as in any editor */
-    Undo.fwd.length = 0;
     paintUndo();
   }
+  /* new words after an undo end what could be redone, as in any editor; the
+     browser's own undo and redo of typing do not, or a paste undone before
+     them could not be redone after */
+  if(!history && Undo.fwd.length){ Undo.fwd.length = 0; paintUndo(); }
   /* what this device typed the line into, kept per keystroke: text that
      arrives from someone else afterwards is not part of the run */
   const run = Undo.typing.get(ln.id);
@@ -2782,7 +2784,7 @@ function watchDpr(){
 watchDpr();
 applyPrefs();
 N.core = { imageBounds, flowPictures, pictureRoom, pictureChanges,S, M, Store, uid, clamp, $, layout, growDoc, setZoom, firstLine, displayTitle, cleanTitle, whenLabel, ZOOM_MIN, ZOOM_MAX, markDirty, save, serialize,
-           act, undo, redo, Undo, paintUndo, typed, toast, status, anonId, LINE_H, CONTENT_MAX, strokeById, reducedMotion, smoothWheel, glideTarget,
+           act, undo, redo, Undo, paintUndo, typed, sealTyping, toast, status, anonId, LINE_H, CONTENT_MAX, strokeById, reducedMotion, smoothWheel, glideTarget,
            FEEDBACK_URL, savePrefs, applyPrefs, setActive, getActive, saveView, getView, flushView, setSaveError, clearSaveError, withNoteLock, withIndexLock, deleteStoredNote, repairIndex, recoverRescues, rescueSave, patchIndexRows, exportText, isBlank, swipeAway,
            /* counts every edit to the page, so a picture of it can be reused until the next one */
            get revision(){ return revision; } };
@@ -5659,11 +5661,36 @@ function insertText(text){
   input.setRangeText(text, input.selectionStart, input.selectionEnd, 'end');
   input.dispatchEvent(new Event('input', {bubbles:true}));
 }
-/* plain words only: pasted markup would become nodes the model cannot see */
+/* plain words only: pasted markup would become nodes the model cannot see.
+   A paste is a step of its own, as in any editor, marked so that Ctrl+Z
+   finds it (see pasteOnTop) */
 function pasteText(text){
+  C.sealTyping();
+  const was = C.Undo.back[C.Undo.back.length-1];
   const span = spanning();
   if(span && !collapseSpan(span)) return;
+  const ln = currentLine(), input = ln && els.get(ln.id)?.firstChild, seam = input ? input.selectionStart : 0;
   insertText(text);
+  C.sealTyping();
+  const top = C.Undo.back[C.Undo.back.length-1];
+  if(!top || top === was) return;
+  top.paste = true;
+  /* the caret goes back to where the paste began, and on a redo to its end */
+  if(ln && input){
+    const end = input.selectionStart, u = top.undo, r = top.redo;
+    top.undo = ()=>{ u(); caretAfter = {id:ln.id, at:seam}; };
+    top.redo = ()=>{ r(); caretAfter = {id:ln.id, at:end}; };
+  }
+}
+/* The browser's own undo takes typing back word by word, but it never saw a
+   paste go in: the words are put in by script. Its Ctrl+Z passed over the
+   paste and took back the letters before it instead. While a paste is the
+   latest thing done (or undone) here, undo and redo are the page's own. */
+function pasteOnTop(redo){
+  const U = C.Undo;
+  if(U.typing) for(const run of U.typing.values()) if(run.now !== run.was) return false;
+  const top = redo ? U.fwd[U.fwd.length-1] : U.back[U.back.length-1];
+  return !!(top && top.paste);
 }
 /* copy and cut across lines: the browser's own text of the selection would
    carry the ghost layers; the words come from the model instead */
@@ -5682,7 +5709,11 @@ root.addEventListener('drop', e=>{ e.preventDefault(); const t = e.dataTransfer 
 root.addEventListener('beforeinput', e=>{
   if(e.isComposing)return;
   const t = e.inputType || '';
-  if(t === 'historyUndo' || t === 'historyRedo')return; // Native text history must not delete the active selection first.
+  if(t === 'historyUndo' || t === 'historyRedo'){
+    /* the Edit menu's undo, or a shake on a phone: a paste is the page's step */
+    if(pasteOnTop(t === 'historyRedo')){ e.preventDefault(); t === 'historyRedo' ? C.redo() : C.undo(); }
+    return; // Native text history must not delete the active selection first.
+  }
   if(/^format/.test(t)){ e.preventDefault(); return; }
   if(t === 'insertParagraph' || t === 'insertLineBreak'){
     e.preventDefault();
@@ -5723,7 +5754,7 @@ root.addEventListener('input', ev=>{
   onInput(ln, i, ev);
 });
 function onInput(ln, i, ev){
-  C.typed(ln, i.value);
+  C.typed(ln, i.value, /^history/.test(ev.inputType || ''));
   ln.text = i.value;
   if(ln.tutor){ delete ln.tutor; delete ln.wait; const d = els.get(ln.id); d && d.classList.remove("tutor","wait"); }
   ln.suppressAnswer=/^delete|^history/.test(ev.inputType||'')?ln.text:null;
@@ -5883,6 +5914,8 @@ function setGhost(id, answer){
   paintGhost(ln);
 }
 
+/* where an undone or redone step wants the caret on the focused line */
+let caretAfter = null;
 function render(){
   const seen = new Set();
   let keep;
@@ -5906,10 +5939,11 @@ function render(){
        (undo, a split, a join): refresh it too, caret kept where it was */
     if(i.value !== ln.text){
       if(isFocused(ln.id)){
-        const at = Math.min(i.selectionStart ?? ln.text.length, ln.text.length);
+        const at = Math.min(caretAfter && caretAfter.id === ln.id ? caretAfter.at : i.selectionStart ?? ln.text.length, ln.text.length);
         i.value = ln.text; i.setSelectionRange(at, at);
       } else i.value = ln.text;
     }
+    if(caretAfter && caretAfter.id === ln.id) caretAfter = null;
     d.classList.toggle('focus', ln.id === curId);
     d.classList.toggle('tutor', !!ln.tutor);
     d.classList.toggle('wait', !!ln.wait);
@@ -6043,6 +6077,10 @@ function keys(e, ln, input){
      no key at all; there is nothing here to act on, the input event has it */
   if(typeof e.key !== 'string') return;
   const mod = e.ctrlKey || e.metaKey;
+  if(mod && !e.altKey){
+    const k = e.key.toLowerCase(), redo = k === 'y' || (k === 'z' && e.shiftKey);
+    if((k === 'z' || k === 'y') && pasteOnTop(redo)){ e.preventDefault(); redo ? C.redo() : C.undo(); return; }
+  }
   /* A selection over several lines: writing, Enter, Backspace or Delete
      first take the words between its ends, in one step, and then land at
      the seam as they would on one line. Arrows, modifiers and shortcuts are
