@@ -12,7 +12,7 @@ try{
     const matches=N.nota.mathMatches('costs $5 and $10; solve $x+2$');
     S.strokes=[];S.lines=[];C.Undo.back=[];C.Undo.fwd=[];
     const writer=N.nota.Writer({x:10,y:200,right:600,instant:true,unit:1});
-    writer.feed('Hello ');writer.feed('ä½ å¥½ ðŸ˜€');writer.finish();
+    writer.feed('Hello ');writer.feed('你好 😀');writer.finish();
     const unicode=S.lines.length,ink=S.strokes.length;C.undo();const removed=S.lines.length===0&&S.strokes.length===0;C.redo();
     return {prices,matches:matches.map(m=>m[0]),unicode,ink,removed,restored:S.strokes.length};
   });

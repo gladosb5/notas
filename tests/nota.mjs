@@ -80,7 +80,7 @@ try{
   await page.waitForFunction(()=>!N.core.S.lines.some(l=>l.wait),null,{timeout:5000});
   assert.equal(calls.length,1,'one request for one question');
   assert.equal(calls[0].auth,undefined,'the private key is never sent to the proxy');
-  assert.equal(calls[0].body.model,'qwen-3.8-27b','the model that reads pictures is asked');
+  assert.equal(calls[0].body.model,'gpt-oss-120b','a typed question with only words around it goes to the quick text model');
   assert.equal(typeof calls[0].body.messages[1].content,'string','a page with no ink or pictures sends words alone');
   assert.match(said(calls[0].body.messages[1].content),/12 x 12 = 144/,'the page is the context');
   assert.match(said(calls[0].body.messages[1].content),/Question: what is the square root of this\?/,'the question is sent without the call');

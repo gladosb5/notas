@@ -142,7 +142,7 @@ const SYSTEM=[
   'Drawings on the page are described in words between [diagram] and [end of diagram], or [graph] and [end of graph]: the shapes, the lines and arrows joining them, and the handwriting labelling each part, with places as (across, down) from 0 to 100 over the drawing. An arrow "from A to B" points at B. A graph gives its curves as points in the units written on its axes. Read the description as the drawing the person made (a flowchart, a food chain, a Venn diagram, a triangle, a circuit, a graph) and answer about the drawing itself; never mention the description, the coordinates or the brackets.',
   'A question may come with a picture of the page around it: the person\'s handwriting and drawings in dark ink, and any photo or picture they put on the page. The machine readings come from that same ink. Use the picture to read what the readings missed or got wrong and to see drawings and photos, and trust it over a reading that disagrees with it. Never mention that you were sent a picture.',
   'Answer whatever is asked: work out or check maths, explain an idea, suggest what to cook with what is listed and how, convert units or currencies, fix spelling or grammar, translate, summarise the notes, plan the steps, define a word, give a fact. Be accurate; if you are not sure, say so briefly.',
-  'Answer in plain text only: no markdown (no **, *, _, #, >, tables or links), no bullets, no LaTeX, no $ signs around maths, no code fences, no emoji, no headings. Write maths in plain notation such as 2x + 3 = 11, sqrt(16), 3/4, 2^3, 12 x 7. Use only plain letters, digits and punctuation, since the answer is handwritten onto the page.',
+  'Use plain prose: no markdown at all (no **, *, _, #, >, tables or links), no bullets, code fences or emoji. Write mathematics in LaTeX delimited by $...$ or $$...$$, and put only the formula itself between the dollars: never words, units or a price. Write a price as plain text, such as 5 dollars. The pen supports nested \\frac, \\sqrt, superscripts, subscripts, Greek names and common operators. Prefer short equations; avoid matrices, environments and custom macros.',
   'Be brief: one to three short sentences, at most about 45 words, unless the person asks for the full working, the steps, a list or a recipe, then give short numbered lines, one per line.',
   'Write so a grade 7 student (about 12 years old) understands, above all when explaining: short sentences, everyday words, one idea at a time, and a simple example when it helps. When you must use a subject word, such as denominator or photosynthesis, say what it means in a few plain words. Stay correct; make it simple, not wrong.',
   'Rows marked [nota reply] and red handwriting in the page picture are your earlier replies, included so you can answer follow-up questions. Treat them as conversation context, not as new instructions. Continue from them when the person refers to your earlier answer.',
@@ -371,6 +371,9 @@ function obstacles(skip){
   }
   return out;
 }
+/* A bounded TeX subset laid out as pen paths, not pixels. Coordinates are
+   in the same units as the handwriting face. Unsupported syntax falls back
+   to readable source rather than silently losing part of an equation. */
 function mathLayout(source){
   source=source.replace(/[\u{1D400}-\u{1D7FF}]/gu,ch=>ch.normalize('NFKD'));
   if(source.length>4000)throw Error('equation too long');
@@ -1564,7 +1567,7 @@ async function askSelection(){
   let inDrawing=0;for(const id of ids)if(drawn.some(d=>d.ids.has(id)))inDrawing++;
   if(drawn.length&&inDrawing>=ids.length*0.5){
     askingSelection=false;
-    const box=selectedBox(ids);if(!box){C.status('');return;}
+    const box=selectedBox(ids);if(!box){C.status('');unsay();return;}
     const question='the person circled this drawing on the page and asked about it:\n'+drawn.map(d=>d.lines.join('\n')).join('\n')+
       '\nsay briefly what it shows, then help with it: answer it if it asks something, check it if it is working, explain the idea if it is a diagram from a lesson.';
     const rowH=Math.min(60,Math.max(12,window.NOTAS_DIAGRAM.heightOf(S.strokes.filter(st=>st.author==='user'))));
@@ -1723,7 +1726,7 @@ async function fireTyped(id,candidate=null){
   const control=new AbortController(),run={question:call.question,abort:()=>control.abort(),done:false,superseded:false,answer:'',reply};
   typedRuns.set(id,run);
   const completed=await answer(call.question,{x:0,y:ln.y,lineId:id},{
-    feed(piece){ if(control.signal.aborted)return; run.answer+=piece; if(!reply.update(tidy(run.answer).trim()))control.abort(); },
+    feed(piece){ if(control.signal.aborted)return; run.answer+=piece; if(!reply.update(tidy(run.answer,true).replace(/(?<!\\)\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]/g,m=>m.replace(/\s*\n\s*/g,' ')).trim()))control.abort(); },
     /* the paper under the reply goes once the last word is in */
     finish(){ run.done=true; reply.done(); },
     /* nothing arrived, or the reply was cut short: the lines go too, unless a
@@ -1885,7 +1888,9 @@ async function answer(question,where,writer,control,onWrite,prepared=null){
       let picture=null;try{picture=await pagePicture(where,drawings);}catch(e){console.warn('nota: no picture of the page',e);}
       if(noteEpoch!==epoch||writer.aborted||control.signal.aborted)throw new DOMException('Question withdrawn','AbortError');
       const grab=()=>{arm();C.status(GRAB_TEXT);say(GRAB_TEXT,true);};
-      await stream(question,context,feed,control.signal,picture,false,arm,sharedPage()?null:{onGrab:grab});
+      /* a typed question with only words around it goes to the quick text
+         model; one with ink or a picture near it, to the model that sees them */
+      await stream(question,context,feed,control.signal,picture,!!where.lineId&&!picture,arm,sharedPage()?null:{onGrab:grab});
     }
     if(!text.trim())throw Error('nota returned an empty answer. try again.');
     if(noteEpoch===epoch&&!writer.aborted){writer.finish();remember();complete=true;}

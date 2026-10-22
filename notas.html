@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v170">
+<meta name="notas-version" content="v171">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -648,6 +648,9 @@ body[data-tool="text"]:not([data-image-sel]) .line{pointer-events:auto}
 .line.tutor.wait::before{content:"";position:absolute;left:-2px;top:1px;height:28px;aspect-ratio:104/81;pointer-events:none}
 @keyframes notaThink{to{-webkit-mask-position:102.5% 0;mask-position:102.5% 0}}
 /* a completed "hey nota," is the machine's blue; the mirror paints the line */
+.line.latex .txt{color:transparent}
+.line.latex .ghost-layer{color:var(--nota);overflow:visible}
+.line.latex .katex-display{margin:.3em 0;overflow-x:auto;overflow-y:hidden}
 .line.call .txt{color:transparent}
 .line.call .ghost-layer{color:var(--text-ink,inherit)}
 .line.call .ghost-layer .call{color:var(--blue)}
@@ -3834,6 +3837,7 @@ function carryReadings(change){
         cache.set(cl.hash, cache.get(old)); carried = true;
       }
     }
+
     if(carried) N.recog.rebuild();
   }
 }
@@ -5503,7 +5507,8 @@ let curId = null;
 function setCurrent(id){
   if(id === curId) return;
   const was = curId; curId = id;
-  for(const [lid, d] of els) d.classList.toggle('focus', lid === id);
+  for(const lid of [was,id]){const d=els.get(lid),ln=lid&&byId(lid);if(d)d.classList.toggle('focus',lid===id);if(d&&ln?.tutor){paintGhost(ln);fitLine(ln,d.firstChild,true);}}
+  renderPositions();
   if(was !== null) N.mathcore && N.mathcore.run();
 }
 function trackCurrent(){ const ln = currentLine(); setCurrent(ln ? ln.id : null); }
@@ -5777,6 +5782,22 @@ function callLength(ln){ return ln.tutor || !N.nota || !N.nota.callLength ? 0 : 
 function paintGhost(ln){
   const d = els.get(ln.id); if(!d) return;
   const layer = d.querySelector('.ghost-layer'); if(!layer) return;
+  const math=ln.tutor&&curId!==ln.id&&window.katex&&N.nota?.mathMatches?N.nota.mathMatches(ln.text):[];
+  d.classList.toggle('latex',math.length>0);
+  if(math.length){
+    if(layer.dataset.latex!==ln.text){
+      layer.textContent='';delete layer.dataset.shape;let at=0;
+      for(const m of math){
+        layer.appendChild(document.createTextNode(ln.text.slice(at,m.index)));
+        const span=document.createElement('span');
+        katex.render(m[1]??m[2]??m[3]??m[4],span,{throwOnError:false,trust:false,maxExpand:1000,maxSize:10,displayMode:m[1]!==undefined||m[4]!==undefined});
+        layer.appendChild(span);at=m.index+m[0].length;
+      }
+      layer.appendChild(document.createTextNode(ln.text.slice(at)));layer.dataset.latex=ln.text;
+    }
+    return;
+  }
+  if(layer.dataset.latex!==undefined){delete layer.dataset.latex;layer.textContent='';delete layer.dataset.shape;}
   const text = ghostText(ln), call = callLength(ln);
   d.classList.toggle('call', call > 0);
   if(!text && !call){ if(layer.childNodes.length){ layer.textContent = ''; delete layer.dataset.shape; } return; }
@@ -5946,7 +5967,7 @@ function render(){
   }
   for(const [id, d] of els) if(!seen.has(id)){ d.remove(); els.delete(id); ghosts.delete(id); }
   if(keep){ const c = els.get(keep[0])?.firstChild; if(c && inHost()) c.setSelectionRange(keep[1], keep[2], keep[3]); }
-  for(const ln of S.lines) paintGhost(ln);
+  for(const ln of S.lines){ paintGhost(ln);const input=els.get(ln.id)?.firstChild;if(input&&ln.tutor)fitLine(ln,input,false); }
   reflow();
   renderPositions();
 }
@@ -5990,11 +6011,12 @@ function measure(input, text){
 }
 function fitLine(ln,input,shift){
   const old=Math.max(C.LINE_H,ln.h||C.LINE_H);
-  const key=input.value+'|'+input.style.width+'|'+getComputedStyle(input).font;
+  const key=input.value+'|'+input.style.width+'|'+getComputedStyle(input).font+'|'+input.parentNode.classList.contains('latex');
   // Shared line heights may come from a different screen; keep our measured height.
   if(!shift&&input._fitKey===key&&input._fitHeight){ ln.h=input._fitHeight;if(input.style.height!==ln.h+'px')input.style.height=ln.h+'px'; return; }
   input.style.height='1px';
-  const next=Math.max(C.LINE_H,Math.ceil(input.scrollHeight));
+  const mathLayer=input.parentNode.classList.contains('latex')?input.parentNode.querySelector('.ghost-layer'):null;
+  const next=Math.max(C.LINE_H,Math.ceil(input.scrollHeight),mathLayer?mathLayer.scrollHeight:0);
   input.style.height=next+'px';input.scrollTop=0;input.scrollLeft=0;ln.h=next;input._fitKey=key;input._fitHeight=next;
   if(shift&&next!==old&&!S.pdf){
     const delta=next-old;

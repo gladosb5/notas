@@ -2,7 +2,7 @@ import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {startServer} from '../scripts/serve.mjs';
-const typedPrimary='qwen-3.8-27b';
+const typedPrimary='gpt-oss-120b';
 const primary='qwen-3.8-27b',cloudflare='@cf/qwen/qwen3.8-27b',textModel='gpt-oss-120b';
 const server=await startServer(0),browser=await chromium.launch({channel:'msedge',headless:true});
 try{

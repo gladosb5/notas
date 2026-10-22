@@ -10,8 +10,9 @@ const ask=(content,extra={})=>({model:MODEL,stream:true,max_tokens:1600,messages
 test('only the supported vision and text models are allowed',()=>{
   assert.equal(MODEL,'qwen-3.8-27b');
   assert.ok(notaBody(ask('hello')));
-  assert.equal(notaBody({...ask('hello'),model:TEXT_MODEL}).model,TEXT_MODEL);
-  assert.equal(notaBody(ask([{type:'image_url',image_url:{url:jpeg}}],{model:TEXT_MODEL})),null);
+  assert.equal(notaBody(ask('hello',{model:TEXT_MODEL})).model,'gpt-oss-120b');
+  assert.equal(notaBody(ask('hello',{model:'other-model'})),null);
+  assert.equal(notaBody(ask([{type:'image_url',image_url:{url:jpeg}}],{model:TEXT_MODEL})),null,'text model never accepts images');
   assert.equal(notaBody({...ask('hello'),stream:false}),null);
 });
 

@@ -65,6 +65,7 @@ try{
   assert.equal(calls.length,1,'one question, one request');
   const sent=said(calls[0].messages[1].content),system=calls[0].messages[0].content;
   assert.match(system,/\[diagram\] and \[end of diagram\]/,'nota is told how drawings are described');
+  assert.equal(calls[0].model,'qwen-3.8-27b','a typed question with drawings near it goes to the model that sees them');
   const picture=calls[0].messages[1].content.find(p=>p.type==='image_url');
   assert.ok(picture&&/^data:image\/jpeg;base64,/.test(picture.image_url.url),'the drawings go as a picture too');
   const size=await page.evaluate(url=>new Promise(r=>{const i=new Image();i.onload=()=>r([i.naturalWidth,i.naturalHeight]);i.src=url;}),picture.image_url.url);
@@ -98,6 +99,7 @@ try{
   assert.equal(calls.length,2,'asking about the circled drawing makes a request');
   const q=said(calls[1].messages[1].content);
   assert.match(q,/Question: the person circled this drawing/,'the question is about the drawing');
+  assert.equal(calls[1].model,'qwen-3.8-27b');
   const circled=calls[1].messages[1].content.find(p=>p.type==='image_url');
   const circledSize=await page.evaluate(url=>new Promise(r=>{const i=new Image();i.onload=()=>r([i.naturalWidth,i.naturalHeight]);i.src=url;}),circled.image_url.url);
   assert.ok(circledSize[1]<size[1],'the circled drawing is sent on its own, not the whole page: '+circledSize+' vs '+size);

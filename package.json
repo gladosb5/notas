@@ -20,6 +20,7 @@
     "test:background": "node tests/background.mjs",
     "test:theme-rotation": "node tests/theme-rotation.mjs",
     "test:crop": "node tests/crop.mjs",
+    "test:latex": "node tests/nota-latex.mjs",
     "test:collab-usage": "node --test tests/collab-usage.test.mjs",
     "build:collab": "node scripts/build-collab.mjs",
     "test:autocrop": "node tests/cutout-autocrop.mjs",
