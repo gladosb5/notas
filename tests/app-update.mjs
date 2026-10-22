@@ -9,16 +9,17 @@ const sourceServer=await startServer(0),sourceBase=`http://127.0.0.1:${sourceSer
 const html=await readFile(new URL('../notas.html',import.meta.url),'utf8');
 const sw=await readFile(new URL('../sw.js',import.meta.url),'utf8');
 const current=Number(/notas-local-v(\d+)/.exec(sw)[1]);
-let version=current-1;
+let version=current-1,updateGate=null;
 const server=createServer(async(req,res)=>{
   try{
-    const pathname=new URL(req.url,'http://localhost').pathname;
+    const url=new URL(req.url,'http://localhost'),pathname=url.pathname;
     res.setHeader('Cache-Control','no-store');
     if(pathname==='/sw.js'){
       res.setHeader('Content-Type','text/javascript');
       res.end(sw.replace(/notas-local-v\d+/,`notas-local-v${version}`).replace(/const SHELL=\[[\s\S]*?\];/,"const SHELL=['./notas.html','./nota.js','./model-contract.js'];"));return;
     }
     if(pathname==='/notas.html'){
+      if(url.searchParams.has('update')&&updateGate)await updateGate;
       res.setHeader('Content-Type','text/html');
       res.end(html.replace(/name="notas-version" content="v\d+"/,`name="notas-version" content="v${version}"`).replace('aiOn:true','aiOn:false'));return;
     }
@@ -71,8 +72,16 @@ try{
   await page.waitForFunction(async()=>!!(await navigator.serviceWorker.getRegistration('./')).waiting);
   await page.waitForFunction(()=>window.updateNotices.length===1);
   assert.ok((await page.evaluate(()=>window.updateNotices[0])).includes('v'+current));
+  let releaseUpdate;updateGate=new Promise(resolve=>releaseUpdate=resolve);
   await page.evaluate(()=>N.ui.menuSheet());
-  await Promise.all([page.waitForEvent('load'),page.locator('#refresh-site').click()]);await ready(page);
+  const reloaded=page.waitForEvent('load');
+  await page.locator('#refresh-site').click();
+  await page.locator('#prep-update-art').waitFor();
+  assert.equal(await page.locator('#prep-word').innerText(),'updating');
+  assert.equal(await page.locator('#preparing').getAttribute('aria-hidden'),null);
+  assert.equal(await page.locator('#prep-skip').isVisible(),false);
+  releaseUpdate();updateGate=null;await reloaded;await ready(page);
+  assert.equal(await page.locator('#preparing').getAttribute('data-update-resume'),'true','the updating screen continues during the reload');
   assert.equal(await controllerVersion(page),'v'+current,'update activates the new worker before reloading');
   assert.equal(await page.locator('meta[name="notas-version"]').getAttribute('content'),'v'+current);
   await page.waitForTimeout(400);
@@ -106,7 +115,7 @@ try{
   await page.reload();await ready(page);
   assert.equal(await controllerVersion(page),'v'+(current+1));
   assert.deepEqual(errors,[]);
-  console.log('Real update: worker activated before reload, no repeated notice, note/theme preserved, older tab undisturbed, legacy updater handoff repaired.');
+  console.log('Real update: updating screen shown across reload, worker activated before reload, no repeated notice, note/theme preserved, older tab undisturbed, legacy updater handoff repaired.');
 }finally{
   await browser.close();server.closeAllConnections();sourceServer.closeAllConnections();
   await Promise.all([new Promise(r=>server.close(r)),new Promise(r=>sourceServer.close(r))]);

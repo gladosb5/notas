@@ -102,3 +102,12 @@ Run `npm run test:app-install` for responsive guidance, installation-event,
 dismissal, shared-link validation, and real service-worker handoff coverage.
 Standalone display, native install events, and OS focus permission are emulated in those tests;
 OS installation and browser/OS link capture require testing on actual devices.
+
+## Updating the app
+
+Choose **… → update** to return to the launch logo with an **updating** progress
+bar. The estimated progress eases forward while the update downloads and
+installs, continues across the reload, and completes when the notebook is ready.
+A failed connection or save returns to the current note. Reduced motion uses
+phase changes. Run `npm run test:app-update` to check the update screen, recovery,
+worker activation, and note preservation.
