@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v176">
+<meta name="notas-version" content="v177">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -865,6 +865,9 @@ body[data-tool="eraser"] #col .chip{pointer-events:none}
   transition:width .38s var(--spring);
 }
 #pill-strip::-webkit-scrollbar{display:none}
+/* the highlighter joins the tools on a PDF notebook only */
+body:not(.pdf-notebook) .pdf-only{display:none}
+body.pdf-notebook #pill{--pill-w:calc(var(--tool) * 5 + var(--gap) * 4)}
 #pill[data-open="true"] #pill-strip{width:calc(var(--pill-w) * 2);overflow-x:auto;overscroll-behavior-x:contain}
 .pill-x{visibility:hidden;transition:visibility 0s .38s}
 #pill[data-open="true"] .pill-x{visibility:visible;transition-delay:0s}
@@ -1809,6 +1812,7 @@ html[data-motion="off"] .prep-trace::before{transform:scaleX(1);opacity:.55}
     <span id="pill-lens" aria-hidden="true"></span>
     <button class="tool" data-tool="text" aria-label="type text" aria-pressed="true" aria-keyshortcuts="T" aria-expanded="false" aria-controls="textpop" title="text (T), tap again for colours"><i class="ph ph-text-t"></i><span class="fb">T</span></button>
     <button class="tool" data-tool="pen" aria-label="pen" aria-pressed="false" aria-keyshortcuts="P" aria-expanded="false" aria-controls="penpop" title="pen (P), tap again for colours"><i class="ph ph-pencil-simple"></i><span class="fb">P</span></button>
+    <button class="tool pdf-only" data-tool="mark" aria-label="highlighter" aria-pressed="false" aria-keyshortcuts="H" aria-expanded="false" aria-controls="penpop" title="highlighter (H), tap again for colours"><i class="ph ph-highlighter"></i><span class="fb">H</span></button>
     <button class="tool" data-tool="eraser" aria-label="eraser" aria-pressed="false" aria-keyshortcuts="E" title="eraser (E)"><i class="ph ph-eraser"></i><span class="fb">E</span></button>
     <button class="tool" data-tool="select" aria-label="select and move" aria-pressed="false" aria-keyshortcuts="V" title="select, then drag to move (V)"><i class="ph ph-selection"></i><span class="fb">V</span></button>
 
@@ -1836,6 +1840,12 @@ html[data-motion="off"] .prep-trace::before{transform:scaleX(1);opacity:.55}
     <button class="tool width" data-w="1.5" aria-label="thin line" aria-pressed="false" title="thin"><i style="--d:4px"></i></button>
     <button class="tool width" data-w="2.4" aria-label="medium line" aria-pressed="true" title="medium"><i style="--d:7px"></i></button>
     <button class="tool width" data-w="4" aria-label="thick line" aria-pressed="false" title="thick"><i style="--d:11px"></i></button>
+  </div>
+  <div class="penpop-row pdf-only" role="group" aria-label="highlighter colour">
+    <button class="tool swatch mark" data-mark="#FFE066" aria-label="highlighter, yellow" aria-pressed="false" title="yellow highlighter"><i style="--c:#FFE066"></i></button>
+    <button class="tool swatch mark" data-mark="#A8E6A1" aria-label="highlighter, green" aria-pressed="false" title="green highlighter"><i style="--c:#A8E6A1"></i></button>
+    <button class="tool swatch mark" data-mark="#FFB3C7" aria-label="highlighter, pink" aria-pressed="false" title="pink highlighter"><i style="--c:#FFB3C7"></i></button>
+    <button class="tool swatch mark" data-mark="#A6D8FF" aria-label="highlighter, blue" aria-pressed="false" title="blue highlighter"><i style="--c:#A6D8FF"></i></button>
   </div>
 </div>
 
@@ -2967,7 +2977,7 @@ function liveFrame(){
   xInk.setTransform(k,0,0,k, M.dpr*(M.colLeft-sc.scrollLeft), -M.dpr*sc.scrollTop);
 }
 let eraserCursor=null;
-function clearLive(){if(eraserCursor)eraserCursor.hidden=true;cInk.style.opacity='';xInk.setTransform(1,0,0,1,0,0); xInk.clearRect(0,0,cInk.width,cInk.height); }
+function clearLive(){if(eraserCursor)eraserCursor.hidden=true;cInk.style.opacity='';cInk.style.mixBlendMode='';xInk.setTransform(1,0,0,1,0,0); xInk.clearRect(0,0,cInk.width,cInk.height); }
 function visible(bbox){
   const z = M.zoom;
   const top = sc.scrollTop/z - 60, bot = (sc.scrollTop + M.vh)/z + 60;
@@ -2978,6 +2988,8 @@ function visible(bbox){
   return bbox[2] >= left && bbox[0] <= right;
 }
 const USER_INK_WEIGHT = 1.3;
+/* the highlighter (PDF notebooks only): a wide, flat band in a soft colour */
+const MARK_COLOR = '#FFE066', MARK_W = 14;
 /* Segments from point index `from` onward. Each carries its own width, which
    is why they are separate paths; the pressure is low-pass filtered so the
    width difference between neighbours stays below what round caps can show. */
@@ -2985,6 +2997,15 @@ function drawSegments(ctx, st, from){
   const p = st.pts;
   /* nota's hand is still on this stroke: only the points it has reached */
   const end = st._show !== undefined ? Math.min(p.length, st._show*3) : p.length;
+  /* a highlighter mark is one even band, multiplied into the page so the
+     printed words under it stay black */
+  if(st.author === 'mark'){
+    ctx.save(); ctx.globalCompositeOperation = 'multiply';
+    ctx.strokeStyle = st.color || MARK_COLOR; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = st.w;
+    ctx.beginPath(); const i0 = Math.max(0, (from-1)*3); ctx.moveTo(p[i0], p[i0+1]);
+    for(let i=i0+3; i<end; i+=3) ctx.lineTo(p[i], p[i+1]);
+    ctx.stroke(); ctx.restore(); return;
+  }
   const weight = st.author === 'user' ? USER_INK_WEIGHT : 1;
   ctx.strokeStyle = (N.nota?.isAskedStroke?.(st.id)?colors.blue:null) || st.color || inkColor(st.author); ctx.lineCap='round'; ctx.lineJoin='round';
   /* One path per segment meant one stroke() call per point: a page of
@@ -3010,11 +3031,17 @@ function drawSegments(ctx, st, from){
 function drawStroke(ctx, st){
   const p = st.pts;
   if(st._show !== undefined && st._show < 2) return;
-  if(p.length < 6) { dot(ctx, st); return; }
-  drawSegments(ctx, st, 1);
+  /* on a PDF, ink belongs to the page it started on and stops at its edge */
+  const clipped = !!(S.pdf && N.pdf?.clip(ctx, st));
+  if(p.length < 6) dot(ctx, st); else drawSegments(ctx, st, 1);
+  if(clipped) ctx.restore();
 }
 function dot(ctx, st){
   const p = st.pts; if(p.length < 3) return;
+  if(st.author === 'mark'){
+    ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = st.color || MARK_COLOR;
+    ctx.beginPath(); ctx.arc(p[0], p[1], st.w/2, 0, 6.284); ctx.fill(); ctx.restore(); return;
+  }
   ctx.fillStyle = (N.nota?.isAskedStroke?.(st.id)?colors.blue:null) || st.color || inkColor(st.author);
   const weight = st.author === 'user' ? USER_INK_WEIGHT : 1;
   ctx.beginPath(); ctx.arc(p[0], p[1], st.w*0.6*weight, 0, 6.284); ctx.fill();
@@ -3074,15 +3101,17 @@ function render(onPaint){
       const selected=picked?.has(el.firstChild?.dataset.id);
       el.style.transform=selected?'translate('+moving.dx+'px,'+moving.dy+'px)':'';
     }
-    /* the student's graphite and nota's red both live here; nothing else does */
-    for(const st of S.strokes){
-      if(st.author !== 'user' && st.author !== 'ai') continue;
+    /* the student's graphite and nota's red both live here, over any
+       highlighter marks; nothing else does */
+    const paintInk=st=>{
       const sh=peerShift.size?peerShift.get(st.id):null;
       if((picked && picked.has(st.id))||sh){
         xCommit.save(); xCommit.translate((picked&&picked.has(st.id)?moving.dx:0)+(sh?sh.dx:0), (picked&&picked.has(st.id)?moving.dy:0)+(sh?sh.dy:0));
         drawStroke(xCommit, st); xCommit.restore();
       } else if(visible(st.bbox)) drawStroke(xCommit, st);
-    }
+    };
+    for(const st of S.strokes) if(st.author === 'mark') paintInk(st);
+    for(const st of S.strokes) if(st.author === 'user' || st.author === 'ai') paintInk(st);
     if(S.selection.length){
       xCommit.save();
       xCommit.strokeStyle = colors.blue;
@@ -3266,15 +3295,20 @@ const ERASE_R = { pen:9, mouse:9, touch:14 };
    theme's graphite", which is why it is left off the stroke: those strokes
    keep following the theme, while a chosen colour is baked in. */
 const pen = (()=>{
-  try{ const v = JSON.parse(localStorage.getItem('notas.pen')||'{}'); return { color:String(v.color||''), w:+v.w || 2.4 }; }
-  catch(e){ return { color:'', w:2.4 }; }
+  try{ const v = JSON.parse(localStorage.getItem('notas.pen')||'{}'); return { color:String(v.color||''), w:+v.w || 2.4, mark:v.mark===true, markColor:/^#[0-9a-f]{6}$/i.test(v.markColor||'')?v.markColor:'' }; }
+  catch(e){ return { color:'', w:2.4, mark:false, markColor:'' }; }
 })();
+/* the highlighter only exists on a PDF; elsewhere the same tool is the pen */
+function marking(){ return !!(pen.mark && S.pdf && S.tool === 'pen'); }
 function setPen(patch){
   Object.assign(pen, patch);
   try{ localStorage.setItem('notas.pen', JSON.stringify(pen)); }catch(e){}
   const swatches = [...document.querySelectorAll('#penpop .tool.swatch')];
   swatches.forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.color === pen.color)));
-  document.querySelectorAll('.tool.width').forEach(b=>b.setAttribute('aria-pressed', String(+b.dataset.w === pen.w)));
+  document.querySelectorAll('.tool.width').forEach(b=>b.setAttribute('aria-pressed', String(!pen.mark && +b.dataset.w === pen.w)));
+  if(pen.mark) swatches.forEach(b=>b.setAttribute('aria-pressed','false'));
+  document.querySelectorAll('#penpop .tool.mark').forEach(b=>b.setAttribute('aria-pressed', String(pen.mark && b.dataset.mark === (pen.markColor || MARK_COLOR))));
+  syncToolButtons();
   /* a colour none of the swatches has is the picker's */
   const own = !!pen.color && !swatches.some(b=>b.dataset.color === pen.color), pick = document.querySelector('#penpop .tool.pick');
   if(pick){
@@ -3406,6 +3440,7 @@ function beginStroke(ev, tool){
           eraseR:(ERASE_R[kindOf(ev)] || 9)/M.zoom, drawn:0 };
   if(cur.erase && eraseMode === 'pixel') cur.pixel = true;
   if(pen.color) cur.color = pen.color;
+  if(!cur.erase && marking()){ cur.author = 'mark'; cur.w = MARK_W; cur.color = pen.markColor || MARK_COLOR; cInk.style.mixBlendMode = 'multiply'; }
   lastRaw = null;
   clearLive(); liveFrame();
   pushPoint(ev, cur);
@@ -3432,9 +3467,10 @@ function drawLive(){
     return;
   }
   const n = cur.pts.length/3;
-  if(n < 2){ dot(xInk, cur); return; }
-  drawSegments(xInk, cur, Math.max(1, cur.drawn));
-  cur.drawn = n;
+  const clipped = !!(S.pdf && N.pdf?.clip(xInk, cur));
+  if(n < 2) dot(xInk, cur);
+  else { drawSegments(xInk, cur, Math.max(1, cur.drawn)); cur.drawn = n; }
+  if(clipped) xInk.restore();
 }
 function commitStroke(){
   resetShapeHold();
@@ -3455,7 +3491,7 @@ function commitStroke(){
   N.nota?.localStroke(st);
   C.act('draw', ()=>{ if(!S.strokes.some(s=>s.id===st.id))S.strokes.push(st); }, ()=>{ S.strokes = S.strokes.filter(s=>s.id!==st.id); }, {stroke:st});
   const stamped=stampStroke(st);
-  N.mathcore && N.mathcore.inkLanded(st.id);
+  if(st.author !== 'mark') N.mathcore && N.mathcore.inkLanded(st.id);
   after(true,stamped);
 }
 /* The ink is painted now; grouping, reading and calculating wait for the
@@ -3541,7 +3577,7 @@ function eraseAlong(st){
   const cut=new Map();
   for(const stroke of before){
     const b=stroke.bbox,r=radius+stroke.w/2;
-    if((stroke.author!=='user'&&stroke.author!=='ai')||b[2]<bounds[0]-r||b[0]>bounds[2]+r||b[3]<bounds[1]-r||b[1]>bounds[3]+r){afterStrokes.push(stroke);continue;}
+    if((stroke.author!=='user'&&stroke.author!=='ai'&&stroke.author!=='mark')||b[2]<bounds[0]-r||b[0]>bounds[2]+r||b[3]<bounds[1]-r||b[1]>bounds[3]+r){afterStrokes.push(stroke);continue;}
     if(st.pixel){
       const pieces=cutStroke(stroke,(x,y)=>touched(x,y,radius+stroke.w*0.35));
       if(!pieces){afterStrokes.push(stroke);continue;}
@@ -3643,22 +3679,29 @@ document.addEventListener('visibilitychange', penAway);
 
 /* ---- tools ---- */
 function setTool(t){
+  /* the highlighter is the pen holding a different nib */
+  if(t === 'mark' || t === 'pen'){ const m = t === 'mark' && !!S.pdf; if(pen.mark !== m) setPen({mark:m}); t = 'pen'; }
   if(t !== S.tool) S.lastTool = S.tool;
   S.tool = t;
   document.body.dataset.tool = t;
   penAway();
-  document.querySelectorAll('.tool[data-tool]').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.tool===t)));
+  syncToolButtons();
   if(t !== 'select') clearSelection();
   if(t !== 'pen') setPenPop(false);
   if(t !== 'text') setTextPop(false);
   /* picking the text tool does not grab a line: the caret lands where the
      next tap says, or stays wherever it already was */
 }
+function syncToolButtons(){
+  const t = S.tool === 'pen' && pen.mark && S.pdf ? 'mark' : S.tool;
+  document.querySelectorAll('.tool[data-tool]').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.tool===t)));
+}
 function clearSelection(){ cropping=null; cropDrag=null; S.selection = [];S.imageSelection=null; $('#selbar').hidden = true; render(); }
 
 /* ---- the pen popover: colours and widths, floating just above the pill ---- */
 /* it closes on a tap anywhere else, on esc, and when another tool is picked */
-const penPop = $('#penpop'), penBtn = document.querySelector('.tool[data-tool="pen"]');
+const penPop = $('#penpop'), penBtns = [...document.querySelectorAll('.tool[data-tool="pen"],.tool[data-tool="mark"]')];
+let penBtn = penBtns[0];
 function penPopOpen(){ return !penPop.hidden; }
 function placePenPop(){
   const b = penBtn.getBoundingClientRect(), p = $('#pill').getBoundingClientRect(), w = penPop.offsetWidth;
@@ -3667,11 +3710,13 @@ function placePenPop(){
 }
 function setPenPop(open){
   if(penPopOpen() === open) return;
+  /* the tray opens over whichever nib is in hand */
+  penBtn = penBtns.find(b=>b.getAttribute('aria-pressed') === 'true') || penBtns[0];
   penPop.hidden = !open;
-  penBtn.setAttribute('aria-expanded', String(open));
+  penBtns.forEach(b=>b.setAttribute('aria-expanded', String(open && b === penBtn)));
   if(open) placePenPop();
 }
-document.addEventListener('pointerdown', e=>{ if(penPopOpen() && !penPop.contains(e.target) && !penBtn.contains(e.target)) setPenPop(false); }, true);
+document.addEventListener('pointerdown', e=>{ if(penPopOpen() && !penPop.contains(e.target) && !penBtns.some(b=>b.contains(e.target))) setPenPop(false); }, true);
 /* ---- the text popover: the colour of typed text, as the pen's holds the ink's ---- */
 const textPop = $('#textpop'), textBtn = document.querySelector('.tool[data-tool="text"]');
 function textPopOpen(){ return !textPop.hidden; }
@@ -4514,7 +4559,7 @@ const CLIP_KEY='notas.clip';
 function selectedStrokes(){ return S.selection.map(id=>C.strokeById(id)).filter(Boolean); }
 /* Ctrl/Cmd+A with no line focused: every stroke on the page, ready to move */
 function selectAll(){
-  const ids = S.strokes.filter(s=>s.author === 'user' || s.author === 'ai').map(s=>s.id);
+  const ids = S.strokes.filter(s=>s.author === 'user' || s.author === 'ai' || s.author === 'mark').map(s=>s.id);
   if(!ids.length) return false;
   setTool('select'); S.selection = ids; S.imageSelection = null;
   render(); showSelBar(); return true;
@@ -5057,6 +5102,14 @@ cInk.addEventListener('pointerdown', ev=>{
       if(tool === 'text') return;
     }
   }
+  /* On a PDF only the pages are paper. A press in the margins or between
+     pages draws, erases and selects nothing: it drags the document, whatever
+     the tool and whatever is pressing. */
+  if(S.pdf && !N.pdf.pageAt(toWorld(ev).y, toWorld(ev).x)){
+    tapImage = null; tapChip = null; panning = true; panLast = {x:ev.clientX,y:ev.clientY}; panStart(); cInk.dataset.pan='1';
+    trace('scroll', ev, 'outside the PDF pages');
+    return;
+  }
   /* only the lasso picks a picture: a pen or eraser tap on one is ink */
   if(tool === 'pen' || tool === 'eraser'){ tapImage = null; noteChipTap(ev); }
 
@@ -5276,7 +5329,7 @@ function endPointer(ev){
     clearLive();
     if(poly.length > 8){
       S.imageSelection=null;
-      S.selection = S.strokes.filter(s=>(s.author==='user' || s.author==='ai')&&inBounds(s.bbox)&&
+      S.selection = S.strokes.filter(s=>(s.author==='user' || s.author==='ai' || s.author==='mark')&&inBounds(s.bbox)&&
         strokeInPoly(s.pts,poly)).map(s=>s.id);
       for(const ln of S.lines){const b=selectedLineBox(ln);if(ln.text&&inBounds(b)&&pointInPoly((b[0]+b[2])/2,(b[1]+b[3])/2,poly))S.selection.push(ln.id);}
       /* a loop round a picture and no ink selects the picture (the topmost
@@ -5373,17 +5426,18 @@ function isTyping(e){
    tray whether the pen was active or not. A tap never closes it (a double
    tap would open and shut again); any other tool, a swipe back or esc does. */
 document.querySelectorAll('.tool[data-tool]').forEach(b=>b.addEventListener('click', ()=>{
-  const t = b.dataset.tool, again = S.tool === t;
+  const t = b.dataset.tool, again = b.getAttribute('aria-pressed') === 'true';
   setTool(t);
   if(t === 'eraser' && again) setEraseMode(eraseMode === 'pixel' ? 'stroke' : 'pixel', true);
   if(t === 'text' && again) setTextPop(true);
-  if(t !== 'pen'){ setPillOpen(false); return; }
+  if(t !== 'pen' && t !== 'mark'){ setPillOpen(false); return; }
   if(N.ui && !N.ui.penNotice()) return;
   if(again) setPenPop(true);
 }));
 /* picking a colour or a width means you want to draw with it */
-document.querySelectorAll('#penpop .tool.swatch').forEach(b=>b.addEventListener('click', ()=>{ setPen({color:b.dataset.color}); setTool('pen'); N.ui && N.ui.penNotice(); }));
+document.querySelectorAll('#penpop .tool.swatch:not(.mark)').forEach(b=>b.addEventListener('click', ()=>{ setPen({color:b.dataset.color}); setTool('pen'); N.ui && N.ui.penNotice(); }));
 document.querySelectorAll('.tool.width').forEach(b=>b.addEventListener('click', ()=>{ setPen({w:+b.dataset.w}); setTool('pen'); N.ui && N.ui.penNotice(); }));
+document.querySelectorAll('#penpop .tool.mark').forEach(b=>b.addEventListener('click', ()=>{ setPen({markColor:b.dataset.mark}); setTool('mark'); }));
 /* any colour: the picker's own value, chosen live as it is dragged */
 $('#pen-pick').addEventListener('input', e=>{ setPen({color:e.target.value}); setTool('pen'); });
 $('#pen-pick').addEventListener('change', ()=>{ N.ui && N.ui.penNotice(); });
@@ -8709,7 +8763,7 @@ async function renderExport(opts={}){
       else x.drawImage(pair.el, im.x, im.y, im.w, im.h);
     }catch(e){}
   }
-  for(const st of S.strokes) N.ink.drawStroke(x, st);
+  if(!opts.noStrokes) for(const marks of [true,false]) for(const st of S.strokes) if((st.author === 'mark') === marks) N.ink.drawStroke(x, st);
   x.font = '400 16px '+((getComputedStyle(document.documentElement).getPropertyValue('--type')||'').trim()||'ui-monospace, monospace'); x.textBaseline = 'top';
   for(const l of S.lines) if(l.text){ x.fillStyle = l.tutor ? N.ink.colors.red : S.pdf ? (S.settings.textColor||'#1D1D1F') : N.ink.colors.text; drawWrapped(x,l.text,(l.x||0)+2,l.y+3,Math.max(80,M.contentW-(l.x||0))-4,22.4); }
   x.fillStyle = cs.getPropertyValue('--blue').trim();
@@ -9114,7 +9168,7 @@ function validateImportedNote(doc){
       times=st.times.map(Number);
       if(times.some((v,i)=>!Number.isFinite(v)||v<0||v>3600000||(i&&v<times[i-1])))throw new Error('this note contains invalid ink timing data.');
     }
-    return {id:safeId(st.id),author:st.author==='ai'?'ai':'user',w,t0:Number(st.t0)||0,t1:Number(st.t1)||0,pts,bbox:N.ink.bboxOf(pts),...(times?{times}:{}),
+    return {id:safeId(st.id),author:st.author==='ai'||st.author==='mark'?st.author:'user',w,t0:Number(st.t0)||0,t1:Number(st.t1)||0,pts,bbox:N.ink.bboxOf(pts),...(times?{times}:{}),
       ...(typeof st.quickGroup==='string'&&st.quickGroup.length<=160&&Number.isInteger(st.quickCount)&&st.quickCount>0&&st.quickCount<=200000
         ?{quickGroup:st.quickGroup,quickCount:st.quickCount,...(typeof st.quickMath==='string'&&st.quickMath.length<=8192?{quickMath:st.quickMath}:{})}:{}),
       ...(typeof st.notaGroup==='string'&&st.notaGroup.length<=160&&Number.isInteger(st.notaCount)&&st.notaCount>0&&st.notaCount<=200000
@@ -9330,7 +9384,7 @@ window.addEventListener('keydown', e=>{
   if(mod && k === 'y'){ e.preventDefault(); C.redo(); return; }
   /* Shift makes the key 'Z', and Caps Lock does too: compare the lower case */
   if(k === 'z' && !mod && !e.altKey){ e.shiftKey ? C.redo() : C.undo(); return; }
-  const map = {'p':'pen','v':'select','t':'text'};
+  const map = {'p':'pen','v':'select','t':'text',...(S.pdf?{'h':'mark'}:{})};
   if(!mod && !e.altKey && map[k]){ N.ink.setTool(map[k]); if(map[k] === 'pen') penNotice(); return; }
   if(!mod && !e.altKey && k === 'e' && !e.repeat){ springFrom = S.tool; springAt = Date.now(); N.ink.setTool('eraser'); }
   if(e.key === 'Delete' || e.key === 'Backspace'){

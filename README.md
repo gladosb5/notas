@@ -63,6 +63,14 @@ PDF notebooks autosave locally, including the original document and editable ann
 
 The first version accepts unencrypted PDFs up to 32 MB and 200 pages. Existing printed text is preserved; additions are editable in Notas. PDF notebooks can be sent using PDF or note export; live collaboration is currently available for ordinary notebooks only.
 
+In a PDF notebook only the pages are paper: a press in the margins or between
+pages scrolls with any tool, and ink stops at the edge of the page it started on.
+The highlighter (H) multiplies into the page and is never read as handwriting.
+The pages panel inserts, moves, turns and deletes pages with their annotations
+(undo restores them), pages are re-rendered at the zoom's sharpness, Ctrl+F
+searches the PDF's text, and the text tool selects it. Save PDF writes ink as
+vector lines and typed notes as searchable text over the original pages.
+
 PDF.js 6.4.299 and pdf-lib 1.17.1 are pinned in the development dependencies. Run `npm run assets:pdf` to reproduce the bundled PDF engine, fonts, decoders and license notices, and `npm run test:pdf` for browser and offline regression checks.
 
 ## Download as an app

@@ -45,10 +45,26 @@ try{
   assert.equal(await page.evaluate(()=>N.core.S.lines[0].text),'My PDF annotation');
   assert.ok(Math.abs(await page.evaluate(()=>N.core.S.lines[0].x)-180)<2);
   await page.keyboard.press('Escape');
+  const drag=async(a,b)=>{await page.mouse.move(a.x,a.y);await page.mouse.down();await page.mouse.move(b.x,b.y,{steps:12});await page.mouse.up();};
+  // The highlighter exists on PDFs; its marks are kept apart from handwriting.
+  await page.evaluate(()=>N.ink.setTool('mark'));
+  assert.equal(await page.locator('.tool[data-tool="mark"]').getAttribute('aria-pressed'),'true');
+  await drag(await screen(100,200),await screen(320,200));
+  assert.deepEqual(await page.evaluate(()=>N.core.S.strokes.map(s=>s.author)),['user','mark']);
+  // Outside the pages nothing is drawn, whatever the tool: the drag scrolls.
+  await page.evaluate(()=>{N.ink.setTool('pen');N.pdf.go(0);});
+  const top0=await page.evaluate(()=>document.getElementById('scroller').scrollTop);
+  await drag(await screen(-40,620),await screen(-40,380));
+  assert.equal(await page.evaluate(()=>N.core.S.strokes.length),2,'a margin drag draws nothing');
+  assert.ok(await page.evaluate(()=>document.getElementById('scroller').scrollTop)>top0+100,'a margin drag scrolls the document');
+  await page.evaluate(()=>{N.ink.setTool('select');N.pdf.go(0);});
+  await drag(await screen(-40,620),await screen(-40,380));
+  assert.equal(await page.evaluate(()=>N.core.S.selection.length),0,'a margin drag never lassos');
+  await page.evaluate(()=>{N.ink.setTool('text');N.pdf.go(0);});
   // Annotate rotated and cropped pages, using their own coordinates.
   await page.evaluate(()=>{const C=N.core,S=C.S;for(let i=1;i<3;i++){const p=S.pdf.pages[i];S.lines.push({id:C.uid(),x:90,y:p.y+140,text:'Annotation page '+(i+1),h:30});}N.text.render();C.markDirty();});
-  await page.locator('#pdf-toggle').click();assert.equal(await page.locator('#pdf-page-list button').count(),3);
-  await page.locator('#pdf-page-list button').nth(1).click();
+  await page.locator('#pdf-toggle').click();assert.equal(await page.locator('#pdf-page-list .pdf-thumb').count(),3);
+  await page.locator('#pdf-page-list .pdf-thumb').nth(1).click();
   assert.equal(await page.locator('#pdf-count').textContent(),'2 / 3');
   await page.screenshot({path:'test-results/pdf/desktop-rotated.png'});
   // Insert between pages; all later annotations move with their page. Undo restores them.
@@ -60,23 +76,51 @@ try{
   assert.equal(shifted[0].y,before[0].y);assert.ok(shifted[1].y>before[1].y);
   await page.evaluate(()=>N.core.undo());assert.deepEqual(await page.evaluate(()=>N.core.S.lines.map(l=>({id:l.id,y:l.y}))),before);
   await page.evaluate(()=>N.core.redo());assert.equal(await page.evaluate(()=>N.core.S.pdf.pages.length),4);
+  // Turning, moving and deleting pages carry their annotations, and undo restores every one.
+  const snap=()=>page.evaluate(()=>JSON.stringify({p:N.core.S.pdf.pages.map(p=>[p.id,p.rot||0,Math.round(p.h)]),s:N.core.S.strokes.map(s=>s.pts.slice(0,6).map(Math.round)),l:N.core.S.lines.map(l=>[Math.round(l.x),Math.round(l.y)])}));
+  const layout=await snap();
+  await page.evaluate(()=>N.pdf.rotatePage(0));
+  assert.equal(await page.evaluate(()=>N.core.S.pdf.pages[0].rot),90);
+  assert.notEqual(await snap(),layout,'turned page moves its ink');
+  await page.evaluate(()=>N.core.undo());assert.equal(await snap(),layout);
+  const firstId=await page.evaluate(()=>N.core.S.pdf.pages[0].id),inkY=await page.evaluate(()=>N.core.S.strokes[0].pts[1]);
+  await page.locator('#pdf-down').click();
+  assert.equal(await page.evaluate(()=>N.core.S.pdf.pages[1].id),firstId);
+  assert.ok(await page.evaluate(()=>N.core.S.strokes[0].pts[1])>inkY,'moved page takes its ink');
+  await page.evaluate(()=>N.core.undo());assert.equal(await snap(),layout);
+  await page.evaluate(()=>N.pdf.go(2));await page.locator('#pdf-delete').click();
+  assert.equal(await page.evaluate(()=>N.core.S.pdf.pages.length),3);assert.equal(await page.evaluate(()=>N.core.S.lines.length),2,'deleted page takes its notes');
+  await page.evaluate(()=>N.core.undo());assert.equal(await snap(),layout);
   // Blank page is writable and makes it into the exported file.
   await page.evaluate(()=>{const C=N.core;C.S.lines.push({id:C.uid(),x:70,y:C.S.pdf.pages[1].y+100,text:'Extra working on blank page',h:30});N.text.render();C.markDirty();});
   const saved=await page.evaluate(async()=>{await N.core.save();return N.core.serialize();});
   await page.reload();await page.waitForFunction(id=>N.core?.S.id===id&&N.core.S.pdf?.pages.length===4,pdfId);
-  assert.equal(await page.evaluate(()=>N.core.S.strokes.length),1);
+  assert.equal(await page.evaluate(()=>N.core.S.strokes.length),2);
+  assert.equal(await page.evaluate(()=>N.core.S.strokes[1].author),'mark','highlighter marks survive reopening');
   assert.equal(await page.evaluate(()=>N.core.S.lines.length),4);
   assert.equal(await page.evaluate(()=>N.core.S.pdf.data),saved.pdf.data,'original bytes survive saving and reopening');
   await page.evaluate(()=>{N.tutorial.finish(false);document.getElementById('preparing').classList.add('done');});
+  // Search finds the PDF's own words on every page; the text tool can select them.
+  await page.evaluate(()=>{N.pdf.go(0);N.pdf.openFind();});await page.fill('#pdf-find-input','original pdf page');
+  await page.waitForFunction(()=>document.getElementById('pdf-find-count').textContent==='1 / 3');
+  await page.keyboard.press('Enter');assert.equal(await page.locator('#pdf-find-count').textContent(),'2 / 3');
+  await page.keyboard.press('Escape');assert.equal(await page.locator('#pdf-find').isVisible(),false);
+  await page.evaluate(()=>{N.ink.setTool('text');N.pdf.go(0);});
+  await page.waitForFunction(()=>[...document.querySelectorAll('#pdf-tl .textLayer span')].some(s=>/Original PDF page 1/.test(s.textContent)));
+  await page.evaluate(()=>{document.activeElement?.blur();N.pdf.go(0);});await page.keyboard.press('PageDown');
+  assert.equal(await page.locator('#pdf-count').textContent(),'2 / 4');
   // Exported PDF retains source page geometry, selectable original text and annotations.
   const download=page.waitForEvent('download');await page.locator('#pdf-save').click();const exported=await download;await exported.saveAs('test-results/pdf/annotated.pdf');
   const exportedBytes=await (await import('node:fs/promises')).readFile('test-results/pdf/annotated.pdf');
   const output=await PDFDocument.load(exportedBytes);assert.equal(output.getPageCount(),4);
   assert.equal(output.getPage(2).getRotation().angle,90);assert.equal(output.getPage(3).getCropBox().width,550);
-  for(const p of output.getPages())assert.ok(p.node.Resources().lookupMaybe((await import('pdf-lib')).PDFName.of('XObject'),(await import('pdf-lib')).PDFDict)?.keys().length>0,'each page includes an annotation layer');
+  const {PDFName,PDFDict}=await import('pdf-lib');
+  assert.ok(output.getPage(0).node.Resources().lookupMaybe(PDFName.of('ExtGState'),PDFDict)?.keys().length>0,'highlighter blends into the page');
+  assert.ok(exportedBytes.length<sample.length+120000,'ink is written as lines, not page-sized pictures');
   // Text extraction proves the original PDF wasn't flattened into screenshots.
   const originalText=await page.evaluate(async data=>{const [lib]=await N.pdf.libs();const doc=await lib.getDocument({data:new Uint8Array(data),isEvalSupported:false}).promise;const result=[];for(let i=1;i<=doc.numPages;i++)result.push((await (await doc.getPage(i)).getTextContent()).items.map(x=>x.str).join(' '));await doc.loadingTask.destroy();return result;},[...exportedBytes]);
   assert.match(originalText[0],/Original PDF page 1/);assert.match(originalText[2],/Original PDF page 2/);assert.match(originalText[3],/Original PDF page 3/);
+  assert.match(originalText[0],/My PDF annotation/,'typed notes are searchable in the saved PDF');assert.match(originalText[1],/Extra working on blank page/);
   // Note backups and multi-note bundles preserve the source and page order.
   await page.evaluate(async saved=>{await N.ui.newNote();const ok=await N.ui.importNoteFile(new File([JSON.stringify(saved)],'backup.notas.json',{type:'application/json'}));if(!ok)throw Error('backup import failed');},saved);
   assert.equal(await page.evaluate(()=>N.core.S.pdf.pages.length),4);
@@ -112,6 +156,6 @@ try{
   const offlineDownload=off.waitForEvent('download');await off.locator('#pdf-save').click();await (await offlineDownload).saveAs('test-results/pdf/offline.pdf');
   assert.equal((await PDFDocument.load(await (await import('node:fs/promises')).readFile('test-results/pdf/offline.pdf'))).getPageCount(),3);
   assert.deepEqual(offlineErrors,[]);await offlineContext.close();
-  console.log('PDF browser checks passed: import, pen/text, navigation, blank-page undo, reopen, PDF export, rotated/cropped pages, backups, errors, mobile and offline.');
+  console.log('PDF browser checks passed: import, pen/text/highlighter, margin scrolling, navigation, page insert/move/turn/delete with undo, search, text layer, reopen, vector PDF export, rotated/cropped pages, backups, errors, mobile and offline.');
   await context.close();
 }finally{await browser.close();await new Promise(r=>server.close(r));}
