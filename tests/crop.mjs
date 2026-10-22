@@ -49,12 +49,13 @@ try{
   assert.equal((await box()).src,b0.src,'Escape leaves the picture alone');
   assert.ok((await bar()).includes('remove background'),'the picture is still selected after Escape');
 
-  // 3. two quick taps with the pen open it too
+  // 3. only the lasso picks a picture: two quick taps with the pen do not, a double click with the lasso does
   await page.evaluate(()=>{N.ink.clearSelection();N.ink.setTool('pen');});
-  const strokesBefore=await page.evaluate(()=>N.core.S.strokes.length);
   await page.mouse.click(mid.x,mid.y);await page.mouse.click(mid.x,mid.y);
-  assert.ok(await page.evaluate(()=>!!N.ink.cropping()),'two pen taps open the crop');
-  assert.equal(await page.evaluate(()=>N.core.S.strokes.length),strokesBefore,'the taps leave no ink');
+  assert.ok(await page.evaluate(()=>!N.ink.cropping()&&!N.core.S.imageSelection),'two pen taps neither select nor crop the picture');
+  await page.evaluate(()=>{N.core.S.strokes=N.core.S.strokes.filter(s=>s.author!=='user');N.ink.setTool('select');});
+  await page.mouse.dblclick(mid.x,mid.y);
+  assert.ok(await page.evaluate(()=>!!N.ink.cropping()),'a lasso double click opens the crop again');
 
   // 4. drag the bottom-right corner to the centre and the left edge a quarter in: the red quarter's right half is left
   const drag=async(from,to)=>{await page.mouse.move(from.x,from.y);await page.mouse.down();await page.mouse.move(to.x,to.y,{steps:10});await page.mouse.up();};

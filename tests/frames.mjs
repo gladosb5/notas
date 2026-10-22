@@ -74,7 +74,7 @@ try{
   const rot=await page.evaluate(()=>N.core.S.images[0].rot);
   assert.ok(Math.abs(rot-Math.PI/2)<1e-6,'The knob turns the picture, settling on a right angle: '+rot);
   const labels2=await page.evaluate(()=>[...document.querySelectorAll('#selbar button')].map(b=>b.textContent));
-  assert.deepEqual(labels2,['straighten','remove background','delete'],'A turned picture can be straightened from the bar');
+  assert.deepEqual(labels2,['remove background','delete'],'A turned picture has the same options as an upright picture');
   // a turned picture is hit where it is seen: its centre column now runs 400..600 tall, 450..550 wide
   assert.equal(await page.evaluate(()=>N.ink.imageAt(460,420)?.id),'pic','Inside the turned picture');
   assert.equal(await page.evaluate(()=>N.ink.imageAt(420,320)?.id),undefined,'The old upright corner is now empty paper');
@@ -87,12 +87,13 @@ try{
   const after=await page.evaluate(()=>{const im=N.core.S.images[0];const hs=N.ink.frameHandles(N.ink.frameOf(im));return {w:im.w,h:im.h,nw:hs.find(h=>h.k==='nw')};});
   assert.ok(after.w>before.w*1.3&&Math.abs(after.w/after.h-2)<.01,'The corner grows the turned picture, keeping its shape: '+JSON.stringify(after));
   assert.ok(Math.hypot(after.nw.x-nwH.x,after.nw.y-nwH.y)<2,'The corner opposite the hand stays where it was on the page');
-  await page.locator('#selbar button',{hasText:'straighten'}).click();
-  assert.equal(await page.evaluate(()=>N.core.S.images[0].rot),undefined,'Straighten drops the turn');
   await page.evaluate(()=>N.core.undo());
-  assert.ok(Math.abs(await page.evaluate(()=>N.core.S.images[0].rot)-Math.PI/2)<1e-6,'Undo brings the turn back');
+  assert.equal(await page.evaluate(()=>N.core.S.images[0].w),before.w,'Undo restores the picture size');
+  assert.ok(Math.abs(await page.evaluate(()=>N.core.S.images[0].rot)-Math.PI/2)<1e-6,'Undoing resize preserves the turn');
+  await page.evaluate(()=>N.core.undo());
+  assert.ok(!await page.evaluate(()=>N.core.S.images[0].rot),'Undoing rotation restores the upright picture');
 
-  console.log('Frames: ink turn and scale, picture turn, resize while turned, straighten, bar without arrows passed');
+  console.log('Frames: ink turn and scale, picture turn, resize while turned, undo, bar without straighten or arrows passed');
 }finally{
   await browser.close();server.close();
 }

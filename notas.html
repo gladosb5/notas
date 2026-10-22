@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v167">
+<meta name="notas-version" content="v168">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -2577,6 +2577,33 @@ function imageBounds(im,dx=0,dy=0){
   const c=Math.abs(Math.cos(im.rot||0)),s=Math.abs(Math.sin(im.rot||0)),hx=(im.w*c+im.h*s)/2,hy=(im.w*s+im.h*c)/2,cx=im.x+dx+im.w/2,cy=im.y+dy+im.h/2;
   return [cx-hx,cy-hy,cx+hx,cy+hy];
 }
+/* A picture in the text (im.inline) holds its place between the lines the way
+   one does in a document: when lines above it split, grow, join or go, it
+   moves with the lines under it, and taking it out closes the room it held.
+   Moving it with the lasso lifts it out of the text for good. */
+function flowPictures(y,d,inclusive){
+  if(!d)return;
+  for(const im of S.images)if(im.inline&&(inclusive?im.y>=y:im.y>y))im.y+=d;
+}
+/* the gap a picture leaves in the text: from the bottom of what is above it
+   to the top of what is under it, never more than the picture took */
+function pictureRoom(im){
+  let next=Infinity,top=im.y-10;
+  for(const l of S.lines){ if(l.y>im.y)next=Math.min(next,l.y); else top=Math.max(top,l.y+Math.max(LINE_H,l.h||LINE_H)); }
+  for(const o of S.images)if(o!==im&&o.inline){ if(o.y>im.y)next=Math.min(next,o.y); else top=Math.max(top,imageBounds(o)[3]); }
+  return Number.isFinite(next)?Math.max(0,Math.min(next-top,im.h+30)):0;
+}
+/* the pictures' half of a text step: those in the text under y move by d,
+   and any listed in gone leave with the words around them. One undo. */
+function pictureChanges(y,d,gone=[]){
+  const goneIds=new Set(gone.map(im=>im.id)),at=gone.map(im=>S.images.findIndex(i=>i.id===im.id));
+  const ids=d?S.images.filter(im=>im.inline&&im.y>y&&!goneIds.has(im.id)).map(im=>im.id):[];
+  const move=s=>{for(const id of ids){const im=S.images.find(i=>i.id===id);if(im)im.y+=s;}};
+  return {
+    forward(){ if(goneIds.size)S.images=S.images.filter(i=>!goneIds.has(i.id)); move(d); },
+    back(){ move(-d); gone.forEach((im,k)=>{ if(!S.images.some(i=>i.id===im.id))S.images.splice(clamp(at[k],0,S.images.length),0,im); }); }
+  };
+}
 function docExtent(){
   let x = M.colW;
   for(const st of S.strokes) if(st.bbox && st.bbox[2] > x) x = st.bbox[2];
@@ -2754,7 +2781,7 @@ function watchDpr(){
 }
 watchDpr();
 applyPrefs();
-N.core = { imageBounds,S, M, Store, uid, clamp, $, layout, growDoc, setZoom, firstLine, displayTitle, cleanTitle, whenLabel, ZOOM_MIN, ZOOM_MAX, markDirty, save, serialize,
+N.core = { imageBounds, flowPictures, pictureRoom, pictureChanges,S, M, Store, uid, clamp, $, layout, growDoc, setZoom, firstLine, displayTitle, cleanTitle, whenLabel, ZOOM_MIN, ZOOM_MAX, markDirty, save, serialize,
            act, undo, redo, Undo, paintUndo, typed, toast, status, anonId, LINE_H, CONTENT_MAX, strokeById, reducedMotion, smoothWheel, glideTarget,
            FEEDBACK_URL, savePrefs, applyPrefs, setActive, getActive, saveView, getView, flushView, setSaveError, clearSaveError, withNoteLock, withIndexLock, deleteStoredNote, repairIndex, recoverRescues, rescueSave, patchIndexRows, exportText, isBlank, swipeAway,
            /* counts every edit to the page, so a picture of it can be reused until the next one */
@@ -2931,6 +2958,15 @@ function render(onPaint){
   raf = requestAnimationFrame(()=>{
     raf = 0;
     frame(xCommit); N.pdf?.draw(xCommit); drawImages(xCommit);
+    /* a picture wears its outline even after a tap takes the selection off
+       it: the border marks the picture, not the selection. Only the one
+       under the hand goes bare, while it is moved, sized or turned. */
+    for(const im of S.images){
+      if(S.imageSelection===im.id||(cropping&&cropping.id===im.id)) continue;
+      const sh=peerShift.get(im.id),dx=sh?sh.dx:0,dy=sh?sh.dy:0;
+      if(!visible(C.imageBounds(im,dx,dy)))continue;
+      drawImageOutline(xCommit,im,dx,dy);
+    }
     /* a selection being dragged is drawn at the offset the finger is at, and
        only committed to the stroke points when the finger lifts */
     const picked = (moving && S.selection.length) ? new Set(S.selection) : null;
@@ -2964,7 +3000,12 @@ function render(onPaint){
     if(S.imageSelection){
       const im=S.images.find(i=>i.id===S.imageSelection);
       if(im&&cropping&&cropping.id===im.id) drawCrop(xCommit);
-      else if(im) drawFrame(xCommit, frameOf(im, moving?moving.dx:0, moving?moving.dy:0));
+      else if(im){
+        /* under the hand the picture shows alone: no frame while it is
+           moved, sized or turned, and its own outline is already bare */
+        const bare=moving||(resizing&&resizing.id===im.id)||(turning&&turning.id===im.id);
+        if(!bare) drawFrame(xCommit, frameOf(im, moving?moving.dx:0, moving?moving.dy:0));
+      }
     }
     /* in text mode the ink canvas is normally out of the way; while a picture
        is selected it takes the pointer again so its handles can be dragged */
@@ -3629,6 +3670,13 @@ function handleAt(x,y,f,touch){
   for(const hd of frameHandles(f)) if(Math.hypot(x-hd.x,y-hd.y)<=r) return hd.k;
   return null;
 }
+/* The plain border a picture keeps when it is not selected: the same blue and
+   the same seeing-room the frame gives, but nothing on it to grab. */
+function drawImageOutline(ctx,im,dx=0,dy=0){
+  ctx.save(); ctx.strokeStyle=colors.blue; ctx.lineWidth=1.25/M.zoom; ctx.setLineDash([]);
+  ctx.translate(im.x+dx+im.w/2,im.y+dy+im.h/2); if(im.rot)ctx.rotate(im.rot);
+  ctx.strokeRect(-im.w/2-2,-im.h/2-2,im.w+4,im.h+4); ctx.restore();
+}
 function drawFrame(ctx,f){
   ctx.save(); ctx.strokeStyle=colors.blue; ctx.lineWidth=1.25/M.zoom; ctx.setLineDash([]);
   ctx.translate(f.cx,f.cy); ctx.rotate(f.rot);
@@ -3784,8 +3832,7 @@ function commitMove(dx, dy){
   if(!dx && !dy){ render(); showSelBar(); return; }
   if(S.imageSelection){
     const id=S.imageSelection,im=S.images.find(i=>i.id===id);if(!im)return;
-    const move=(sx,sy)=>{const live=S.images.find(i=>i.id===id);if(live){live.x+=sx;live.y+=sy;}};
-    C.act('move image',()=>move(dx,dy),()=>move(-dx,-dy));
+    placePicture(im,dx,dy);
     C.growDoc(im.y+im.h);after();showSelBar();return;
   }
   const ids = S.selection.slice();
@@ -3800,8 +3847,24 @@ function nudgeImage(id,dx,dy){
   const z=M.zoom,docW=$('#doc').offsetWidth||M.vw,paperL=-M.colLeft/z,paperR=(docW-M.colLeft)/z;
   const nx=C.clamp(im.x+dx,paperL,Math.max(paperL,paperR-im.w)),ny=Math.max(0,im.y+dy);
   const mx=nx-im.x,my=ny-im.y;if(!mx&&!my)return false;
-  const move=(sx,sy)=>{const live=S.images.find(i=>i.id===id);if(live){live.x+=sx;live.y+=sy;}};
-  C.act('move image',()=>move(mx,my),()=>move(-mx,-my));C.growDoc(ny+im.h);after();showSelBar();return true;
+  placePicture(im,mx,my);C.growDoc(im.y+im.h);after();showSelBar();return true;
+}
+/* A picture moved by hand: one that sat in the text leaves it, in the same
+   step, and the lines under it close up the room it held. From then on it
+   stays where it was put, whatever the text does. */
+function placePicture(im,dx,dy){
+  const id=im.id,move=(sx,sy)=>{const live=S.images.find(i=>i.id===id);if(live){live.x+=sx;live.y+=sy;}};
+  if(!im.inline){ C.act('move image',()=>move(dx,dy),()=>move(-dx,-dy)); return; }
+  const lift=textGap(im);
+  C.act('move image',()=>{lift.forward();move(dx,dy);const live=S.images.find(i=>i.id===id);if(live)delete live.inline;N.text.render();},
+                     ()=>{const live=S.images.find(i=>i.id===id);if(live)live.inline=true;move(-dx,-dy);lift.back();N.text.render();});
+}
+/* the lines and in-text pictures under an in-text picture move up by the
+   room it held (or down by `grow`, when it gets taller): one undo step */
+function textGap(im,grow){
+  const d=grow===undefined?-C.pictureRoom(im):grow,before=S.lines.map(l=>({...l}));
+  const lines=N.text.lineChanges(before,before.map(l=>l.y>im.y?{...l,y:l.y+d}:l)),pics=C.pictureChanges(im.y,d);
+  return {forward(){lines.forward();pics.forward();},back(){pics.back();lines.back();}};
 }
 function selectImage(id){
   if(!S.images.some(i=>i.id===id))return false;
@@ -3810,18 +3873,15 @@ function selectImage(id){
 function resizeImage(id,factor){
   const im=S.images.find(i=>i.id===id);if(!im)return false;
   const before={w:im.w,h:im.h},nw=C.clamp(im.w*factor,80,M.contentW),nh=im.h*(nw/im.w);
-  C.act('resize image',()=>{const x=S.images.find(i=>i.id===id);if(x){x.w=nw;x.h=nh;}},()=>{const x=S.images.find(i=>i.id===id);if(x)Object.assign(x,before);});
+  const gap=im.inline&&!S.pdf?textGap(im,nh-im.h):null;
+  C.act('resize image',()=>{const x=S.images.find(i=>i.id===id);if(x){x.w=nw;x.h=nh;}gap?.forward();if(gap)N.text.render();},()=>{gap?.back();const x=S.images.find(i=>i.id===id);if(x)Object.assign(x,before);if(gap)N.text.render();});
   C.growDoc(im.y+nh);after();showSelBar();return true;
-}
-function straightenImage(id){
-  const im=S.images.find(i=>i.id===id);if(!im||!im.rot)return false;
-  const was=im.rot;
-  C.act('straighten image',()=>{const x=S.images.find(i=>i.id===id);if(x)delete x.rot;},()=>{const x=S.images.find(i=>i.id===id);if(x)x.rot=was;});
-  after();showSelBar();return true;
 }
 function deleteImage(id){
   const at=S.images.findIndex(i=>i.id===id),gone=S.images[at];if(!gone)return false;
-  C.act('delete image',()=>{S.images=S.images.filter(i=>i.id!==id);},()=>{if(!S.images.some(i=>i.id===id))S.images.splice(Math.max(0,at),0,gone);});
+  /* out of the text, the words under it close up, as in a document */
+  const gap=gone.inline&&!S.pdf?textGap(gone):null;
+  C.act('delete image',()=>{S.images=S.images.filter(i=>i.id!==id);gap?.forward();if(gap)N.text.render();},()=>{gap?.back();if(!S.images.some(i=>i.id===id))S.images.splice(Math.max(0,at),0,gone);if(gap)N.text.render();});
   if(S.imageSelection===id)clearSelection();after();return true;
 }
 /* ---- background removal ---- */
@@ -4331,7 +4391,13 @@ function endTwin(liftedId){
   if(t.moved){
     if(t.kind==='image'){
       const im=S.images.find(i=>i.id===t.id);
-      if(im){ const now=pictureState(im); setPicture(t.id,t.was); C.act('turn and scale image',()=>setPicture(t.id,now),()=>setPicture(t.id,t.was)); C.growDoc(now.y+now.h); }
+      if(im){
+        const now=pictureState(im); setPicture(t.id,t.was);
+        /* taken in hand like a lasso move, a picture in the text leaves it */
+        const lift=im.inline&&!S.pdf?textGap(im):null,inText=on=>{const l=S.images.find(i=>i.id===t.id);if(l&&lift){if(on)l.inline=true;else delete l.inline;N.text.render();}};
+        C.act('turn and scale image',()=>{setPicture(t.id,now);lift?.forward();inText(false);},()=>{inText(true);setPicture(t.id,t.was);lift?.back();});
+        C.growDoc(now.y+now.h);
+      }
     }else if(t.kind==='ink') commitLaid(t.orig,'turn and scale ink');
   }
   after(); showSelBar();
@@ -4455,16 +4521,18 @@ function showSelBar(refresh=false){
   if(refresh===true)selBarKind='';
   const bar = $('#selbar');
   if(!S.selection.length&&!S.imageSelection){ bar.hidden = true; selBarKind = ''; return; }
-  if(turning){bar.hidden=true;return;}
+  /* the picture under the hand — moved, sized or turned — draws bare: the
+     options step aside with its outline and come back when the hand lifts */
+  if((moving&&S.imageSelection)||resizing||turning){bar.hidden=true;return;}
   /* ink the reader made nothing of gets a way to ask nota about it */
   if(!selBarMemo||selBarMemo.sel!==S.selection||selBarMemo.rev!==C.revision||selBarMemo.clusters!==S.clusters){selBarMemo={sel:S.selection,rev:C.revision,clusters:S.clusters,unread:!S.imageSelection&&!!(N.nota?.askSelection&&N.recog?.selectionUnread(S.selection)),text:S.lines.some(l=>selSet().has(l.id))};}
   const unread=S.settings.notaOn!==false&&selBarMemo.unread;
   const picked = S.imageSelection && S.images.find(i=>i.id===S.imageSelection) || {};
   const busy = S.imageSelection && cutoutBusy===S.imageSelection;
-  const turned = S.imageSelection && !!picked.rot, cutout = S.imageSelection && !!picked.bg;
+  const cutout = S.imageSelection && !!picked.bg;
   if(cropping && cropping.id !== S.imageSelection){ cropping = null; cropDrag = null; }
   const textSelected=selBarMemo.text;
-  const kind = textSelected ? 'text' : cropping ? 'crop' : S.imageSelection ? 'image' + (turned ? '-turned' : '') + (cutout ? '-cutout' : '') + (busy ? '-busy' : '') + (S.settings.backgroundRemovalOn===false ? '-disabled' : '') : (unread ? 'ink-unread' : 'ink');
+  const kind = textSelected ? 'text' : cropping ? 'crop' : S.imageSelection ? 'image' + (cutout ? '-cutout' : '') + (busy ? '-busy' : '') + (S.settings.backgroundRemovalOn===false ? '-disabled' : '') : (unread ? 'ink-unread' : 'ink');
   if(kind !== selBarKind || !bar.childElementCount){
     bar.innerHTML = '';
     const mk = (label, fn, aria)=>{ const b=document.createElement('button'); b.textContent=label; b.onclick=fn;if(aria)b.setAttribute('aria-label',aria);bar.appendChild(b); };
@@ -4477,7 +4545,6 @@ function showSelBar(refresh=false){
     }else if(kind.startsWith('image')){
       /* moving, sizing and turning are done on the picture itself, by its
          frame; the bar keeps only what the frame cannot do */
-      if(turned) mk('straighten',()=>straightenImage(S.imageSelection));
       if(busy){
         mk('removing background…',()=>{});
         const b=bar.lastElementChild; b.disabled=true; b.setAttribute('aria-busy','true'); b.setAttribute('role','status');
@@ -4845,16 +4912,16 @@ cInk.addEventListener('pointerdown', ev=>{
      a tablet in its own right - it used to take two */
   if(kind === 'touch' && !touchDraws()){
     /* Pictures are the exception: a finger on the selected one takes its
-       handles and body as the pen would, and a finger resting on any other
-       may be a tap to select it. The pan still starts, so a drag that begins
-       on a picture scrolls; only a lift that never moved picks it. */
+       handles and body as the pen would, and with the lasso a finger resting
+       on any other may be a tap to select it. The pan still starts, so a drag
+       that begins on a picture scrolls; only a lift that never moved picks it. */
     const w = toWorld(ev), sel = S.imageSelection && S.images.find(i=>i.id===S.imageSelection);
     const held = sel ? (handleAt(w.x, w.y, frameOf(sel), true) || inImage(w.x, w.y, sel))
                      : (S.selection.length && (handleAt(w.x, w.y, frameOf(null), true) || hitSelection(w.x, w.y)));
     if(!held){
       /* the chips let the pen through, so a finger tap on one is pressed from here too */
       if(S.tool === 'pen' || S.tool === 'eraser') noteChipTap(ev); else tapChip = null;
-      const im = imageAt(w.x, w.y);
+      const im = S.tool === 'select' && imageAt(w.x, w.y);
       tapImage = im ? { id:im.id, x:ev.clientX, y:ev.clientY, t:Date.now() } : null;
       panning = true; panLast = {x:ev.clientX,y:ev.clientY}; panStart();
       trace('scroll', ev, 'pen-only: touch pans');
@@ -4889,11 +4956,8 @@ cInk.addEventListener('pointerdown', ev=>{
       if(tool === 'text') return;
     }
   }
-  if(tool === 'pen' || tool === 'eraser'){
-    const w = toWorld(ev), im = imageAt(w.x, w.y);
-    tapImage = im ? { id:im.id, x:ev.clientX, y:ev.clientY, t:Date.now() } : null;
-    noteChipTap(ev);
-  }
+  /* only the lasso picks a picture: a pen or eraser tap on one is ink */
+  if(tool === 'pen' || tool === 'eraser'){ tapImage = null; noteChipTap(ev); }
 
   if(tool === 'select'){
     const w = toWorld(ev);
@@ -4955,7 +5019,7 @@ cInk.addEventListener('pointermove', ev=>{
   if(scaling){ scaleTo(toWorld(ev)); render(); showSelBar(); return; }
   if(resizing){
     const w = toWorld(ev), im = S.images.find(i=>i.id===resizing.id);
-    if(im){ Object.assign(im, resizedFrame(resizing.box, resizing.k, w.x, w.y)); render(); showSelBar(); }
+    if(im){ Object.assign(im, resizedFrame(resizing.box, resizing.k, w.x, w.y)); if(im.inline) im.y = resizing.box.y; render(); showSelBar(); }
     return;
   }
   /* a mouse over the selected picture or ink says what a press would do */
@@ -5075,8 +5139,9 @@ function endPointer(ev){
       const now = {x:im.x, y:im.y, w:im.w, h:im.h};
       Object.assign(im, r.box);
       if(now.w !== r.box.w || now.x !== r.box.x || now.y !== r.box.y){
-        C.act('resize image', ()=>{ const l=S.images.find(i=>i.id===r.id); if(l) Object.assign(l, now); },
-                              ()=>{ const l=S.images.find(i=>i.id===r.id); if(l) Object.assign(l, r.box); });
+        const gap = im.inline && !S.pdf && now.h !== r.box.h ? textGap(im, now.h - r.box.h) : null;
+        C.act('resize image', ()=>{ const l=S.images.find(i=>i.id===r.id); if(l) Object.assign(l, now); gap?.forward(); if(gap) N.text.render(); },
+                              ()=>{ gap?.back(); const l=S.images.find(i=>i.id===r.id); if(l) Object.assign(l, r.box); if(gap) N.text.render(); });
         C.growDoc(now.y + now.h);
       }
     }
@@ -5123,7 +5188,7 @@ function endPointer(ev){
         }
       }
       showSelBar();
-    }
+    }else clearSelection();   /* a click, not a loop: lets whatever was selected go */
     render(); return;
   }
   /* A quick flick may have no delivered move event. Always retain the lift
@@ -5284,7 +5349,7 @@ pill.addEventListener('wheel', ev=>{
 pill.addEventListener('keydown', ev=>{ if(ev.key === 'Escape' && pillOpen()){ setPillOpen(false); moreBtn.focus(); } });
 
 N.ink = { busy:()=>!!(cur||lasso||moving||scaling||turning||resizing||twin||cropDrag||panning||gesture),render, renderAI, pasteCut, resize, finishInput, setTool, setPen, pen, setPillOpen, setPenPop, setTextPop, setTextColor, toWorld, viewOrigin, bboxOf, hitStroke, drawStroke,
-          clearSelection, showSelBar, inkColor, colors, refreshColors, isTyping, after, flush, selectImage, nudgeImage, resizeImage, deleteImage, straightenImage, removeBackground, undoBackground, prefetchCutout, toggleBackgroundRemoval, startCrop, applyCrop, cancelCrop, cropping:()=>cropping&&{...cropping}, frameOf, frameHandles,
+          clearSelection, showSelBar, inkColor, colors, refreshColors, isTyping, after, flush, selectImage, nudgeImage, resizeImage, deleteImage, removeBackground, undoBackground, prefetchCutout, toggleBackgroundRemoval, startCrop, applyCrop, cancelCrop, cropping:()=>cropping&&{...cropping}, frameOf, frameHandles,
           copySelection, duplicateSelection, deleteSelection, pasteInk, readClip, clipMarker, selectAll, imageAt, pickImage,
           now:inkNow, drawing:()=>!!cur, peerShift, drag:()=>moving?{dx:moving.dx,dy:moving.dy}:null,
           /* what the pointer is in the middle of, for the others on a shared
@@ -5551,9 +5616,11 @@ function lineChanges(before, after){
   };
   return { forward:()=>put('b', 'a'), back:()=>put('a', 'b') };
 }
-function lineStep(label, before, after){
-  const ch = lineChanges(before, after);
-  C.act(label, ()=>{ ch.forward(); render(); queue(); }, ()=>{ ch.back(); render(); queue(); });
+/* pics: the pictures in the text under pics.y move by pics.d with the lines */
+function lineStep(label, before, after, pics){
+  const ch = lineChanges(before, after), pc = pics && !S.pdf ? C.pictureChanges(pics.y, pics.d, pics.gone) : null;
+  const paint = ()=>{ render(); queue(); if(pc) N.ink.render(); };
+  C.act(label, ()=>{ ch.forward(); pc?.forward(); paint(); }, ()=>{ pc?.back(); ch.back(); paint(); });
 }
 /* the words between the two ends go: the top line keeps its head and takes
    the bottom line's tail, the lines between and the bottom one are removed
@@ -5565,16 +5632,18 @@ function collapseSpan(span){
   const [top, bottom, s, en] = ia <= ib ? [ia, ib, span.start, span.end] : [ib, ia, span.end, span.start];
   const first = list[top], last = list[bottom], gone = list.slice(top + 1, bottom + 1);
   const goneIds = new Set(gone.map(l=>l.id));
-  const H = gone.reduce((n,l)=>n + Math.max(C.LINE_H, l.h||C.LINE_H), 0), oldH = Math.max(C.LINE_H, first.h||C.LINE_H);
+  /* a picture in the text between the ends goes with the words, as in a document */
+  const inside = S.pdf ? [] : S.images.filter(im=>im.inline && im.y > first.y && im.y < last.y);
+  const H = gone.reduce((n,l)=>n + Math.max(C.LINE_H, l.h||C.LINE_H), 0) + inside.reduce((n,im)=>n + C.pictureRoom(im), 0), oldH = Math.max(C.LINE_H, first.h||C.LINE_H);
   const before = S.lines.map(l=>({...l}));
   const text = first.text.slice(0, s) + last.text.slice(en);
   const after = before.filter(l=>!goneIds.has(l.id)).map(l=>l.id === first.id ? {...l, text} : l.y > last.y ? {...l, y:l.y - H} : {...l});
-  lineStep('delete across lines', before, after);
+  lineStep('delete across lines', before, after, {y:last.y, d:-H, gone:inside});
   const step = C.Undo.back[C.Undo.back.length-1]; if(step) step.typingJoins = performance.now();
   const ln = byId(first.id), input = els.get(first.id)?.firstChild; if(!ln || !input) return null;
   /* the joined line may take fewer rows than the top one did */
   const newH = Math.max(C.LINE_H, ln.h||C.LINE_H);
-  if(newH !== oldH){ for(const o of S.lines) if(o.id !== ln.id && o.y > ln.y) o.y += newH - oldH; renderPositions(); }
+  if(newH !== oldH){ for(const o of S.lines) if(o.id !== ln.id && o.y > ln.y) o.y += newH - oldH; if(!S.pdf) C.flowPictures(ln.y, newH - oldH); renderPositions(); N.ink.render(); }
   ghosts.delete(ln.id); paintGhost(ln);
   input.setSelectionRange(s, s); setCurrent(ln.id);
   C.markDirty(); N.nota && N.nota.onTyped(ln);
@@ -5714,6 +5783,7 @@ function closeUp(gone){
   const goneIds=new Set(gone.map(l=>l.id)),cuts=gone.map(l=>({y:l.y,h:Math.max(C.LINE_H,l.h||C.LINE_H)}));
   S.lines=S.lines.filter(l=>!goneIds.has(l.id));
   for(const l of S.lines){ let dy=0; for(const c of cuts)if(c.y<l.y)dy+=c.h; l.y-=dy; }
+  if(!S.pdf)for(const im of S.images)if(im.inline){ let dy=0; for(const c of cuts)if(c.y<im.y)dy+=c.h; im.y-=dy; }
   return true;
 }
 function notaReply(id){
@@ -5733,6 +5803,7 @@ function notaReply(id){
     const list=rows.map((t,i)=>({id:ids[i],y:top+i*C.LINE_H,text:t,h:C.LINE_H,tutor:true,...(waiting?{wait:true}:{})}));
     const delta=list.length*C.LINE_H;
     for(const l of S.lines)if(l.y>=top)l.y+=delta;
+    if(!S.pdf)C.flowPictures(top,delta,true);
     S.lines.push(...list);
     render();queue();
   };
@@ -5750,7 +5821,7 @@ function notaReply(id){
     reset(){
       const l=byId(ids[0]);if(!l||!l.tutor)return false;
       dropTail();rows=['…'];waiting=true;frozen=false;finished=false;l.text=rows[0];l.wait=true;
-      for(const i of ids.slice(1)){const g=byId(i);if(g&&g.tutor){S.lines=S.lines.filter(x=>x!==g);for(const o of S.lines)if(o.y>g.y)o.y-=Math.max(C.LINE_H,g.h||C.LINE_H);}}
+      for(const i of ids.slice(1)){const g=byId(i);if(g&&g.tutor){S.lines=S.lines.filter(x=>x!==g);for(const o of S.lines)if(o.y>g.y)o.y-=Math.max(C.LINE_H,g.h||C.LINE_H);if(!S.pdf)C.flowPictures(g.y,-Math.max(C.LINE_H,g.h||C.LINE_H));}}
       ids=ids.slice(0,1);render();queue();C.markDirty();return true;
     },
     update(text){
@@ -5769,6 +5840,7 @@ function notaReply(id){
         if(!l){
           const y=prev.y+Math.max(C.LINE_H,prev.h||C.LINE_H);
           for(const o of S.lines)if(o.y>=y)o.y+=C.LINE_H;
+          if(!S.pdf)C.flowPictures(y,C.LINE_H,true);
           l={id:ids[i],y,text:'',h:C.LINE_H,tutor:true};S.lines.push(l);
         }
         if(l.text!==next[i])l.text=next[i];
@@ -5783,6 +5855,7 @@ function notaReply(id){
         else if(!t){
           const y=prev.y+Math.max(C.LINE_H,prev.h||C.LINE_H);
           for(const o of S.lines)if(o.y>=y)o.y+=C.LINE_H;
+          if(!S.pdf)C.flowPictures(y,C.LINE_H,true);
           tail=C.uid();S.lines.push({id:tail,y,text:'…',h:C.LINE_H,tutor:true,wait:true});
         }
       }
@@ -5899,6 +5972,7 @@ function fitLine(ln,input,shift){
   if(shift&&next!==old&&!S.pdf){
     const delta=next-old;
     for(const other of S.lines)if(other.id!==ln.id&&other.y>ln.y)other.y+=delta;
+    C.flowPictures(ln.y,delta);if(S.images.some(im=>im.inline))N.ink.render();
     C.growDoc(ln.y+next+200);
   }
 }
@@ -5918,12 +5992,15 @@ function relayout(){
 }
 function reflow(){
   if(S.pdf)return; // PDF annotations keep their position on the original page.
-  let floor=0;
-  for(const ln of S.lines.slice().sort((a,b)=>a.y-b.y)){
-    const h=Math.max(C.LINE_H,ln.h||C.LINE_H);
-    if(ln.y<floor)ln.y=floor;
-    floor=ln.y+h;
+  /* a picture in the text is a block of its own: no line sits on top of it */
+  const items=[...S.lines.map(l=>({o:l,h:()=>Math.max(C.LINE_H,l.h||C.LINE_H)})),
+               ...S.images.filter(im=>im.inline).map(im=>({o:im,h:()=>C.imageBounds(im)[3]-im.y}))].sort((a,b)=>a.o.y-b.o.y);
+  let floor=0,pictures=false;
+  for(const it of items){
+    if(it.o.y<floor){it.o.y=floor;if(!('text' in it.o))pictures=true;}
+    floor=it.o.y+it.h();
   }
+  if(pictures)N.ink?.render();
   C.growDoc(floor+160);
 }
 function reset(){ for(const [,d] of els) d.remove(); els.clear(); ghosts.clear(); }
@@ -6015,7 +6092,7 @@ function enter(ln, input){
        still focused: write the head in here or the tail stays on screen as
        well, a line that then reads as duplicated and edits the wrong text */
     input.value=head; input._fitKey='';
-    lineStep('split line',before,after);
+    lineStep('split line',before,after,{y:ln.y,d:delta});
     focusLine(newId,false);
     const next=els.get(newId)?.firstChild;if(next)next.setSelectionRange(0,0);
 }
@@ -6033,14 +6110,14 @@ function joinUp(ln, input){
     /* words of the student's joined onto one of nota's red lines make it the
        student's: a red line is nota's to rewrite, and would take them along */
     if(joined.tutor&&!ln.tutor){delete joined.tutor;delete joined.wait;}
-    lineStep('join lines',before,after);
+    lineStep('join lines',before,after,{y:ln.y,d:-goneH});
     focusLine(prev.id,false);
     const el=els.get(prev.id)?.firstChild;if(el){el._fitKey='';fitLine(byId(prev.id),el,true);renderPositions();el.setSelectionRange(seam,seam);}
     return true;
   }
   const before=S.lines.map(l=>({...l})),goneH=Math.max(C.LINE_H,ln.h||C.LINE_H);
   const after=before.filter(l=>l.id!==ln.id).map(l=>({...l,y:l.y>ln.y?l.y-goneH:l.y}));
-  lineStep('remove line',before,after);
+  lineStep('remove line',before,after,{y:ln.y,d:-goneH});
   if(prev) focusLine(prev.id, true);
   else{
     /* the top line went: carry on at the start of the one that moved up */
@@ -6057,7 +6134,7 @@ function joinDown(ln, input){
   const after=before.filter(l=>l.id!==next.id).map(l=>({...l,y:l.y>next.y?l.y-goneH:l.y}));
   const joined=after.find(l=>l.id===ln.id);joined.text=input.value+next.text;
   if(joined.tutor&&!next.tutor){delete joined.tutor;delete joined.wait;}
-  lineStep('join lines',before,after);
+  lineStep('join lines',before,after,{y:next.y,d:-goneH});
   const el=els.get(ln.id)?.firstChild;if(el){el._fitKey='';fitLine(byId(ln.id),el,true);renderPositions();el.setSelectionRange(seam,seam);}
   return true;
 }
@@ -6091,7 +6168,14 @@ doc.addEventListener('pointerup', e=>{
   if(Math.hypot(e.clientX - t.x, e.clientY - t.y) > 8) return;
   const w = N.ink.toWorld(e);
   const im = N.ink.imageAt(w.x, w.y);
-  if(im){ if(document.activeElement && document.activeElement.blur) document.activeElement.blur(); N.ink.pickImage(im.id); return; }
+  /* only the lasso picks a picture. A tap on one in the text puts the caret
+     on the line under it; one lifted out of the text is left alone */
+  if(im){
+    if(!im.inline) return;
+    const bottom = C.imageBounds(im)[3], under = S.lines.filter(l=>l.y >= bottom - 1 && l.y < bottom + C.LINE_H*2).sort((a,b)=>a.y-b.y)[0];
+    if(under) focusLine(under.id, true); else add(bottom + C.LINE_H/2 + 10);
+    return;
+  }
   if(w.x > M.contentW || w.x < 0) return;
   const hit = S.lines.find(l=>Math.abs(l.y - snap(w.y)) < 4);
   if(S.pdf&&!N.pdf.pageAt(w.y))return;
@@ -8651,8 +8735,9 @@ function trimBox(el){
 /* Where a new image lands. A drop uses the pointer; anything else uses the top
    left of what is on screen, which on a horizontally panned tablet is not
    x=24. A repeat paste is stepped diagonally so it never sits exactly on top
-   of the previous one, where it would look as though nothing had happened. */
-function imageSpot(at,w,h){
+   of the previous one, where it would look as though nothing had happened.
+   A picture going into the text needs no step: it stacks under the last. */
+function imageSpot(at,w,h,step=true){
   const sc=$('#scroller');
   const vo=N.ink.viewOrigin();
   let x=at?Number(at.x):Math.max(24,vo.x+24);
@@ -8660,7 +8745,7 @@ function imageSpot(at,w,h){
   if(!Number.isFinite(x))x=24;if(!Number.isFinite(y))y=80;
   const maxX=Math.max(0,M.contentW-80);
   x=C.clamp(Math.round(x),0,maxX);y=Math.max(0,Math.round(y));
-  for(let i=0;i<=S.images.length&&S.images.some(im=>Math.abs(im.x-x)<2&&Math.abs(im.y-y)<2);i++){x=Math.min(x+24,maxX);y+=24;}
+  for(let i=0;step&&i<=S.images.length&&S.images.some(im=>Math.abs(im.x-x)<2&&Math.abs(im.y-y)<2);i++){x=Math.min(x+24,maxX);y+=24;}
   const iw=Math.min(M.contentW-x,Math.max(80,w));
   return {x,y,w:iw,h:iw*h/w};
 }
@@ -8675,7 +8760,7 @@ function flowImage(img,ln){
   if(h>maxH){h=maxH;w=h*img.w/img.h;}
   w=Math.round(w);h=Math.round(h);
   const y=ln.text?ln.y+lineH+gap:ln.y;
-  const im={id:C.uid(),z:Math.max(Date.now(),...S.images.map(i=>(i.z||0)+1)),x:0,y,w,h,src:img.src};
+  const im={id:C.uid(),z:Math.max(Date.now(),...S.images.map(i=>(i.z||0)+1)),x:0,y,w,h,src:img.src,...(S.pdf?{}:{inline:true})};
   const before=S.lines.map(l=>({...l}));
   /* room for the picture, and for the fresh line under it when one is added */
   const shift=h+gap*2+(ln.text?C.LINE_H:0);
@@ -8686,10 +8771,27 @@ function flowImage(img,ln){
   /* the caret continues under the picture: the empty line that was replaced,
      or a new line when the picture sits under written text */
   if(ln.text)after.push({id:nextId,y:y+h+gap*2,text:'',h:C.LINE_H});
-  const ch=N.text.lineChanges(before,after),redraw=()=>{N.text.render();N.text.queue();};
-  C.act('add image',()=>{if(!S.images.some(i=>i.id===im.id))S.images.push(im);ch.forward();redraw();},()=>{S.images=S.images.filter(i=>i.id!==im.id);ch.back();redraw();});
+  const ch=N.text.lineChanges(before,after),pics=C.pictureChanges(ln.text?ln.y:ln.y-1,shift),redraw=()=>{N.text.render();N.text.queue();};
+  C.act('add image',()=>{pics.forward();if(!S.images.some(i=>i.id===im.id))S.images.push(im);ch.forward();redraw();},()=>{S.images=S.images.filter(i=>i.id!==im.id);ch.back();pics.back();redraw();});
   N.text.focusLine(ln.text?nextId:ln.id,false);
   return im;
+}
+/* A picture put down anywhere else joins the text where it lands: below the
+   line or picture whose height it would land in, with what is under it moved
+   down to make room. */
+function spotInText(im){
+  im.inline=true;
+  const bottom=o=>'text' in o?o.y+Math.max(C.LINE_H,o.h||C.LINE_H):C.imageBounds(o)[3];
+  const things=[...S.lines,...S.images.filter(o=>o.inline)];
+  for(let n=0;n<=things.length;n++){
+    const hit=things.find(o=>o.y<=im.y&&bottom(o)>im.y);
+    if(!hit)break;
+    im.y=Math.round(bottom(hit)+10);
+  }
+  const next=Math.min(Infinity,...things.filter(o=>o.y>=im.y).map(o=>o.y)),shift=Number.isFinite(next)?Math.max(0,im.y+im.h+20-next):0;
+  const before=S.lines.map(l=>({...l}));
+  const ch=N.text.lineChanges(before,before.map(l=>l.y>=im.y?{...l,y:l.y+shift}:l)),pics=C.pictureChanges(im.y-.5,shift),redraw=()=>{N.text.render();N.text.queue();};
+  C.act('add image',()=>{pics.forward();if(!S.images.some(i=>i.id===im.id))S.images.push(im);ch.forward();redraw();},()=>{S.images=S.images.filter(i=>i.id!==im.id);ch.back();pics.back();redraw();});
 }
 async function insertImageFile(f,at,flowLine){
   if(!f||!/^image\//i.test(f.type||''))return false;
@@ -8704,8 +8806,9 @@ async function insertImageFile(f,at,flowLine){
   const line=flowLine&&S.lines.find(l=>l.id===flowLine.id);
   if(line)im=flowImage(img,line);
   else{
-    im={id:C.uid(),z:Math.max(Date.now(),...S.images.map(i=>(i.z||0)+1)),...imageSpot(at,img.w,img.h),src:img.src};
-    C.act('add image',()=>{if(!S.images.some(i=>i.id===im.id))S.images.push(im);},()=>{S.images=S.images.filter(i=>i.id!==im.id);});
+    im={id:C.uid(),z:Math.max(Date.now(),...S.images.map(i=>(i.z||0)+1)),...imageSpot(at,img.w,img.h,!!S.pdf),src:img.src};
+    if(S.pdf)C.act('add image',()=>{if(!S.images.some(i=>i.id===im.id))S.images.push(im);},()=>{S.images=S.images.filter(i=>i.id!==im.id);});
+    else spotInText(im);
   }
   C.growDoc(im.y+im.h);C.layout();N.ink.render();N.text.refreshPlaceholder();
   return true;
