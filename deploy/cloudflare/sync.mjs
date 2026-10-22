@@ -73,7 +73,7 @@ const headers=[
   '/*','  Cross-Origin-Opener-Policy: same-origin','  Cross-Origin-Embedder-Policy: require-corp','  X-Content-Type-Options: nosniff',
   '  Referrer-Policy: no-referrer',
   ...['/','/notas.html'].flatMap(p=>[p,'  Content-Security-Policy: '+pageCsp,'  X-Frame-Options: DENY']),
-  ...['/ink-worker.js','/text-worker.js','/bg-worker.js','/sw.js'].flatMap(p=>[p,'  Content-Security-Policy: '+ASSET_CSP]),
+  ...['/ink-worker.js','/text-worker.js','/bg-worker.js','/sw.js','/assets/pdf/qpdf/worker.js'].flatMap(p=>[p,'  Content-Security-Policy: '+ASSET_CSP]),
   ...noCache.flatMap(p=>[p,'  Cache-Control: no-cache']),
   ...MODEL_DIRS.filter(d=>d!=='assets/bg').flatMap(d=>['/'+d+'/*','  Cache-Control: public, max-age=31536000, immutable']),
   '/assets/bg/*.bin','  Cache-Control: public, max-age=31536000, immutable','  Content-Type: application/octet-stream',

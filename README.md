@@ -71,6 +71,20 @@ The pages panel inserts, moves, turns and deletes pages with their annotations
 searches the PDF's text, and the text tool selects it. Save PDF writes ink as
 vector lines and typed notes as searchable text over the original pages.
 
+The original PDF is stored once, beside the notes and named by its SHA-256, so
+saves never rewrite it; exported notes and backups carry it inline again, and
+an original no note refers to is removed (an hour after it was stored at the
+earliest). There is no page or size limit beyond the device's storage (a
+browser without IndexedDB keeps PDFs up to 3 MB). Restricted and
+password-protected PDFs are unlocked with qpdf (WebAssembly, in a worker) and
+an unlocked copy is kept with the note. Saving edits the original document, so
+its bookmarks, links and form survive; the pages panel lists the bookmarks,
+links work with the text tool, and form fields can be filled and are written
+into the saved form. Selected PDF text can be sent to nota, whose answer
+appears beside it rather than on the page. Installed on a computer, Notas can
+open PDFs from the system ("Open with"); on Android, PDFs can be shared to it.
+`npm run assets:pdf` also copies qpdf; `npm run test:pdf` covers all of this.
+
 PDF.js 6.4.299 and pdf-lib 1.17.1 are pinned in the development dependencies. Run `npm run assets:pdf` to reproduce the bundled PDF engine, fonts, decoders and license notices, and `npm run test:pdf` for browser and offline regression checks.
 
 ## Download as an app

@@ -62,6 +62,10 @@ export default {
     // back to calling the provider itself. Mirrors notaProxy in
     // scripts/serve.mjs. Cloudflare Qwen uses the account ID and API token
     // in server settings and cannot use a browser Cerebras key.
+    // a PDF shared from Android before the service worker was running: the
+    // page says so rather than the request failing
+    if(url.pathname==='/share-target'&&request.method==='POST')return Response.redirect(new URL('/notas.html?shared-pdf=missing',url).href,303);
+
     if(url.pathname==='/nota/chat'){
       // a preflight is answered without any Access-Control headers: the
       // browser then refuses the other site's request, as intended

@@ -98,7 +98,9 @@ try{
   assert.equal(await page.evaluate(()=>N.core.S.strokes.length),2);
   assert.equal(await page.evaluate(()=>N.core.S.strokes[1].author),'mark','highlighter marks survive reopening');
   assert.equal(await page.evaluate(()=>N.core.S.lines.length),4);
-  assert.equal(await page.evaluate(()=>N.core.S.pdf.data),saved.pdf.data,'original bytes survive saving and reopening');
+  assert.equal(await page.evaluate(()=>N.core.S.pdf.ref),saved.pdf.ref,'the stored original survives saving and reopening');
+  assert.equal(await page.evaluate(async()=>(await N.pdf.bytesOf(N.core.S.pdf)).length),sample.length);
+  assert.equal(saved.pdf.data,undefined,'the note itself never carries the PDF');
   await page.evaluate(()=>{N.tutorial.finish(false);document.getElementById('preparing').classList.add('done');});
   // Search finds the PDF's own words on every page; the text tool can select them.
   await page.evaluate(()=>{N.pdf.go(0);N.pdf.openFind();});await page.fill('#pdf-find-input','original pdf page');
@@ -126,7 +128,7 @@ try{
   assert.equal(await page.evaluate(()=>N.core.S.pdf.pages.length),4);
   await page.evaluate(async saved=>N.library.importBundle({notasBundle:1,notes:[saved]}),saved);
   const docs=await page.evaluate(async()=>{const ix=await N.core.Store.index();return Promise.all(ix.map(r=>N.core.Store.get('notas.note.'+r.id)));});
-  assert.ok(docs.filter(d=>d?.pdf?.data===saved.pdf.data).length>=3);
+  assert.ok(docs.filter(d=>d?.pdf?.ref===saved.pdf.ref).length>=3);
   // Malformed files leave the existing document untouched.
   const active=await page.evaluate(()=>N.core.S.id);
   assert.equal(await page.evaluate(()=>N.pdf.importFile(new File(['not a PDF'],'broken.pdf',{type:'application/pdf'}))),false);

@@ -60,7 +60,7 @@ const server=http.createServer(async(req,res)=>{
     const extra={};
     const name=path.relative(root,file).split(path.sep).join('/');
     if(name==='notas.html'){ extra['Content-Security-Policy']=cspFor(bytes.toString('utf8')); extra['X-Frame-Options']='DENY'; }
-    else if(['ink-worker.js','text-worker.js','bg-worker.js','sw.js'].includes(name))extra['Content-Security-Policy']=ASSET_CSP;
+    else if(['ink-worker.js','text-worker.js','bg-worker.js','sw.js','assets/pdf/qpdf/worker.js'].includes(name))extra['Content-Security-Policy']=ASSET_CSP;
     res.writeHead(200,{'Content-Type':types[path.extname(file)]||'application/octet-stream','Content-Length':bytes.length,'Cache-Control':'no-cache','X-Content-Type-Options':'nosniff',...extra});res.end(bytes);
   }catch{
     // a reply that broke mid-stream has already sent its head: end it there

@@ -1,5 +1,5 @@
 'use strict';
-const CACHE='notas-local-v177';
+const CACHE='notas-local-v178';
 self.addEventListener('message',event=>{
   if(event.data?.type==='GET_VERSION')event.ports[0]?.postMessage({version:CACHE.replace('notas-local-','')});
   // The update button explicitly applies this installed build. Only the
@@ -126,6 +126,22 @@ async function held(request){
 }
 self.addEventListener('fetch',event=>{
   const url=new URL(event.request.url);
+  /* Android's share sheet posts a PDF here (the manifest's share_target). It
+     waits in a cache of its own until the page opens and imports it. */
+  if(event.request.method==='POST'&&url.origin===self.location.origin&&url.pathname.endsWith('/share-target')){
+    const back=state=>Response.redirect(new URL('./notas.html?shared-pdf='+state,self.location).href,303);
+    event.respondWith((async()=>{
+      try{
+        const form=await event.request.formData();
+        const file=form.getAll('file').find(f=>f&&typeof f!=='string'&&(f.type==='application/pdf'||/\.pdf$/i.test(f.name||'')));
+        if(!file)return back('none');
+        const cache=await caches.open('notas-shared');
+        await cache.put(new URL('./shared-pdf',self.location).href,new Response(file,{headers:{'Content-Type':'application/pdf','X-File-Name':encodeURIComponent(file.name||'shared.pdf')}}));
+        return back('1');
+      }catch(e){return back('missing');}
+    })());
+    return;
+  }
   if(url.origin!==self.location.origin||event.request.method!=='GET')return;
   // the room and its status check are live answers, never a cached one
   if(url.pathname.includes('/collab/'))return;

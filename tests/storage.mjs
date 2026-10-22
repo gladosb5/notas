@@ -106,6 +106,9 @@ try{
   // preferences are independent pieces of state. Reopening an older note must
   // survive reload, and creating a fresh note must still start at the top.
   await page.setViewportSize({width:390,height:844});
+  /* the page lays itself out again on the resize event, which can arrive
+     after the viewport changes: a scroll set before it would be moved */
+  await page.waitForFunction(()=>N.core.M.vw===390);
   await page.evaluate(async id=>{
     N.core.S.settings.theme='dark';N.core.savePrefs();N.ui.applyTheme();
     await N.ui.openNote(id);

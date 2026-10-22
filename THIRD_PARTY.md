@@ -14,6 +14,6 @@ Other bundled files may contain their own license headers or adjacent license fi
 
 The handwriting stroke alphabet in `nota.js` is attributed there to Hershey glyph data from `techninja/hersheytextjs`. See the [background remover model card](docs/models/background.md) for model provenance.
 
-PDF support uses [PDF.js (Apache-2.0)](assets/pdf/PDFJS-LICENSE.txt) and [pdf-lib (MIT)](assets/pdf/PDFLIB-LICENSE.txt). Additional font, CMap and decoder notices are preserved under `assets/pdf/`.
+PDF support uses [PDF.js (Apache-2.0)](assets/pdf/PDFJS-LICENSE.txt), [pdf-lib (MIT)](assets/pdf/PDFLIB-LICENSE.txt), and [qpdf (Apache-2.0)](assets/pdf/QPDF-LICENSE.txt) compiled to WebAssembly by @neslinesli93/qpdf-wasm (ISC), which unlocks encrypted PDFs so they can be saved. Additional font, CMap and decoder notices are preserved under `assets/pdf/`.
 
 Sharing QR codes use [qrcode-generator 2.0.4 (MIT)](assets/QRCODE-LICENSE.txt), bundled locally in `assets/collab.js`. Run `npm run build:collab` to rebuild. `jsqr` is used only by browser tests to verify the displayed QR codes.

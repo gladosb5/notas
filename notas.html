@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v177">
+<meta name="notas-version" content="v178">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -8826,7 +8826,12 @@ function downloadJSON(name,value,serialized=false){
   for(let part=0;part<parts;part++)setTimeout(()=>send(name.replace(/\.json$/i,'')+' part '+(part+1)+' of '+parts+'.json',JSON.stringify({notasParts:1,id,part,parts,text:text.slice(part*width,(part+1)*width)})),part*700);
   C.toast('this export has '+parts+' parts. select all parts with import in the notes library.',9000);
 }
-function exportJSON(){downloadJSON((S.title||'notas')+'.notas.json',C.serialize());}
+/* a PDF note's original is kept apart on this device; the file carries it */
+async function exportJSON(){
+  let doc=C.serialize();
+  try{doc=await N.pdf?.inline?.(doc)||doc;}catch(e){C.toast(e.message||'the PDF in this note could not be read.',7000);return;}
+  downloadJSON((S.title||'notas')+'.notas.json',doc);
+}
 $('#save-retry').onclick=()=>C.save({announce:true});
 $('#save-export').onclick=()=>exportJSON();
 async function printNote(){
@@ -10651,6 +10656,7 @@ async function exportNotes(ids,backup){
   };
   for(const id of ids){
     let doc;try{doc=active?.id===id?active:await C.Store.read('notas.note.'+id);}catch{}
+    if(doc?.pdf?.ref)try{doc=await N.pdf.inline(doc);}catch{doc=null;}
     if(!doc){unread++;continue;}
     const row=L.ix.find(r=>r.id===id);if(row?.folder)doc={...doc,folder:row.folder};
     if(ids.length===1&&!backup){N.ui.downloadJSON((C.displayTitle(doc.title,doc.lines,doc.textTranscripts,doc.transcripts)||'notas')+'.notas.json',doc);count++;break;}
@@ -10706,7 +10712,7 @@ async function importBundle(raw, intoFolder){
       const updated = Number.isFinite(Number(note.updated)) && note.updated > 0 ? Math.min(now, Number(note.updated)) : now;
       if(!v.pdf&&!v.lines.length) v.lines.push({id:C.uid(), y:120, text:'', h:C.LINE_H});
       const doc = {id, title:v.title.trim()||'untitled', created, updated, rev:1, settings:v.settings, docH:v.docH, view:{scrollTop:0, scrollLeft:0},
-        pdf:v.pdf, strokes:v.strokes, lines:v.lines, images:v.images, localVersion:2, answers:v.answers, transcripts:v.transcripts, textTranscripts:v.textTranscripts};
+        pdf:v.pdf?await N.pdf.stash(v.pdf):v.pdf, strokes:v.strokes, lines:v.lines, images:v.images, localVersion:2, answers:v.answers, transcripts:v.transcripts, textTranscripts:v.textTranscripts};
       const folder = cleanFolder(intoFolder || note.folder);
       doc.library=folder?{folder}:{};
       if(!await C.Store.set('notas.note.'+id, doc)){ bad++; continue; }

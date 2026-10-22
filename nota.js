@@ -1545,6 +1545,24 @@ async function fireInk(hash,tries){
    the maths reader had is passed along; nota answers under the ink, in
    red, as it does a "hey nota" written on the page. */
 let askingSelection=false;
+/* A question about words that are not ink on the page (a passage selected in
+   a PDF): the answer comes back as text to the caller, and nothing is
+   written on the page. The same limits apply as to any question. */
+async function askText(question,context,onDelta,signal){
+  if(!enabled())throw Error('nota is off. turn it on in the menu to ask about this.');
+  if(!navigator.onLine)throw Error('nota needs a connection.');
+  if(holdBack())throw Error('nota has answered all it can for today. try again later.');
+  busy++;
+  try{
+    let text='';
+    await stream(question,context,piece=>{text+=piece;onDelta(piece);},signal,null,true,()=>{});
+    if(overloaded())setOverloaded(false);
+    return text;
+  }catch(e){
+    if(e.overloaded){setOverloaded(true);throw Error('nota has answered all it can for today. try again later.');}
+    throw e;
+  }finally{busy--;}
+}
 async function askSelection(){
   if(!enabled()){C.toast('nota is off. enable it in the menu.');return;}
   const ids=(S.selection||[]).slice();
@@ -1937,7 +1955,7 @@ function toggle(){
   for(const control of activeAnswers)control.abort();
   for(const run of typedRuns.values())if(!run.done)run.abort();
 }
-N.nota={enabled,toggle,forgetLocalInk,localStroke,ownsInk,reset,restoreInk,overloaded,tools:NOTE_TOOLS,toolLimits:{rounds:TOOL_ROUNDS,calls:TOOL_CALLS},isCallStroke,isAskedStroke,drawings:readDrawings,onTranscript,onTyped,askSelection,parseCall,callLength,drawWaiting,mathMatches,tidy,spell,Writer,get busy(){return busy>0;},get writing(){return queue.length;},config:CONFIG,
+N.nota={enabled,toggle,forgetLocalInk,localStroke,ownsInk,reset,restoreInk,overloaded,askText,tools:NOTE_TOOLS,toolLimits:{rounds:TOOL_ROUNDS,calls:TOOL_CALLS},isCallStroke,isAskedStroke,drawings:readDrawings,onTranscript,onTyped,askSelection,parseCall,callLength,drawWaiting,mathMatches,tidy,spell,Writer,get busy(){return busy>0;},get writing(){return queue.length;},config:CONFIG,
   /* the page as nota reads it, for the console: N.nota.context() */
   context(where){ where=where||liveWhere(); return pageRows({...where,diagrams:knownDrawings(where.skip)}); }};
 })();
