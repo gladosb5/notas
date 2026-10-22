@@ -114,3 +114,10 @@ installs, continues across the reload, and completes when the notebook is ready.
 A failed connection or save returns to the current note. Reduced motion uses
 phase changes. Run `npm run test:app-update` to check the update screen, recovery,
 worker activation, and note preservation.
+
+Shared links open the local notebook before loading the sharing library or
+reading its collaboration database. Each sharing setup wait is limited to
+12 seconds; a failed setup reports how to retry and keeps local work. The
+Safari app-choice prompt never waits for the launch drawing to finish.
+`npm run test:app-install` includes stalled-download/database and paused-animation
+startup checks.

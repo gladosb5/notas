@@ -169,8 +169,14 @@ function loadLib(){
   if(window.Yjs)return Promise.resolve(window.Yjs);
   return lib||(lib=new Promise((resolve,reject)=>{
     const s=document.createElement('script'); s.src='./assets/collab.js';
-    s.onload=()=>resolve(window.Yjs);
-    s.onerror=()=>{ lib=null; reject(new Error('sharing could not load.')); };
+    let settled=false;
+    const finish=error=>{
+      if(settled)return;settled=true;clearTimeout(timer);s.onload=s.onerror=null;
+      if(error){s.remove();lib=null;reject(error);}else resolve(window.Yjs);
+    };
+    const timer=setTimeout(()=>finish(new Error('sharing took too long to load. reopen the shared link to retry.')),12000);
+    s.onload=()=>finish(window.Yjs?null:new Error('sharing could not load. reopen the shared link to retry.'));
+    s.onerror=()=>finish(new Error('sharing could not load. reopen the shared link to retry.'));
     document.head.appendChild(s);
   }));
 }
@@ -566,7 +572,13 @@ async function startNow(id,seed,fresh,ticket,gen,baseline){
   const r=room={id,doc,strokes:doc.getMap('strokes'),lines:doc.getMap('lines'),images:doc.getMap('images'),meta:doc.getMap('meta'),
     gen:gen||savedGen(id),known:{strokes:new Map(),lines:new Map(),images:new Map(),title:seed?null:S.title},status:'connecting',peers:[],synced:false,ready:false,early:[]};
   r.idb=new IndexeddbPersistence('notas-collab-'+id,doc);
-  await r.idb.whenSynced;
+  let storageTimer;
+  try{
+    await Promise.race([r.idb.whenSynced,new Promise((_,reject)=>{
+      storageTimer=setTimeout(()=>reject(new Error('the shared note’s saved copy could not be read in time. reopen the shared link to retry.')),12000);
+    })]);
+  }catch(error){if(room===r)stop();throw error;}
+  finally{clearTimeout(storageTimer);}
   if(room!==r)return;
   const stored=r.strokes.size||r.lines.size||r.images.size;
   /* until the device's copy is read, nothing is written into it: a change
@@ -1311,14 +1323,26 @@ async function openLink(){
   if(S.id!==id)return false;
   history.replaceState(null,'',location.pathname);
   setShared(id,true);
-  try{ await start(id,false,linkGen); }catch(e){ C.toast(String(e.message||'sharing could not start.').toLowerCase()); return true; }
-  /* nothing here yet and nothing arriving: say so, rather than leave a
-     blank page and a button that only says "connecting" */
-  if(!known){ const r=room; setTimeout(()=>{ if(room!==r||r.synced)return;
-    C.toast(offline()?'you are offline. the shared note arrives when you are back.':'the shared note is taking a while to arrive. check the link, or try again in a moment.',7000); },15000); }
-  /* the room is joined before the name is asked, so the note arrives while
-     the sheet waits; until it is answered the others see "someone" */
-  if(!name())askName().then(ok=>{ if(ok)announce(); });
+  // The notebook is ready once its local note is open. Network libraries
+  // and the collaboration database must not hold the launch screen hostage.
+  const openingRevision=C.revision;
+  start(id,false,linkGen).then(()=>{
+    if(S.id!==id||!room||room.id!==id)return;
+    const r=room;
+    if(!known)setTimeout(()=>{if(room!==r||r.synced)return;
+      C.toast(offline()?'you are offline. the shared note arrives when you are back.':'the shared note is taking a while to arrive. check the link, or try again in a moment.',7000);
+    },15000);
+    if(!name())askName().then(ok=>{if(ok&&room===r)announce();});
+  }).catch(async error=>{
+    if(S.id!==id)return;
+    let message=String(error.message||'sharing could not start.').toLowerCase();
+    if(C.revision!==openingRevision&&!C.isBlank()){
+      // Edits made while setup waited may not be in the collaboration DB.
+      // Retain an ordinary copy before a later retry pulls that DB again.
+      if(await keepCopy(id)){message+=' your writing was also kept as a copy in your notes.';N.library?.changed();}
+    }
+    if(S.id===id)C.toast(message,7000);
+  });
   return true;
 }
 

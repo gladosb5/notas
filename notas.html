@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v174">
+<meta name="notas-version" content="v175">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -227,11 +227,11 @@ if(motionOff())complete();
 if(performance.now()>=1000)launch.reveal();
 reduced.addEventListener('change',e=>{if(e.matches)complete();});
 
-function open(){
+function open(immediate=false){
   if(opened)return;opened=true;clearTimeout(launch.timer);
   // Quick starts reveal the notebook with the same fade, without playing
   // the loading film. Input is already available beneath the fading paper.
-  const skipAhead=motionOff()||!screen.hasAttribute('data-revealed');
+  const skipAhead=immediate===true||motionOff()||!screen.hasAttribute('data-revealed');
   if(skipAhead){if(!completed)complete();openEnd();return;}
   if(!completed){
     /* the notebook is ready, but the mark is still being drawn: finish it
@@ -11022,8 +11022,8 @@ function loadCAS(){
 }
 N.boot={loadLib,loadCAS,activateUpdate};
 
-function finishPreparing(){
-  window.notasLaunch.open();
+function finishPreparing(immediate=false){
+  window.notasLaunch.open(immediate);
 }
 
 /* The notebook opens as soon as it can be written in. The handwriting
@@ -11186,6 +11186,7 @@ async function boot(){
   return openNotebook();
 }
 async function openNotebook(){
+  const sharedEntry=!!N.collab?.linkedRoom();
   await N.notaFonts.init();
   if(!window.math){
     C.toast('the maths engine could not load. connect once, then it works offline.', 9000);
@@ -11206,7 +11207,7 @@ async function openNotebook(){
   try{ ix = (await C.Store.index()).filter(r=>!r.trashed).sort((a,b)=>(b.updated||0)-(a.updated||0)); }
   catch(e){ cannotOpen('your notes could not be read just now. they are safe. reload to try again.'); return; }
   if(N.appInstall?.needsAppleHandoff){
-    finishPreparing();
+    finishPreparing(true);
     await N.appInstall.chooseSharedDestination();
   }
   if(!(N.collab && await N.collab.openLink().catch(()=>false))){
@@ -11226,7 +11227,7 @@ async function openNotebook(){
   const offline=document.getElementById('offline-status');offline.onclick=prepareOffline;
   const launchReading=beginLaunchReading();
   appReady=true;
-  finishPreparing();
+  finishPreparing(sharedEntry);
   N.appInstall?.start();
   /* The stroke reader is the largest first-run transfer. Avoid competing with
      it for bandwidth and memory on a tablet; offline setup begins as soon as
