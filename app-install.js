@@ -12,6 +12,32 @@ let deferred=null,started=false,installed=false,running=false,banner=null,dismis
 const read=key=>{try{return localStorage.getItem(key);}catch{return null;}};
 const write=(key,value)=>{try{localStorage.setItem(key,value);}catch{}};
 const shared=new URL(entryURL).searchParams.has('share');
+const needsAppleHandoff=apple&&/^[a-z0-9]{8,40}$/.test(new URL(entryURL).searchParams.get('share')||'')&&!standalone();
+
+// Safari cannot launch the Home Screen app. Offer the real manual route
+// before joining the note or asking for a nickname in the browser.
+function chooseSharedDestination(){
+  if(!needsAppleHandoff)return Promise.resolve();
+  return new Promise(resolve=>{
+    const N=window.N;
+    const box=N.ui.openSheet('<h2>Open this note in the app</h2><div class="app-guide"><p>Safari keeps shared links in the browser. To use your installed Notas app:</p><ol><li>Tap <strong>Copy shared link</strong> below.</li><li>Open <strong>Notas from your Home Screen</strong>.</li><li>In Notas, choose <strong>… → open a shared link → Paste and open</strong>. Allow Paste if asked.</li></ol><div class="app-actions"><button type="button" class="app-primary" id="apple-shared-copy">Copy shared link</button><button type="button" id="apple-shared-stay">Stay in browser</button></div><p id="apple-shared-status" role="status" aria-live="polite"></p><details><summary>Need to download Notas?</summary><p>In Safari, tap Share (then View More if needed) → Add to Home Screen. Keep Open as Web App on if shown, then tap Add.</p></details></div>',{fit:true});
+    box.dataset.appleShared='true';
+    const finish=()=>{clearInterval(watcher);dismiss();resolve();};
+    const watcher=setInterval(()=>{if(!box.isConnected)finish();},100);
+    box.querySelector('#apple-shared-stay').onclick=()=>{N.ui.closeSheet(true);finish();};
+    box.querySelector('#apple-shared-copy').onclick=async()=>{
+      const status=box.querySelector('#apple-shared-status');
+      try{
+        await navigator.clipboard.writeText(entryURL);
+        status.textContent='Copied. Open Notas from your Home Screen, then use “open a shared link → Paste and open”.';
+      }catch{
+        status.textContent='Touch and hold this link, then choose Copy:';
+        const input=document.createElement('input');input.value=entryURL;input.readOnly=true;
+        input.setAttribute('aria-label','shared link to copy');status.appendChild(input);input.focus();input.select();
+      }
+    };
+  });
+}
 
 function hide(){banner?.remove();banner=null;}
 function dismiss(){dismissed=true;write('notas.app.dismissed',String(Date.now()));hide();}
@@ -118,7 +144,17 @@ window.addEventListener('appinstalled',()=>{deferred=null;installed=true;write('
 window.N=window.N||{};
 function openShared(){
   const N=window.N;
-  const box=N.ui.openSheet('<h2>Open a shared link</h2><div class="app-guide"><p>Paste a Notas invitation to open the shared note here.</p><form id="app-shared-form"><label for="app-shared-url">Shared link</label><input id="app-shared-url" type="url" required autocomplete="off" spellcheck="false"><p id="app-shared-status" role="status"></p><button type="submit" class="app-primary">Open shared note</button></form></div>',{fit:true});
+  const box=N.ui.openSheet('<h2>Open a shared link</h2><div class="app-guide"><p>Paste a Notas invitation to open the shared note here.</p><form id="app-shared-form"><label for="app-shared-url">Shared link</label><input id="app-shared-url" type="url" required autocomplete="off" spellcheck="false"><p id="app-shared-status" role="status"></p><div class="app-actions"><button type="button" id="app-paste-link" class="app-primary">Paste and open</button><button type="submit">Open shared note</button></div></form></div>',{fit:true});
+  box.querySelector('#app-paste-link').onclick=async()=>{
+    try{
+      const text=await navigator.clipboard.readText();
+      box.querySelector('#app-shared-url').value=text.trim();
+      box.querySelector('#app-shared-form').requestSubmit();
+    }catch{
+      box.querySelector('#app-shared-status').textContent='Touch and hold the link field, choose Paste, then tap Open shared note.';
+      box.querySelector('#app-shared-url').focus();
+    }
+  };
   box.querySelector('#app-shared-form').onsubmit=async event=>{
     event.preventDefault();
     const status=box.querySelector('#app-shared-status');let url;
@@ -135,7 +171,7 @@ function openShared(){
   };
   box.querySelector('#app-shared-url').focus();
 }
-window.N.appInstall={show,openShared,start(){
+window.N.appInstall={show,openShared,needsAppleHandoff,chooseSharedDestination,start(){
   started=true;
   if(standalone()){write('notas.app.installed','1');return;}
   render();refresh();

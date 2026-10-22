@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v173">
+<meta name="notas-version" content="v174">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -11205,6 +11205,10 @@ async function openNotebook(){
   let ix;
   try{ ix = (await C.Store.index()).filter(r=>!r.trashed).sort((a,b)=>(b.updated||0)-(a.updated||0)); }
   catch(e){ cannotOpen('your notes could not be read just now. they are safe. reload to try again.'); return; }
+  if(N.appInstall?.needsAppleHandoff){
+    finishPreparing();
+    await N.appInstall.chooseSharedDestination();
+  }
   if(!(N.collab && await N.collab.openLink().catch(()=>false))){
     const active=C.getActive();
     const target=(active&&ix.find(r=>r.id===active))||ix[0];

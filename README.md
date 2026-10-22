@@ -89,7 +89,10 @@ save successfully. Ordinary visits focus the open app without replacing its note
 The app manifest also supports browser-managed link launches in a new window.
 Opening a closed app and automatic link capture depend on the browser and user
 settings; the website cannot force either. Safari on iPad/iPhone does not offer
-a reliable website-to-app launch API. Use the browser’s **Open in app** option
+a reliable website-to-app launch API. Apple shared-link visits show copy/Home
+Screen instructions before joining or asking for a nickname. The app’s shared-link
+menu includes **Paste and open**, with manual paste when clipboard permission is
+unavailable. Use the browser’s **Open in app** option
 when available, or copy the invitation and paste it into **… → open a shared
 link** inside the app. Invitations are never stored by the installation UI.
 

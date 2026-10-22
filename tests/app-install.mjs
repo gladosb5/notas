@@ -65,10 +65,23 @@ try{
     await ctx.close();
   }
 
-  const ipad=await context({viewport:{width:1024,height:768}});
+  const ipad=await context({viewport:{width:1024,height:768},permissions:['clipboard-read','clipboard-write']});
   await ipad.addInitScript(()=>{Object.defineProperty(navigator,'platform',{value:'MacIntel'});Object.defineProperty(navigator,'maxTouchPoints',{value:5});});
   const ipadPage=await ipad.newPage();await load(ipadPage);await ipadPage.click('#app-recommend-action');
   assert.equal(await ipadPage.inputValue('#app-device'),'apple','desktop-class iPad gets iPad instructions');
+  await ipadPage.evaluate(()=>N.ui.closeSheet(true));
+  const appleInvitation=base+'/notas.html?share=abcdefgh&gen=1234#host=apple-private-token';
+  await load(ipadPage,appleInvitation);
+  await ipadPage.locator('#apple-shared-copy').waitFor();
+  assert.equal(await ipadPage.evaluate(()=>N.collab.room),null,'Apple instructions appear before joining the note');
+  assert.equal(await ipadPage.locator('#collab-name').count(),0,'nickname does not hide the Apple handoff');
+  await ipadPage.click('#apple-shared-copy');
+  assert.equal(await ipadPage.evaluate(()=>navigator.clipboard.readText()),appleInvitation,'Apple copy keeps the full invitation');
+  assert.match(await ipadPage.locator('#apple-shared-status').innerText(),/Home Screen/);
+  await ipadPage.screenshot({path:'test-results/app-apple-shared.png'});
+  await ipadPage.evaluate(()=>Object.defineProperty(navigator.clipboard,'writeText',{value:async()=>{throw Error('blocked');}}));
+  await ipadPage.click('#apple-shared-copy');
+  assert.equal(await ipadPage.locator('[aria-label="shared link to copy"]').inputValue(),appleInvitation,'manual copy remains available when permission is denied');
   await ipad.close();
 
   const ctx=await context({permissions:['clipboard-read','clipboard-write']});
@@ -101,10 +114,14 @@ try{
   await page.click('#app-shared-form [type="submit"]');
   assert.match(await page.locator('#app-shared-status').innerText(),/same site/);
   const valid=base+'/notas.html?share=abcdefgh&gen=1234#host=private-token';
+  await page.evaluate(()=>{window.savedClipboardRead=navigator.clipboard.readText;Object.defineProperty(navigator.clipboard,'readText',{configurable:true,value:async()=>{throw Error('blocked');}});});
+  await page.click('#app-paste-link');
+  assert.match(await page.locator('#app-shared-status').innerText(),/Touch and hold/,'clipboard denial keeps manual paste available');
+  await page.evaluate(()=>Object.defineProperty(navigator.clipboard,'readText',{value:window.savedClipboardRead}));
+  await page.evaluate(value=>navigator.clipboard.writeText(value),valid);
   await page.route('**/notas.html?share=abcdefgh*',route=>route.abort());
-  await page.fill('#app-shared-url',valid);
   const navigation=page.waitForRequest(request=>request.isNavigationRequest()&&request.url().includes('share=abcdefgh'));
-  await page.click('#app-shared-form [type="submit"]');
+  await page.click('#app-paste-link');
   assert.equal((await navigation).url(),valid.split('#')[0],'manual shared-link opening keeps invitation query');
   await ctx.close();
 

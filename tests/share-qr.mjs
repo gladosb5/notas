@@ -29,12 +29,13 @@ try{
   }
   assert.ok(ready,'local Cloudflare worker starts: '+logs);
   browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
-  const person=async name=>{
+  const person=async (name,apple=false)=>{
     const context=await browser.newContext({serviceWorkers:'block',viewport:{width:1280,height:900},permissions:['clipboard-read','clipboard-write']});
     await context.addInitScript(name=>{
       localStorage.setItem('notas.collab.name',name);
       localStorage.setItem('notas.prefs',JSON.stringify({handwritingRecognitionOn:false,textRecognitionOn:false,backgroundRemovalOn:false,notaOn:false}));
     },name);
+    if(apple)await context.addInitScript(()=>{Object.defineProperty(navigator,'platform',{value:'MacIntel'});Object.defineProperty(navigator,'maxTouchPoints',{value:5});});
     const page=await context.newPage();
     page.on('pageerror',e=>errors.push(e.message));
     page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
@@ -69,8 +70,13 @@ try{
   mkdirSync(path.join(root,'test-results'),{recursive:true});
   await host.locator('.sheet .box').screenshot({path:path.join(root,'test-results/share-qr-desktop.png')});
 
-  const guest=await person('qr guest');
+  const guest=await person('qr guest',true);
   await load(guest,first);
+  await guest.locator('#apple-shared-copy').waitFor();
+  assert.equal(await guest.evaluate(()=>N.collab.room),null,'Safari offers the app route before joining');
+  await guest.click('#apple-shared-copy');
+  assert.equal(await guest.evaluate(()=>navigator.clipboard.readText()),first,'real invitation generation survives Apple copy');
+  await guest.click('#apple-shared-stay');
   await guest.waitForFunction(()=>N.core.S.lines.some(l=>l.text==='shared through a QR code'));
   assert.equal(await guest.evaluate(()=>N.collab.isHost()),false,'scanning joins as a guest');
   await guest.evaluate(()=>N.collab.share());
