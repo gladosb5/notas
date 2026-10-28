@@ -641,13 +641,27 @@ input:focus-visible,textarea:focus-visible{outline:none}
 #status[data-error="true"]{color:var(--red)}
 
 /* ---- scroll area ---- */
+/* a long note has to show where you are in it. The paper alone, of every
+   surface on this page, carries a scroll bar: a slim thumb in the ink's
+   colour resting on a clear track, the same hair the sheets use. The chrome
+   above the glass still scrolls without one showing. */
 #scroller{
   position:fixed;inset:var(--bar) 0 0 0;overflow:auto;touch-action:pan-y pinch-zoom;
   overscroll-behavior:contain;
   -webkit-overflow-scrolling:touch;
-  scrollbar-width:none;
+  scrollbar-width:thin;
+  scrollbar-color:var(--ink-3) transparent;
 }
-#scroller::-webkit-scrollbar{display:none}
+/* engines that have not taken up the standard pair (older Safari, older
+   Chromium) paint the same hair through the webkit aliases */
+#scroller::-webkit-scrollbar{width:11px;height:11px}
+#scroller::-webkit-scrollbar-thumb{
+  background:var(--ink-3);border-radius:6px;
+  border:2px solid transparent;background-clip:content-box;
+}
+#scroller::-webkit-scrollbar-thumb:hover{background:var(--ink-2)}
+#scroller::-webkit-scrollbar-track{background:transparent}
+#scroller::-webkit-scrollbar-corner{background:transparent}
 #doc{position:relative;width:100%}
 #col{position:relative;margin:0;width:var(--col-w,940px);transform-origin:0 0;z-index:3;pointer-events:none}
 /* Zoom gives the column its own stacking context. Keep its controls above
