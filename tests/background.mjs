@@ -24,7 +24,7 @@ try{
   });
   const page=await context.newPage();
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.goto(base+'/notas.html');
+  await page.addInitScript(()=>{try{localStorage.setItem('notas.tut','done');}catch{}});await page.goto(base+'/notas.html');
   await page.waitForFunction(()=>window.N&&N.ui&&N.ink&&N.ink.removeBackground);
   // The original 502 only occurs when the page is controlled by sw.js.
   await page.evaluate(async()=>{

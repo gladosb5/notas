@@ -2,147 +2,93 @@ import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {startServer} from '../scripts/serve.mjs';
-import {writing} from './fixtures/math-notes.mjs';
+
+/* The intro: a white page before the notebook, one idea per screen, then the
+   notebook. It never asks nota anything and never touches the note. */
+const SAYS=['hey, student.','this is your paper.',
+  'don\'t think about calculating maths. think about what you are going to create with maths.',
+  'also your handwriting too.','let me introduce myself.','tap the eraser again.','tap the pen again.',
+  'double-tap a picture.','search reads your handwriting.','press ? for shortcuts.','good luck.'];
 
 const server=await startServer(0),browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
 const base=`http://127.0.0.1:${server.address().port}`;
 await mkdir('test-results',{recursive:true});
 try{
- for(const [width,height,theme] of [[1280,900,'light'],[390,844,'dark'],[320,740,'light'],[844,390,'dark']]){
-  const context=await browser.newContext({viewport:{width,height},hasTouch:width<900,colorScheme:theme,serviceWorkers:'block',reducedMotion:'reduce'});
+ for(const [width,height,theme,motion] of [[1280,900,'light','no-preference'],[390,844,'dark','reduce'],[320,740,'light','reduce'],[844,390,'dark','reduce']]){
+  const touch=width<900,label=`${width}-${theme}`;
+  const context=await browser.newContext({viewport:{width,height},hasTouch:touch,isMobile:touch,colorScheme:theme,serviceWorkers:'block',reducedMotion:motion});
   const page=await context.newPage(),errors=[];let requests=0;
   page.on('pageerror',e=>errors.push(e.message));
   await page.addInitScript(()=>localStorage.setItem('notas.prefs',JSON.stringify({handwritingRecognitionOn:false,textRecognitionOn:false,backgroundRemovalOn:false,notaOn:true})));
-  await context.route(/\/nota\/chat$|api\.cerebras\.ai/,async route=>{
-   requests++;
-   await route.fulfill({status:200,contentType:'text/event-stream',body:'data: '+JSON.stringify({choices:[{delta:{content:'Twelve groups of seven make eighty-four.'}}]})+'\n\ndata: [DONE]\n\n'});
-  });
+  await context.route(/\/nota\/chat$|api\.cerebras\.ai|oxionai\.com/,route=>{requests++;return route.abort();});
   await page.goto(base+'/notas.html');
-  await page.waitForFunction(()=>window.N?.tutorial?.running&&document.querySelector('#preparing').classList.contains('done'));
-  const next=page.locator('.tut-next');
-  const step=async n=>assert.equal(await page.locator('.tut').getAttribute('data-step'),String(n));
-  const type=async text=>{await page.keyboard.insertText(text);await page.waitForTimeout(250);};
-  const selectLine=()=>page.locator('.line .txt').last().evaluate(el=>{el.focus();el.select();});
-  await step(-1);
-  assert.equal(await page.locator('.tut-say').textContent(),'let’s write something together.');
-  assert.equal(await page.locator('.tut-body,.tut-hint,.tut-status,.tut-steps,.tut-tools,.tut-mark').count(),0,'no panel copy, progress rail or duplicate tool controls');
-  assert.equal(await page.locator('.tut').evaluate(el=>{const s=getComputedStyle(el);return s.backgroundImage==='none'&&s.boxShadow==='none'&&parseFloat(s.borderTopWidth)===0;}),true,'guidance has no surface or border');
-  assert.ok((await page.locator('.tut').boundingBox()).height<120,'the introduction is a short note on the paper');
-  await page.emulateMedia({media:'print'});assert.equal(await page.locator('.tut').isVisible(),false,'temporary guidance never prints');await page.emulateMedia({media:'screen'});
-  await page.screenshot({path:`test-results/tutorial-welcome-${width}.png`});
-  await next.click();await step(0);
-  assert.equal(await page.evaluate(()=>N.core.S.tool),'text');
-  // Neither a single digit nor an invalid expression counts as a calculation.
-  await type('12');assert.equal(await next.isDisabled(),true);
-  await selectLine();await type('12 x');assert.equal(await next.isDisabled(),true);
-  await selectLine();await type('12 x 7');
-  await page.waitForFunction(()=>!document.querySelector('.tut-next').disabled);
-  assert.equal(await page.locator('.tut-say').textContent(),'there you go.');
-  assert.ok(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result==='84')));
-  await page.screenshot({path:`test-results/tutorial-calculate-${width}.png`});
-  await next.click();await step(1);assert.equal(await next.isDisabled(),true);
-  assert.equal(await page.locator('.tut-do').textContent(),'(12 ÷ 2) + 6 × 4 =','the second lesson is one grouped calculation');
-  await type('pens = 3');assert.equal(await next.isDisabled(),true,'a definition cannot pass the grouped calculation lesson');
-  await selectLine();await type('3 + 3');assert.equal(await next.isDisabled(),true,'a simple sum cannot pass the grouped calculation lesson');
-  await selectLine();await type('(12 / 0) + 6 * 4 =');
-  assert.equal(await next.isDisabled(),true,'a grouped calculation with an error cannot pass');
-  await selectLine();await page.keyboard.type('(12 / 2) + 6 * 4 =',{delay:35});
-  await page.waitForFunction(()=>!document.querySelector('.tut-next').disabled);
-  assert.equal(await page.locator('.tut-say').textContent(),'it keeps the order.');
-  assert.ok(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result==='30'&&!n.provides)));
-  assert.equal(await page.locator('.ghost-layer .ghost').textContent(),'30','trailing equals previews the grouped calculation answer');
-  await page.screenshot({path:`test-results/tutorial-grouped-${width}.png`});
-  await page.keyboard.press('Space');await page.waitForTimeout(250);
-  assert.equal(await next.isDisabled(),false,'accepting the answer still completes the grouped calculation lesson');
-  assert.equal(await page.evaluate(()=>N.text.focusedLine().text),'(12 / 2) + 6 * 4 =30');
-  await next.click();await step(2);
-  await type('hey nota, explain the maths above?');
-  await page.waitForFunction(()=>document.querySelector('.tut-next').textContent==='done');
-  await page.waitForFunction(()=>N.core.S.lines.some(l=>l.tutor&&l.text.includes('brackets first')));
-  assert.equal(requests,0,'the exact tutorial example writes its prepared reply without an AI request');
-  const question=page.locator('.line:not(.tutor) .txt').filter({hasText:'hey nota, explain the maths above?'}).first();
-  await question.evaluate(el=>{el.focus();el.select();});
-  await type('hey nota, explain the maths above in Spanish?');
-  await page.waitForFunction(()=>N.core.S.lines.some(l=>l.tutor&&l.text.includes('Twelve groups')));
-  await page.waitForFunction(()=>!N.nota.busy);
-  assert.ok(requests>0,'changing the prompt uses the real Nota request path with a mocked provider');
-  await page.screenshot({path:`test-results/tutorial-nota-${width}.png`});
-  await next.click();await step(3);
-  await page.screenshot({path:`test-results/tutorial-complete-${width}.png`});
-  const content=await page.evaluate(()=>({lines:N.core.S.lines.map(l=>l.text).filter(Boolean),ink:N.core.S.strokes.length}));
-  await next.click();assert.equal(await page.locator('.tut').count(),0);
-  assert.equal(await page.evaluate(()=>localStorage.getItem('notas.tut')),'done');
-  await page.evaluate(()=>N.tutorial.maybeStart());assert.equal(await page.locator('.tut').count(),0);
-  // Replay creates no sample content and does not inherit the existing answers.
-  await page.evaluate(()=>N.tutorial.start(true));await step(-1);
-  assert.deepEqual(await page.evaluate(()=>({lines:N.core.S.lines.map(l=>l.text).filter(Boolean),ink:N.core.S.strokes.length})),content);
-  await next.click();await step(0);assert.equal(await next.isDisabled(),true);
-  await page.locator('#pill .tool[data-tool="pen"]').click();
-  await page.waitForFunction(()=>document.querySelector('.tut-say').textContent.includes('reader is off'));
-  await page.keyboard.press('Escape');
-  await page.locator('#pill .tool[data-tool="text"]').click();assert.equal(await page.evaluate(()=>N.core.S.tool),'text');
-  assert.equal(await next.isDisabled(),true);
-  // Replaying several times cannot leave a delayed dismissal from an old run.
-  await page.evaluate(()=>{N.tutorial.finish(false);N.tutorial.start(true);N.tutorial.finish(false);N.tutorial.start(true);});
-  await page.waitForTimeout(800);await step(-1);
-  await page.locator('.tut-skip').click();assert.equal(await page.locator('.tut').count(),0);
-  assert.deepEqual(errors,[]);
-  console.log(`Tutorial typed path, real Nota pipeline, validation, replay and skip: ${width}x${height} ${theme} passed`);
-  await context.close();
- }
+  await page.waitForFunction(()=>window.N?.tutorial?.running&&document.querySelector('#preparing').classList.contains('done')&&document.querySelector('#intro h1 canvas'));
 
- // Controlled recognition readings test the actual Solve UI and tutorial state,
- // not handwriting-model accuracy. Both mathematical lessons use only ink here.
- const context=await browser.newContext({viewport:{width:1280,height:900},serviceWorkers:'block',reducedMotion:'reduce'});
- const page=await context.newPage();
- const solve=async()=>{
-  const button=page.locator('.chip.offer .solve').first();await button.waitFor();
-  await button.scrollIntoViewIfNeeded();const box=await button.boundingBox();
-  // A physical pen's tap goes through the canvas to the real Solve handler.
-  const pos={pointerId:83,pointerType:'pen',isPrimary:true,button:0,clientX:box.x+box.width/2,clientY:box.y+box.height/2,bubbles:true};
-  await page.locator('#c-ink').dispatchEvent('pointerdown',{...pos,buttons:1,pressure:.5});
-  await page.locator('#c-ink').dispatchEvent('pointerup',{...pos,buttons:0,pressure:0});
- };
- await page.addInitScript(()=>localStorage.setItem('notas.prefs',JSON.stringify({handwritingRecognitionOn:false,textRecognitionOn:false,backgroundRemovalOn:false,notaOn:false})));
- await page.goto(base+'/notas.html');await page.waitForFunction(()=>N.tutorial?.running&&document.querySelector('#preparing').classList.contains('done'));
- await page.locator('.tut-next').click();await page.locator('#pill .tool[data-tool="pen"]').click();await page.keyboard.press('Escape');
- const seed=async expressions=>page.evaluate(({expressions,strokes})=>{
-  const S=N.core.S;S.strokes.push(...strokes);N.recog.rebuild();
-  const targets=S.clusters.filter(cl=>cl.strokeIds.some(id=>id.startsWith('lesson-'))).sort((a,b)=>a.bbox[1]-b.bbox[1]);
-  for(let i=0;i<expressions.length;i++){
-   Object.assign(targets[i],{ascii:expressions[i],latex:expressions[i],confidence:.99,confirmed:true,asked:false,review:false,pending:false,modelVersion:N.recog.resultVersion});
+  const expected=SAYS.filter(s=>!(touch&&s==='press ? for shortcuts.'));
+  assert.equal(await page.evaluate(()=>N.tutorial.screens),expected.length,'the keyboard screen is for keyboards only');
+  assert.equal(await page.locator('#topbar').evaluate(el=>!!el.closest('[inert]')),true,'the notebook waits behind the intro');
+  const bg=await page.locator('#intro').evaluate(el=>getComputedStyle(el).backgroundColor);
+  if(theme==='light')assert.equal(bg,'rgb(255, 255, 255)','a white page');else assert.notEqual(bg,'rgb(255, 255, 255)','dark mode keeps the dark paper');
+
+  /* the notebook's keys stay asleep while the intro is up */
+  const toolBefore=await page.evaluate(()=>N.core.S.tool);
+  await page.keyboard.press('p');
+  assert.equal(await page.evaluate(()=>N.core.S.tool),toolBefore,'P does not switch to the pen behind the intro');
+
+  for(let i=0;i<expected.length;i++){
+   assert.equal(await page.evaluate(()=>N.tutorial.screen),i);
+   assert.equal(await page.locator('#intro h1 .sr-only').textContent(),expected[i]);
+   if(!await page.evaluate(()=>N.tutorial.settled)){
+    /* a tap while nota writes finishes the screen instead of skipping it */
+    await page.mouse.click(width/2,height/2);
+    assert.equal(await page.evaluate(()=>N.tutorial.screen),i,'the first tap finishes writing');
+    assert.equal(await page.evaluate(()=>N.tutorial.settled),true);
+   }
+   const fit=await page.evaluate(()=>{
+    const stage=document.querySelector('.intro-stage').getBoundingClientRect(),root=document.getElementById('intro');
+    const wide=[...root.querySelectorAll('canvas,.i-paper,.i-pill,.i-pop,.i-search,.i-result,.i-pic,.i-sheet')].filter(e=>e.getBoundingClientRect().width).map(e=>e.getBoundingClientRect()).filter(r=>r.left<stage.left-1||r.right>stage.right+1);
+    return {wide:wide.length,overflow:document.documentElement.scrollWidth>innerWidth||root.scrollWidth>root.clientWidth};
+   });
+   assert.deepEqual(fit,{wide:0,overflow:false},`screen ${i} fits ${label}`);
+   await page.screenshot({path:`test-results/intro-${String(i).padStart(2,'0')}-${label}.png`});
+   if(i===1&&!touch){
+    await page.keyboard.press('ArrowLeft');assert.equal(await page.evaluate(()=>N.tutorial.screen),0,'arrow left goes back');
+    await page.keyboard.press('ArrowRight');assert.equal(await page.evaluate(()=>N.tutorial.screen),1);
+    if(!await page.evaluate(()=>N.tutorial.settled))await page.keyboard.press('Enter');
+   }
+   if(i===expected.length-1)break;
+   if(touch)await page.locator('.intro-next').tap();else await page.keyboard.press('Enter');
   }
-  N.ink.render();N.mathcore.run();N.tutorial.check('stroke');
-  return {count:S.strokes.length,targets:targets.length};
- },{expressions,strokes:expressions.flatMap((_,i)=>writing('61+1=61+1=',40,150+i*110,'lesson-'+expressions.length+'-'+i))});
- let seeded=await seed(['12*7']);assert.ok(seeded.count>10);assert.equal(await page.evaluate(()=>N.tutorial.running),true,'drawing never retires the lesson');
- assert.equal(await page.locator('.tut-next').isDisabled(),true,'reading alone is not success');
- await solve();
- await page.waitForFunction(()=>!document.querySelector('.tut-next').disabled);
- assert.equal(await page.locator('.tut-say').textContent(),'there you go.');
- assert.ok(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result==='84')));
- await page.locator('.tut-next').click();
- // Clear the previous exercise's injected clusters before adding the grouped expression.
- await page.evaluate(()=>{N.core.S.strokes=[];N.core.S.clusters=[];N.recog.reset();N.mathcore.run();});
- await seed(['((12)/(2))+6*4=']); // The formula reader's fraction notation is equivalent.
- assert.equal(await page.locator('.tut-next').isDisabled(),true,'the grouped expression needs Solve');
- await solve();
- await page.waitForFunction(()=>!document.querySelector('.tut-next').disabled);
- assert.ok(await page.evaluate(()=>N.core.S.nodes.some(n=>n.result==='30')));
- await page.locator('.tut-next').click();
- assert.equal(await page.locator('.tut').getAttribute('data-step'),'2');
- // A recognised handwritten question can finish even with Nota switched off.
- await page.evaluate(()=>{N.core.S.textTranscripts.push({hash:'tutorial-question',text:'hey nota, explain this maths?',confidence:.95});N.tutorial.check('text');});
- assert.equal(await page.locator('.tut-next').textContent(),'done');
- await page.locator('.tut-next').click();assert.equal(await page.locator('.tut').getAttribute('data-step'),'3');
- await page.locator('.tut-next').click();
- // The optional AI lesson is also skippable, without a fake answer or question.
- await page.evaluate(()=>{N.tutorial.start(true);});await page.locator('.tut-next').click();
- await page.evaluate(()=>{const a=N.text.add(700,false);a.text='6*7';N.text.render();N.mathcore.run();});
- await page.locator('.tut-next').click();
- await page.evaluate(()=>{const a=N.text.add(800,false);a.text='(18 / 3) + 2 * 5';N.text.render();N.mathcore.run();});
- await page.locator('.tut-next').click();assert.equal(await page.locator('.tut-next').textContent(),'later');
- await page.locator('.tut-next').click();assert.equal(await page.locator('.tut').getAttribute('data-step'),'3');
- await page.locator('.tut-next').click();await context.close();
- console.log('Tutorial ink/Solve path, >10 strokes, handwritten Nota, disabled AI and optional AI completion passed');
-}finally{await browser.close();await new Promise(resolve=>server.close(resolve));}
+  /* good luck. fades into the notebook on its own */
+  await page.waitForFunction(()=>!N.tutorial.running&&!document.getElementById('intro'),null,{timeout:5000});
+  assert.equal(await page.evaluate(()=>localStorage.getItem('notas.tut')),'done');
+  assert.equal(await page.locator('#topbar').evaluate(el=>!!el.closest('[inert]')),false,'the notebook is live again');
+  assert.equal(await page.evaluate(()=>N.core.S.lines.filter(l=>l.text?.trim()).length+N.core.S.strokes.length),0,'the intro left nothing on the note');
+  await page.screenshot({path:`test-results/intro-after-${label}.png`});
+
+  /* once seen, never again on its own */
+  await page.reload();
+  await page.waitForFunction(()=>window.N?.tutorial&&document.querySelector('#preparing').classList.contains('done'));
+  await page.waitForTimeout(300);
+  assert.equal(await page.evaluate(()=>N.tutorial.running),false);
+
+  /* the menu replays it, and escape leaves at once */
+  await page.locator('#btn-menu').click();
+  await page.locator('#mi-tut').click();
+  await page.waitForFunction(()=>document.querySelector('#intro h1 canvas'));
+  assert.equal(await page.evaluate(()=>N.tutorial.screen),0);
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(()=>!document.getElementById('intro'),null,{timeout:3000});
+
+  /* skip is always there */
+  await page.evaluate(()=>N.tutorial.start(true));
+  await page.waitForFunction(()=>document.querySelector('#intro h1 canvas'));
+  await page.locator('.intro-skip').click();
+  await page.waitForFunction(()=>!document.getElementById('intro'),null,{timeout:3000});
+
+  assert.equal(requests,0,'the intro never asks nota');
+  assert.deepEqual(errors,[]);
+  await context.close();
+  console.log('ok',label);
+ }
+}finally{await browser.close();server.close();}

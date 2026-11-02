@@ -7,7 +7,7 @@ const server=await startServer(0),browser=await chromium.launch({channel:process
 try{
   const page=await browser.newPage({serviceWorkers:'block'}),errors=[];
   page.on('pageerror',e=>errors.push(e.message));
-  await page.goto((process.env.NOTAS_BASE_URL||`http://127.0.0.1:${server.address().port}`)+'/notas.html');
+  await page.addInitScript(()=>{try{localStorage.setItem('notas.tut','done');}catch{}});await page.goto((process.env.NOTAS_BASE_URL||`http://127.0.0.1:${server.address().port}`)+'/notas.html');
   await page.waitForFunction(()=>window.N?.ink?.removeBackground&&N.ui?.insertImages);
   const result=await page.evaluate(async src=>{
     const blob=new Blob([Uint8Array.from(atob(src.slice(src.indexOf(',')+1)),c=>c.charCodeAt(0))],{type:'image/png'});

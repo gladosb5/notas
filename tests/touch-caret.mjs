@@ -18,7 +18,7 @@ const state=page=>page.evaluate(()=>{
 });
 const settle=page=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
 async function typeHello(page){
-  await page.goto(base+'/notas.html');
+  await page.addInitScript(()=>{try{localStorage.setItem('notas.tut','done');}catch{}});await page.goto(base+'/notas.html');
   await page.waitForFunction(()=>window.N&&N.text&&N.typing);
   await page.evaluate(()=>{const skip=[...document.querySelectorAll('.tut button')].find(b=>b.textContent.trim()==='skip');if(skip)skip.click();});
   await page.evaluate(()=>N.text.focusLast());
@@ -82,7 +82,7 @@ try{
 
   // ?tapdebug shows the on-screen log a device without an inspector can screenshot
   const dbg=await (await browser.newContext({viewport:{width:1180,height:820},hasTouch:true,isMobile:true})).newPage();
-  await dbg.goto(base+'/notas.html?tapdebug');await dbg.waitForFunction(()=>window.N&&N.text);
+  await dbg.addInitScript(()=>{try{localStorage.setItem('notas.tut','done');}catch{}});await dbg.goto(base+'/notas.html?tapdebug');await dbg.waitForFunction(()=>window.N&&N.text);
   await dbg.evaluate(()=>{const s=[...document.querySelectorAll('.tut button')].find(b=>b.textContent.trim()==='skip');if(s)s.click();N.text.focusLast();});
   await dbg.keyboard.type('abc');
   const box=await dbg.evaluate(()=>{const t=document.querySelector('#lines .line .txt'),r=document.createRange();r.setStart(t.firstChild,1);r.setEnd(t.firstChild,1);const c=r.getBoundingClientRect();return {x:c.left+1,y:c.top+c.height/2};});

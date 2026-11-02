@@ -29,7 +29,7 @@ try{
   if(failure==='tool-error')return route.fulfill({contentType:'text/event-stream',body:sse({tool_calls:[{index:0,id:'call_a',type:'function',function:{name:'list_notes',arguments:'{}'}}]})});
   return route.fulfill({contentType:'text/event-stream',body:sse({content:'answer'})});
  });
- await page.goto(`http://127.0.0.1:${server.address().port}/notas.html`);
+ await page.addInitScript(()=>{try{localStorage.setItem('notas.tut','done');}catch{}});await page.goto(`http://127.0.0.1:${server.address().port}/notas.html`);
  await page.waitForFunction(()=>window.N?.nota?.stream);
  const run=async(typed=false,tools=false)=>{calls.length=0;return page.evaluate(async({typed,mode,cfMode,tools})=>{
   const control=new AbortController();let text='',fallbacks=0,grabs=0;

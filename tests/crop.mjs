@@ -13,7 +13,7 @@ try{
   const context=await browser.newContext({viewport:{width:900,height:1000}});
   const page=await context.newPage();
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.goto(base+'/notas.html');
+  await page.addInitScript(()=>{try{localStorage.setItem('notas.tut','done');}catch{}});await page.goto(base+'/notas.html');
   await page.waitForFunction(()=>window.N&&N.ui&&N.ink&&N.ink.startCrop);
   // a 400x300 PNG in four coloured quarters
   const id=await page.evaluate(async()=>{
@@ -129,7 +129,7 @@ try{
   //    wobble on its own is not a drag, and a real drag still moves it
   const tctx=await browser.newContext({viewport:{width:1180,height:820},hasTouch:true,isMobile:true});
   const tp=await tctx.newPage();
-  await tp.goto(base+'/notas.html');
+  await tp.addInitScript(()=>{try{localStorage.setItem('notas.tut','done');}catch{}});await tp.goto(base+'/notas.html');
   await tp.waitForFunction(()=>window.N&&N.ui&&N.ink&&N.ink.startCrop);
   const tid=await tp.evaluate(async()=>{
     const skip=[...document.querySelectorAll('.tut button')].find(b=>b.textContent.trim()==='skip');if(skip)skip.click();

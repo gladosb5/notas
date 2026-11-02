@@ -8,7 +8,7 @@ const server=await startServer(0),browser=await chromium.launch({channel:process
 try{
  const page=await browser.newPage({serviceWorkers:'block'});
  page.on('pageerror',e=>{throw e;});
- await page.goto(`http://127.0.0.1:${server.address().port}/notas.html`);
+ await page.addInitScript(()=>{try{localStorage.setItem('notas.tut','done');}catch{}});await page.goto(`http://127.0.0.1:${server.address().port}/notas.html`);
  await page.waitForFunction(()=>window.N?.nota?.tidy);
  const tidy=(text,keep=false)=>page.evaluate(({text,keep})=>N.nota.tidy(text,keep),{text,keep});
  const cases=[

@@ -20,6 +20,7 @@ Keep the same address and browser profile to return to your notes. Export import
 ## Features
 
 - Pen and typed notes, pictures, selection, undo/redo, and note import/export.
+- A short first-visit intro, written in nota's hand, that can be replayed from the menu.
 - Local handwriting recognition, maths calculations, and Quick Maths insertion.
 - Offline use after the app and required models have been cached.
 - Optional on-device image background removal; its larger model loads when needed.

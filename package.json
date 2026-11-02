@@ -32,7 +32,6 @@
     "assets:pdf": "node scripts/prepare-pdf-assets.mjs",
     "test:pdf": "node tests/pdf-notebook.mjs && node tests/pdf-features.mjs",
     "test:tutorial": "node tests/tutorial.mjs",
-    "test:tutorial-replies": "node tests/tutorial-replies.mjs",
     "test:image-paste": "node tests/image-paste.mjs",
     "test:share-qr": "node tests/share-qr.mjs",
     "test:eraser-trail": "node tests/eraser-trail.mjs"
