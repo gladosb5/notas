@@ -156,6 +156,11 @@
     const p=pdf.pages[ownerIn(pdf.pages,st.pts[1])];
     ctx.save();ctx.beginPath();ctx.rect(0,p.y,W,p.h);ctx.clip();return true;
   }
+  /* the index of the page a stroke belongs to, so highlights can be grouped
+     per page and clipped together */
+  function pageOf(st,pdf=S.pdf){
+    return pdf?.pages?.length&&st?.pts?.length?ownerIn(pdf.pages,st.pts[1]):-1;
+  }
   function current(){
     if(!S.pdf)return 0;
     const y=(sc.scrollTop+Math.min(160,M.vh/3))/M.zoom;
@@ -822,7 +827,24 @@
   function inkOps(lib,page,p,strokes){
     const o=lib,ops=[],weight=st=>st.author==='user'?1.3:1;
     let multiply=null;
+    /* Highlights of one colour are one stroked path: a PDF paints a path's
+       subpaths as their union, so where marks meet or cross the page is
+       multiplied once, as on screen, and no darker discs appear. */
+    const groups=new Map();
+    for(const st of strokes)if(st.author==='mark'){const k=(st.color||'#FFE066')+'|'+st.w;(groups.get(k)||groups.set(k,[]).get(k)).push(st);}
+    for(const list of groups.values()){
+      multiply=multiply||page.node.newExtGState('NotasMark',page.doc.context.obj({Type:'ExtGState',BM:'Multiply'}));
+      ops.push(o.pushGraphicsState(),o.setGraphicsState(multiply),o.setStrokingColor(rgbOf(lib,list[0].color||'#FFE066')),
+        o.setLineCap(o.LineCapStyle.Round),o.setLineJoin(o.LineJoinStyle.Round),o.setLineWidth(list[0].w));
+      for(const st of list){
+        const pts=st.pts;ops.push(o.moveTo(n2(pts[0]),n2(pts[1]-p.y)));
+        if(pts.length<6)ops.push(o.lineTo(n2(pts[0]+.01),n2(pts[1]-p.y)));
+        else for(let i=3;i<pts.length;i+=3)ops.push(o.lineTo(n2(pts[i]),n2(pts[i+1]-p.y)));
+      }
+      ops.push(o.stroke(),o.popGraphicsState());
+    }
     for(const st of strokes){
+      if(st.author==='mark')continue;
       const pts=st.pts,mark=st.author==='mark',color=rgbOf(lib,st.color||(mark?'#FFE066':N.ink.inkColor(st.author)));
       ops.push(o.pushGraphicsState());
       if(mark){multiply=multiply||page.node.newExtGState('NotasMark',page.doc.context.obj({Type:'ExtGState',BM:'Multiply'}));ops.push(o.setGraphicsState(multiply));}
@@ -1012,6 +1034,6 @@
   /* stored originals nothing refers to any more are cleared once a session,
      well after start-up */
   setTimeout(()=>{const run=()=>collect().catch(()=>{});window.requestIdleCallback?requestIdleCallback(run,{timeout:30000}):run();},90000);
-  N.pdf={validate,draw,refresh,pageAt,current,go,choose,importFile,insertBlank,movePage,rotatePage,deletePage,exportFile,paintBackground,paintThumbBackground,libs,clip,fit,search,openFind,closeFind,
+  N.pdf={validate,draw,refresh,pageAt,current,go,choose,importFile,insertBlank,movePage,rotatePage,deletePage,exportFile,paintBackground,paintThumbBackground,libs,clip,pageOf,fit,search,openFind,closeFind,
     bytesOf,stash,inline,collect,setField,goDest,showOutline,openAsk,closeAsk,width:W};
 })();

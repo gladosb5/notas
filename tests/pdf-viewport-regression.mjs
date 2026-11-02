@@ -69,6 +69,8 @@ try{
   assert.ok(Math.abs(livePen[1]-(await sample('ink',300,360))[1])<8,'pen stroke is evenly coloured');
   await penEvent('pointerup',420,360);
   await page.waitForFunction(()=>N.core.S.strokes.length===2);
+  // A highlight joins its colour's single band on the next painted frame.
+  await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
   const committedPen=await sample('commit',220,360),ghost=await sample('ink',220,360);
   assert.ok(committedPen[0]>committedPen[2]+70&&committedPen[3]>0,`pen highlight persists: ${committedPen}`);
   assert.equal(ghost[3],0,'pen lift clears the live overlay');
@@ -78,6 +80,20 @@ try{
   await page.waitForFunction(()=>N.core.S.strokes.length===3);
   await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
   assert.ok((await sample('commit',220,405))[3]>0,'second pen highlight is committed independently');
+  // A band the tablet splits in two, or two passes over the same words,
+  // must not leave a darker disc where the pieces overlap.
+  const before=await page.evaluate(()=>N.core.S.strokes.length);
+  await penEvent('pointerdown',140,450);
+  for(let x=150;x<=280;x+=10)await penEvent('pointermove',x,450);
+  await penEvent('pointerup',280,450);
+  await penEvent('pointerdown',280,450);
+  for(let x=290;x<=420;x+=10)await penEvent('pointermove',x,450);
+  await penEvent('pointerup',420,450);
+  await page.waitForFunction(n=>N.core.S.strokes.length===n+2,before);
+  await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+  const join=await sample('commit',280,450),plain=await sample('commit',200,450);
+  assert.ok(Math.abs(join[0]-plain[0])<6&&Math.abs(join[1]-plain[1])<6&&Math.abs(join[2]-plain[2])<6,
+    `overlapping highlight pieces are one even band: ${join} against ${plain}`);
   assert.equal((await sample('ink',220,405))[3],0,'second pen stroke leaves no overlay');
 
   const pixel=async dataUrl=>page.evaluate(async src=>{

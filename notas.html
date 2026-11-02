@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v178">
+<meta name="notas-version" content="v179">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -2966,7 +2966,10 @@ function refreshColors(){
 }
 refreshColors();
 try{ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', ()=>{ refreshColors(); render(); }); }catch(e){}
-function inkColor(a){ return a === 'ai' ? colors.red : S.pdf ? '#1D1D1F' : colors.graphite; }
+/* while a stroke is drawn for a note that is not the open one (a list
+   picture), its ink follows that note's paper, not the open note's */
+let strokePdf;
+function inkColor(a){ return a === 'ai' ? colors.red : (strokePdf !== undefined ? strokePdf : S.pdf) ? '#1D1D1F' : colors.graphite; }
 /* Reallocating a canvas clears it and costs a texture upload, so it only
    happens when the viewport actually changed size. A zoom or a re-layout for
    any other reason just repaints. */
@@ -3051,9 +3054,40 @@ function drawStroke(ctx, st, pdf=S.pdf){
   const p = st.pts;
   if(st._show !== undefined && st._show < 2) return;
   /* on a PDF, ink belongs to the page it started on and stops at its edge */
-  const clipped = !!(pdf && N.pdf?.clip(ctx, st, pdf));
-  if(p.length < 6) dot(ctx, st); else drawSegments(ctx, st, 1);
-  if(clipped) ctx.restore();
+  const clipped = !!(pdf && N.pdf?.clip(ctx, st, pdf)), was = strokePdf;
+  strokePdf = pdf || null;
+  try{ if(p.length < 6) dot(ctx, st); else drawSegments(ctx, st, 1); }
+  finally{ strokePdf = was; if(clipped) ctx.restore(); }
+}
+/* Highlights of one colour on one page are a single path, stroked once. A
+   canvas strokes a path's subpaths as their union, so the round ends of two
+   marks that meet, a mark crossed by another, or a stroke the tablet broke
+   in two are all multiplied into the page once: no darker discs where they
+   overlap. `op` is how the band lands: multiplied into the page, opaque on
+   the live layer, or cut out of it. */
+function markGroups(marks, pdf=S.pdf){
+  const groups = new Map();
+  for(const st of marks){
+    if(!st.pts || st.pts.length < 3 || (st._show !== undefined && st._show < 1)) continue;
+    const k = (st.color || MARK_COLOR)+'|'+st.w+'|'+(pdf && N.pdf?.pageOf ? N.pdf.pageOf(st, pdf) : -1);
+    let g = groups.get(k); if(!g) groups.set(k, g = []); g.push(st);
+  }
+  return groups.values();
+}
+function strokeMarks(ctx, marks, pdf=S.pdf, op='multiply'){
+  for(const list of markGroups(marks, pdf)){
+    const clipped = !!(pdf && N.pdf?.clip(ctx, list[0], pdf));
+    ctx.save(); ctx.globalCompositeOperation = op;
+    ctx.strokeStyle = list[0].color || MARK_COLOR; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = list[0].w;
+    ctx.beginPath();
+    for(const st of list){
+      const p = st.pts, end = st._show !== undefined ? Math.min(p.length, st._show*3) : p.length;
+      ctx.moveTo(p[0], p[1]);
+      if(end < 6) ctx.lineTo(p[0]+0.01, p[1]); else for(let i=3; i<end; i+=3) ctx.lineTo(p[i], p[i+1]);
+    }
+    ctx.stroke(); ctx.restore();
+    if(clipped) ctx.restore();
+  }
 }
 function dot(ctx, st){
   const p = st.pts; if(p.length < 3) return;
@@ -3129,7 +3163,12 @@ function render(onPaint){
         drawStroke(xCommit, st); xCommit.restore();
       } else if(visible(st.bbox)) drawStroke(xCommit, st);
     };
-    for(const st of S.strokes) if(st.author === 'mark') paintInk(st);
+    const still=[];
+    for(const st of S.strokes) if(st.author === 'mark'){
+      if((picked && picked.has(st.id)) || (peerShift.size && peerShift.get(st.id))) paintInk(st);
+      else if(visible(st.bbox)) still.push(st);
+    }
+    strokeMarks(xCommit, still);
     for(const st of S.strokes) if(st.author === 'user' || st.author === 'ai') paintInk(st);
     if(S.selection.length){
       xCommit.save();
@@ -3170,7 +3209,7 @@ function render(onPaint){
    visible ink at every pen lift made a full note slower with every mark. */
 function stampStroke(st){
   const v=paintedView;
-  if(raf||!v||S.selection.length||S.imageSelection||moving||peerShift.size||
+  if(st.author==='mark'||raf||!v||S.selection.length||S.imageSelection||moving||peerShift.size||
      v[0]!==cCommit.width||v[1]!==cCommit.height||v[2]!==M.zoom||
      v[3]!==M.colLeft||v[4]!==sc.scrollLeft||v[5]!==sc.scrollTop)return false;
   if(visible(st.bbox))drawStroke(xCommit,st);
@@ -3487,8 +3526,19 @@ function drawLive(){
   }
   const n = cur.pts.length/3;
   if(cur.author==='mark'){
-    // Draw the full translucent band afresh to avoid accumulating dark seams.
-    clearLive();liveFrame();cInk.style.mixBlendMode='multiply';cur.drawn=0;
+    /* The band is drawn whole, opaque, every move: segments painted one by
+       one overlapped at their round ends and multiplied into dark beads.
+       Where the page already carries a mark of this colour the band is cut
+       away, so going over a highlight (or a stroke the tablet split) never
+       stacks a second layer while the pen is down either. */
+    clearLive(); liveFrame(); cInk.style.mixBlendMode = 'multiply';
+    strokeMarks(xInk, [cur], S.pdf, 'source-over');
+    const col = cur.color || MARK_COLOR, page = S.pdf && N.pdf?.pageOf ? N.pdf.pageOf(cur) : -1;
+    const under = S.strokes.filter(st=>st.author === 'mark' && (st.color || MARK_COLOR) === col && st.bbox && visible(st.bbox) &&
+      (page < 0 || N.pdf.pageOf(st) === page));
+    if(under.length) strokeMarks(xInk, under, S.pdf, 'destination-out');
+    cur.drawn = cur.pts.length/3;
+    return;
   }
   const clipped = !!(S.pdf && N.pdf?.clip(xInk, cur));
   if(n < 2) dot(xInk, cur);
@@ -5108,6 +5158,18 @@ cInk.addEventListener('pointerdown', ev=>{
   if(cur && ev.pointerType === 'mouse') finishInput();
   sweepStale();
   stopCoast();                                 /* a touch lands on a coasting page and it stops */
+  /* A pencil can report a second down for the stroke it is already drawing.
+     For the highlighter that used to end the band and start another on top
+     of its tail, a darker disc at every restart; the same pointer coming
+     down where it just was, a moment later, carries the band on instead. */
+  if(cur && cur.author === 'mark' && ev.pointerType === 'pen' && ev.pointerId === activeId){
+    const rec = pointers.get(ev.pointerId);
+    if(rec && Date.now()-(rec.seen||rec.t) < 200 && Math.hypot(ev.clientX-rec.x, ev.clientY-rec.y) < 32){
+      rec.seen = Date.now(); rec.x = ev.clientX; rec.y = ev.clientY;
+      try{ cInk.setPointerCapture(ev.pointerId); }catch(e){}
+      pushPoint(ev, cur); drawLive(); return;
+    }
+  }
   let kind = kindOf(ev);
   if(kind === 'pen' && secondTouch(ev)){
     kind = 'touch';
@@ -5612,7 +5674,7 @@ pill.addEventListener('wheel', ev=>{
 }, { passive:false });
 pill.addEventListener('keydown', ev=>{ if(ev.key === 'Escape' && pillOpen()){ setPillOpen(false); moreBtn.focus(); } });
 
-N.ink = { busy:()=>!!(cur||lasso||moving||scaling||turning||resizing||twin||cropDrag||panning||gesture),render, renderAI, pasteCut, resize, finishInput, setTool, setPen, pen, setPillOpen, setPenPop, setTextPop, setTextColor, toWorld, viewOrigin, bboxOf, hitStroke, drawStroke,
+N.ink = { busy:()=>!!(cur||lasso||moving||scaling||turning||resizing||twin||cropDrag||panning||gesture),render, renderAI, pasteCut, resize, finishInput, setTool, setPen, pen, setPillOpen, setPenPop, setTextPop, setTextColor, toWorld, viewOrigin, bboxOf, hitStroke, drawStroke, strokeMarks,
           clearSelection, showSelBar, inkColor, colors, refreshColors, isTyping, after, flush, selectImage, nudgeImage, resizeImage, deleteImage, removeBackground, undoBackground, prefetchCutout, toggleBackgroundRemoval, startCrop, applyCrop, cancelCrop, cropping:()=>cropping&&{...cropping}, frameOf, frameHandles,
           copySelection, duplicateSelection, deleteSelection, pasteInk, readClip, clipMarker, selectAll, imageAt, pickImage,
           now:inkNow, drawing:()=>!!cur, peerShift, drag:()=>moving?{dx:moving.dx,dy:moving.dy}:null,
@@ -8876,7 +8938,7 @@ async function renderExport(opts={}){
       else x.drawImage(pair.el, im.x, im.y, im.w, im.h);
     }catch(e){}
   }
-  if(!opts.noStrokes) for(const marks of [true,false]) for(const st of S.strokes) if((st.author === 'mark') === marks) N.ink.drawStroke(x, st);
+  if(!opts.noStrokes){ N.ink.strokeMarks(x, S.strokes.filter(st=>st.author === 'mark')); for(const st of S.strokes) if(st.author !== 'mark') N.ink.drawStroke(x, st); }
   x.font = '400 16px '+((getComputedStyle(document.documentElement).getPropertyValue('--type')||'').trim()||'ui-monospace, monospace'); x.textBaseline = 'top';
   for(const l of S.lines) if(l.text){ x.fillStyle = l.tutor ? N.ink.colors.red : S.pdf ? (S.settings.textColor||'#1D1D1F') : N.ink.colors.text; drawWrapped(x,l.text,(l.x||0)+2,l.y+3,Math.max(80,M.contentW)-4,22.4); }
   x.fillStyle = cs.getPropertyValue('--blue').trim();
@@ -10028,6 +10090,7 @@ function wrapText(x, text, left, top, maxW, lh, bottom){
     x.fillText(line.trimEnd(), left, y); y += lh; if(y > bottom) return;
   }
 }
+function flips(t){ return !!t && !t.fixed && !!t.dark !== darkNow(); }
 function thumbViewKey(v){
   if(!v)return '';
   return [v.scrollTop||0,v.scrollLeft||0,v.zoom||1,v.columnLeft||0,v.viewportW||0,v.viewportH||0].map(n=>Math.round(n*100)/100).join(':');
@@ -10036,13 +10099,13 @@ async function renderThumb(doc){
   const strokes = doc.strokes||[], lines = (doc.lines||[]).filter(l=>l.text&&l.text.trim()), images = doc.images||[];
   if(!doc.pdf&&!strokes.length&&!lines.length&&!images.length) return null;
   // The preview follows the last visible viewport, even if no note content changed.
-  const full = N.pdf?.width || M.contentW || C.CONTENT_MAX || 720;
+  const full = (doc.pdf && N.pdf?.width) || M.contentW || C.CONTENT_MAX || 720;
   const v = doc.id===S.id ? doc.view : (C.getView(doc.id)||doc.view);
   let top=0,left=0,w=Math.max(360,full);
   if(v && Number.isFinite(v.scrollTop)){
     const z=Math.max(.2,+v.zoom||1);
     top=Math.max(0,v.scrollTop/z);
-    left=Math.max(0,((v.scrollLeft||0)-(v.columnLeft||0))/z);
+    left=Math.max(doc.pdf?0:-8,((v.scrollLeft||0)-(v.columnLeft||0))/z);
     w=Math.max(280,(v.viewportW||M.vw||full)/z);
     w=Math.min(w,Math.max(full,left+full));
   }else{
@@ -10055,7 +10118,6 @@ async function renderThumb(doc){
   const h=w*THUMB_H/THUMB_W,bottom=top+h,cv=document.createElement('canvas');
   cv.width = THUMB_W; cv.height = THUMB_H;
   const x = cv.getContext('2d'), cs = getComputedStyle(document.documentElement);
-  x.fillStyle='#fff';x.fillRect(0,0,THUMB_W,THUMB_H);
   x.scale(THUMB_W/w,THUMB_W/w);x.translate(-left,-top);
   if(doc.pdf)try{await N.pdf?.paintThumbBackground(x,doc.pdf,top,h);}catch(e){}
   for(const im of images){
@@ -10066,18 +10128,23 @@ async function renderThumb(doc){
       else x.drawImage(img, im.x, im.y, im.w, im.h);
     }catch(e){}
   }
-  for(const st of strokes){
-    if(st.bbox && (st.bbox[1] > bottom || st.bbox[3] < top)) continue;
+  const near = strokes.filter(st=>!(st.bbox && (st.bbox[1] > bottom || st.bbox[3] < top)));
+  try{ N.ink.strokeMarks(x, near.filter(st=>st.author === 'mark'), doc.pdf||null); }catch(e){}
+  for(const st of near){
+    if(st.author === 'mark') continue;
     try{ N.ink.drawStroke(x, st, doc.pdf||null); }catch(e){}
   }
-  x.fillStyle = cs.getPropertyValue('--graphite').trim();
   x.font = '400 16px '+(cs.getPropertyValue('--type').trim()||'ui-monospace, monospace'); x.textBaseline = 'top';
-  for(const l of lines) if(l.y < bottom && l.y + 400 > top) wrapText(x, l.text, l.x||0, l.y+3, Math.max(80,full), 22.4, bottom);
+  for(const l of lines) if(l.y < bottom && l.y + 400 > top){
+    x.fillStyle = doc.pdf ? (doc.settings?.textColor || '#1D1D1F') : cs.getPropertyValue('--graphite').trim();
+    wrapText(x, l.text, (l.x||0)+2, l.y+3, Math.max(80,full)-4, 22.4, bottom);
+  }
   let src = '';
   try{ src = cv.toDataURL('image/webp', 0.72); }catch(e){ return null; }
   /* Safari before 17 cannot encode WebP and hands back a PNG; that is kept,
      only larger */
-  return {src, dark:darkNow(), at:Date.now(), viewKey:thumbViewKey(v)};
+  /* a PDF's pages are white in either theme, so its picture is never inverted */
+  return {src, dark:darkNow(), at:Date.now(), viewKey:thumbViewKey(v), ...(doc.pdf?{fixed:true}:{})};
 }
 async function thumbOf(id){
   if(thumbs.has(id)) return thumbs.get(id);
@@ -10135,7 +10202,7 @@ async function showThumb(id){
   if(!t){ if(img) img.remove(); box.classList.remove('has'); return; }
   if(!img){ img = document.createElement('img'); img.alt = ''; img.decoding = 'async'; box.appendChild(img); }
   if(img.getAttribute('src') !== t.src) img.src = t.src;
-  img.classList.toggle('flip', !!t.dark !== darkNow());
+  img.classList.toggle('flip', flips(t));
   box.classList.add('has');
 }
 let seen = null;
@@ -10148,7 +10215,7 @@ function watchThumbs(){
   boxes.forEach(b=>{const at=updates.get(b.dataset.thumb)||0;if(b._observedAt!==at){b._observedAt=at;seen.observe(b);}});
 }
 /* the theme changed: pictures drawn under the other one are inverted */
-new MutationObserver(()=>{ darkMemo = null; if(L.open) list.querySelectorAll('.lib-thumb img').forEach(img=>{ const id = img.parentNode.dataset.thumb, t = thumbs.get(id); if(t) img.classList.toggle('flip', !!t.dark !== darkNow()); }); })
+new MutationObserver(()=>{ darkMemo = null; if(L.open) list.querySelectorAll('.lib-thumb img').forEach(img=>{ const id = img.parentNode.dataset.thumb, t = thumbs.get(id); if(t) img.classList.toggle('flip', flips(t)); }); })
   .observe(document.documentElement, {attributes:true, attributeFilter:['data-theme']});
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', ()=>{ darkMemo = null; if(L.open) paint(L.hits || undefined); });
 
@@ -10220,7 +10287,7 @@ async function updateCurrentPreview(){
      while the view transition holds the screen still. An unchanged page is
      not drawn and encoded again. */
   const key=[id,C.revision,S.savedRev,M.contentW,thumbViewKey(C.serialize().view)].join(':');
-  if(key===currentPreviewKey){const img=preview.querySelector('img'),t=thumbs.get(id);if(img&&t)img.classList.toggle('flip',t.dark!==darkNow());return;}
+  if(key===currentPreviewKey){const img=preview.querySelector('img'),t=thumbs.get(id);if(img&&t)img.classList.toggle('flip',flips(t));return;}
   const thumb=await renderThumb(C.serialize()).catch(()=>null);
   if(seq!==currentPreviewSeq||id!==S.id)return;
   currentPreviewKey=key;
@@ -10228,7 +10295,7 @@ async function updateCurrentPreview(){
   if(thumb){
     thumbs.set(id,thumb);
     const img=document.createElement('img');img.src=thumb.src;img.alt='';
-    img.classList.toggle('flip',thumb.dark!==darkNow());preview.appendChild(img);
+    img.classList.toggle('flip',flips(thumb));preview.appendChild(img);
   }
 }
 async function open(opts={}){
