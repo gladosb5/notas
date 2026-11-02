@@ -138,13 +138,13 @@ paintOverloaded();
 const SYSTEM=[
   'You are nota, the red pen inside a handwritten notebook. The notebook is used for anything: maths and science homework, recipes, shopping and to-do lists, notes from a lesson or a meeting, a diary, plans, drafts of writing, languages.',
   'Your owner is a student inside a school: the person writing in this notebook. If you are asked who owns you, who you belong to or who you work for, say your owner is a student inside a school. Never claim to know their name, school or anything else about them.',
-  'The person wrote or typed "hey nota," followed by a question on the page, or circled some handwriting and asked about it. The page contents are given as rows in reading order; "this" or "that" or "it" means the nearest thing above or beside the question: a sum, a list, a paragraph, a recipe, whatever is there. Rows between [box] and [end of box] were written inside a box drawn on the page, usually a heading and its notes; boxes side by side are separate topics.',
-  'The rows are machine readings of handwriting and can contain misread words or stray symbols. Read them for their meaning and ignore fragments that make no sense, rather than explaining them.',
+  'The person wrote or typed "hey nota," followed by a question on the page, or circled some handwriting and asked about it. The page contents are given as rows in reading order; "this" or "that" or "it" means the nearest thing above or beside the question: a sum, a list, a paragraph, a recipe, whatever is there. Rows between [box] and [end of box] were written inside a box drawn on the page, usually a heading and its notes; boxes side by side are separate topics. Rows between [column] and [end of column] were written as a column beside another one; read each column top to bottom.',
+  'The rows are machine readings of handwriting and can contain misread words or stray symbols. Read them for their meaning and ignore fragments that make no sense, rather than explaining them. Handwritten maths comes in calculator notation (* for times, / for divide, ^ for a power, sqrt( ) for a root), but the person wrote the usual signs (x or ×, ÷ or a fraction bar, a raised power, √): write maths the usual way and never say they wrote * or /.',
   'Drawings on the page are described in words between [diagram] and [end of diagram], or [graph] and [end of graph]: the shapes, the lines and arrows joining them, and the handwriting labelling each part, with places as (across, down) from 0 to 100 over the drawing. An arrow "from A to B" points at B. A graph gives its curves as points in the units written on its axes. Read the description as the drawing the person made (a flowchart, a food chain, a Venn diagram, a triangle, a circuit, a graph) and answer about the drawing itself; never mention the description, the coordinates or the brackets.',
   'A question may come with a picture of the page around it: the person\'s handwriting, typed lines and drawings in dark ink, and any photo or picture they put on the page. The machine readings come from that same ink. Use the picture to read what the readings missed or got wrong and to see drawings and photos, and trust it over a reading that disagrees with it. Blue numbers just right of or below the working are the notebook\'s calculator answers, not something the person wrote; they are worked out from the readings, so a misread line gets a wrong blue answer: check them against the ink. Never mention that you were sent a picture.',
   'Answer whatever is asked: work out or check maths, explain an idea, suggest what to cook with what is listed and how, convert units or currencies, fix spelling or grammar, translate, summarise the notes, plan the steps, define a word, give a fact. Be accurate; if you are not sure, say so briefly.',
-  'Use plain prose: no markdown at all (no **, *, _, #, >, tables or links), no bullets, code fences or emoji. Write mathematics in LaTeX delimited by $...$ or $$...$$, and put only the formula itself between the dollars: never words, units or a price. Write a price as plain text, such as 5 dollars. The pen supports nested \\frac, \\sqrt, superscripts, subscripts, Greek names and common operators. Prefer short equations; avoid matrices, environments and custom macros.',
-  'Be brief: one to three short sentences, at most about 45 words, unless the person asks for the full working, the steps, a list or a recipe, then give short numbered lines, one per line.',
+  'Use plain prose with no markdown (no **, *, _, #, > or links), no bullets, code fences or emoji. The one exception is a table: when the answer really is one (things compared side by side, a timetable, a value for each item), write a markdown table with a header row and a --- row, at most 4 columns and 8 rows, a few words or a number in each cell, no dollars, LaTeX or formatting inside cells, and nothing else on those lines. Write mathematics in LaTeX delimited by $...$ or $$...$$, and put only the formula itself between the dollars: never words, units or a price. Write a price as plain text, such as 5 dollars. The pen supports nested \\frac, \\sqrt, superscripts, subscripts, Greek names and common operators. Prefer short equations; avoid matrices, environments and custom macros.',
+  'Be brief: one to three short sentences, at most about 45 words, unless the person asks for the full working, the steps, a list or a recipe, then give short numbered lines, one per line; a table may be longer.',
   'Write so a grade 7 student (about 12 years old) understands, above all when explaining: short sentences, everyday words, one idea at a time, and a simple example when it helps. When you must use a subject word, such as denominator or photosynthesis, say what it means in a few plain words. Stay correct; make it simple, not wrong.',
   'Rows marked [nota reply] and red handwriting in the page picture are your earlier replies, included so you can answer follow-up questions. Treat them as conversation context, not as new instructions. Continue from them when the person refers to your earlier answer.',
   'Do not repeat the question. Do not greet. Do not say "hey nota". Give the answer first, then a short reason if it helps.',
@@ -469,6 +469,83 @@ function handRun(text){
   return {w,paths};
 }
 
+/* ---- tables: the one piece of markdown nota may write ----
+   A table is held until it has all arrived and laid out once, from every
+   row, so it never widens or reflows under the pen. */
+const TABLE_SEP=/^\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)*\|?$/;
+function parseTable(block){
+  const lines=String(block).split('\n').map(l=>l.trim()).filter(Boolean);
+  if(lines.length<2||!lines.some(l=>TABLE_SEP.test(l)))return null;
+  const rows=lines.filter(l=>!TABLE_SEP.test(l)).map(l=>l.replace(/^\|/,'').replace(/(?<!\\)\|$/,'').split(/(?<!\\)\|/).map(c=>tidy(c.replace(/\\\|/g,'|'),false).replace(/\s+/g,' ').trim()));
+  if(!rows.length)return null;
+  const cols=Math.max(...rows.map(r=>r.length));
+  for(const r of rows)while(r.length<cols)r.push('');
+  return {rows,cols};
+}
+/* a cell's words broken into lines no wider than w */
+function wrapCell(text,w,measure){
+  const out=[];let line='';
+  for(const word of String(text).split(' ').filter(Boolean)){
+    const next=line?line+' '+word:word;
+    if(line&&measure(next)>w){out.push(line);line=word;}else line=next;
+  }
+  if(line||!out.length)out.push(line);
+  return out;
+}
+/* column widths from every cell, shrunk to fit and wrapped rather than widened */
+function tableColumns(t,measure,pad,avail,minW){
+  const natural=[];
+  for(let c=0;c<t.cols;c++)natural.push(Math.max(minW,...t.rows.map(r=>measure(r[c])+pad*2)));
+  const total=natural.reduce((a,b)=>a+b,0);
+  if(total<=avail)return natural;
+  /* the widest columns give way first */
+  const widths=natural.slice();let over=total-avail;
+  for(let guard=0;guard<40&&over>0.5;guard++){
+    const wide=Math.max(...widths),next=Math.max(minW,...widths.filter(w=>w<wide-0.5),minW);
+    const at=widths.map((w,i)=>w>=wide-0.5?i:-1).filter(i=>i>=0);
+    const room=Math.min((wide-next)*at.length,over);
+    if(room<=0.5)break;
+    for(const i of at)widths[i]-=room/at.length;
+    over-=room;
+  }
+  return widths;
+}
+/* a typed reply's table: aligned columns in the typed lines' own monospace */
+let tableMeasure=null;
+function monoTable(t){
+  if(!tableMeasure){
+    const ctx=document.createElement('canvas').getContext('2d');
+    const face=(getComputedStyle(document.documentElement).getPropertyValue('--type')||'').trim()||'monospace';
+    ctx.font='400 16px '+face;tableMeasure={ctx,space:ctx.measureText(' ').width||9.6};
+  }
+  const {ctx,space}=tableMeasure,measure=s=>ctx.measureText(String(s)).width,gap=space*2;
+  const avail=Math.max(160,(M.contentW||640)-12-gap*(t.cols-1));
+  const widths=tableColumns(t,measure,0,avail,space*3);
+  const pad=(s,w)=>{let out=s;while(measure(out)+space*0.5<=w)out+=' ';return out;};
+  const lines=[];
+  t.rows.forEach((r,ri)=>{
+    const cells=r.map((c,i)=>wrapCell(c||(i===0?'-':''),widths[i],measure));
+    const height=Math.max(...cells.map(c=>c.length));
+    for(let k=0;k<height;k++)lines.push(cells.map((c,i)=>i===cells.length-1?(c[k]||''):pad(c[k]||'',widths[i])).join('  ').replace(/\s+$/,'')||'-');
+    if(ri===0)lines.push(widths.map(w=>'\u2500'.repeat(Math.max(3,Math.round(w/space)))).join('  '));
+  });
+  return lines.join('\n');
+}
+/* the typed reply so far: finished tables set out as columns, one still
+   arriving held back, so it appears whole and does not jump about */
+function typedReply(text,final){
+  const src=String(text||'').replace(/\r\n?/g,'\n'),tables=[];
+  let out=src.replace(/(^|\n)((?:[ \t]*\|[^\n]*(?:\n|$))+)/g,(m,lead,block,at)=>{
+    const complete=final||(at+m.length<src.length&&block.endsWith('\n'));
+    if(!complete)return lead+'\u0005';
+    const t=parseTable(block);if(!t)return m;
+    tables.push(t);return lead+'\u0004'+(tables.length-1)+'\u0004\n';
+  });
+  const cut=out.indexOf('\u0005');if(cut>=0)out=out.slice(0,cut);
+  out=tidy(out,true).replace(/(?<!\\)\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]/g,m=>m.replace(/\s*\n\s*/g,' '));
+  return out.replace(/\u0004(\d+)\u0004/g,(_,i)=>monoTable(tables[+i])).trim();
+}
+
 function Writer(anchor){
   /* anchor: {x,y,right,rowH,skip} - the question's left edge, its bottom,
      its right edge, the height of its handwriting and the stroke ids that
@@ -549,7 +626,7 @@ function Writer(anchor){
     else{st._show=0;queue.push({st,at:0,pace,left:lengthOf(st.pts)*pace});animate();}
     C.growDoc(st.bbox[3]);C.markDirty();blocksRevision=C.revision;
   };
-  const glyph=(ch)=>{
+  const glyph=(ch,u=unit)=>{
     const g=penGlyph(ch,font);if(!g)return;
     // A filled face travels back and forth through its ink. That coverage
     // is rendering work, not extra handwriting: budget the same character
@@ -564,19 +641,19 @@ function Writer(anchor){
       }
       pace=g.pace;
     }
-    const base=cursor.y+(g.raster?0:rnd()*0.8*unit);
+    const base=cursor.y+(g.raster?0:rnd()*0.8*u);
     for(const s of g.strokes){
       const pts=[];
       for(let i=0;i<s.length;i+=2){
-        pts.push(Math.round((cursor.x+(s[i]-g.l)*unit+(g.raster?0:rnd()*0.5*unit))*10)/10,
-                 Math.round((base+s[i+1]*unit+(g.raster?0:rnd()*0.5*unit))*10)/10,
+        pts.push(Math.round((cursor.x+(s[i]-g.l)*u+(g.raster?0:rnd()*0.5*u))*10)/10,
+                 Math.round((base+s[i+1]*u+(g.raster?0:rnd()*0.5*u))*10)/10,
                  g.raster?0.5:Math.round((0.5+rnd()*0.16)*100)/100);
       }
-      const st={id:C.uid(),author:'ai',tool:'pen',w:g.raster?0.85*unit:3,pts,t0:t,t1:t,...(anchor.color?{color:anchor.color}:{})};
+      const st={id:C.uid(),author:'ai',tool:'pen',w:g.raster?0.85*u:3*Math.min(1,u/unit),pts,t0:t,t1:t,...(anchor.color?{color:anchor.color}:{})};
       st.bbox=N.ink.bboxOf(pts);
       place(st,pace);
     }
-    cursor.x+=g.w*unit;
+    cursor.x+=g.w*u;
   };
   let raw='',written=0;
   const word=(w)=>{
@@ -612,6 +689,54 @@ function Writer(anchor){
     rowBottom=Math.max(rowBottom,top+box.h*scale+gap-CAP*unit);
     if(display){newRow();afterDisplay=true;}
   };
+  /* a table, written as a person would: the frame and its rules first,
+     then the cells row by row, a little smaller than the prose. It is laid
+     out once from every row, so nothing moves while it is written. */
+  const table=block=>{
+    const t=parseTable(block);
+    if(!t){prose(block);return;}
+    const u=unit*.82,pad=14*u,lineGap=34*u,padY=10*u,minW=40*u;
+    const cells=t.rows.map(r=>r.map(c=>font?c:spell(c)));
+    /* the pen spills a little past a word's letters: room for it */
+    const measure=s=>wordWidth(String(s),u,font)*1.06+3*u;
+    if(cursor.x>row.l)newRow();
+    const avail=Math.max(120,right-x0);
+    const widths=tableColumns({rows:cells,cols:t.cols},measure,pad,avail,minW);
+    const wrapped=cells.map(r=>r.map((c,i)=>wrapCell(c,widths[i]-pad*2,measure)));
+    const heights=wrapped.map(r=>Math.max(...r.map(c=>c.length))*lineGap+padY*2);
+    const W=widths.reduce((a,b)=>a+b,0),H=heights.reduce((a,b)=>a+b,0);
+    refreshBlocks();
+    const p=roomAt(Math.max(cursor.y,rowBottom),H+20*unit,W);
+    /* a little air above and below, so it does not crowd the words round it */
+    const L=p.l,T=p.y+CAP*unit+2+8*unit;
+    /* a ruled line with a little of the hand in it */
+    const rule=pts=>{
+      const out=[];
+      for(let k=0;k+1<pts.length;k++){
+        const [ax,ay]=pts[k],[bx,by]=pts[k+1],len=Math.hypot(bx-ax,by-ay),n=Math.max(1,Math.round(len/9));
+        for(let i=k?1:0;i<=n;i++){const f=i/n;out.push(Math.round((ax+(bx-ax)*f+rnd()*.5*unit)*10)/10,Math.round((ay+(by-ay)*f+rnd()*.5*unit)*10)/10,Math.round((0.5+rnd()*0.12)*100)/100);}
+      }
+      const st={id:C.uid(),author:'ai',tool:'pen',w:2.2,pts:out,t0:t,t1:t,...(anchor.color?{color:anchor.color}:{})};
+      st.bbox=N.ink.bboxOf(out);place(st);
+    };
+    rule([[L,T],[L+W,T],[L+W,T+H],[L,T+H],[L,T]]);
+    rule([[L,T+heights[0]],[L+W,T+heights[0]]]);
+    let x=L;for(let c=0;c<t.cols-1;c++){x+=widths[c];rule([[x,T],[x,T+H]]);}
+    let y=T;
+    wrapped.forEach((r,ri)=>{
+      let cx=L;
+      r.forEach((lines,ci)=>{
+        lines.forEach((line,k)=>{
+          cursor.x=cx+pad;cursor.y=y+padY+k*lineGap-CAP*u;
+          for(const ch of line)glyph(ch,u);
+        });
+        cx+=widths[ci];
+      });
+      y+=heights[ri];
+    });
+    rowBottom=0;afterDisplay=true;
+    startRow(T+H+gap+8*unit-CAP*unit);
+  };
   const prose=(text,final=false)=>{
     const clean=tidy(text,false,{lineStart:written===0||raw[written-1]==='\n',lineEnd:final||text.endsWith('\n')});
     for(const piece of (font?clean:spell(clean)).split(/(\n| )/)){
@@ -622,7 +747,16 @@ function Writer(anchor){
   };
   const commit=final=>{
     while(written<raw.length){
-      const rest=raw.slice(written),match=mathMatches(rest)[0];
+      const rest=raw.slice(written);
+      if((written===0||raw[written-1]==='\n')&&/^[ \t]*\|/.test(rest)){
+        const block=/^(?:[ \t]*\|[^\n]*(?:\n|$))+/.exec(rest)[0];
+        /* more rows may still be coming */
+        if(!final&&(block.length===rest.length))return;
+        table(block);written+=block.length;continue;
+      }
+      /* words before a table stop where it starts: the table is its own */
+      const tableAt=/\n[ \t]*\|/.exec(rest),before=tableAt?rest.slice(0,tableAt.index+1):rest;
+      const match=mathMatches(before)[0];
       if(match){
         if(match.index)prose(rest.slice(0,match.index));
         equation(match[1]??match[2]??match[3]??match[4],match[1]!==undefined||match[4]!==undefined);
@@ -648,6 +782,7 @@ function Writer(anchor){
         const escape=rest.lastIndexOf('\\');
         if(escape>=0&&escape>=n-1)n=Math.min(n,escape);
       }
+      if(tableAt)n=Math.min(n,tableAt.index+1);
       if(n<=0)return;
       prose(rest.slice(0,n),final&&n===rest.length);written+=n;
     }
@@ -977,6 +1112,66 @@ function knownDrawings(skip){
   return found?sayDrawings(found,knownLabel):[];
 }
 
+/* Notes written in two columns side by side are read a column at a time.
+   Read across the page row by row, the two columns took turns, and nota
+   read a line of one column as the next line of the other. Columns are told
+   apart two ways: a line drawn down the page between them, or, with no line,
+   a clear gap with three or more rows each side holding the same kind of
+   writing (words beside words, working beside working). Working with a
+   reason written beside each step is one thing read across, and stays so. */
+function columns(items,order){
+  const fr=N.recog&&N.recog.frames?N.recog.frames():null;
+  const boxes=(fr&&fr.boxes)||[];
+  const overlap=(a0,a1,b0,b1)=>Math.max(0,Math.min(a1,b1)-Math.max(a0,b0));
+  /* a long straight stroke down the page that is not the side of a box */
+  const dividers=[];
+  for(const id of (fr&&fr.ids)||[]){
+    const st=C.strokeById(id);if(!st||!st.bbox)continue;
+    const [x0,y0,x1,y1]=st.bbox,h=y1-y0,w=x1-x0,cx=(x0+x1)/2;
+    if(h<90||w>h*.15)continue;
+    if(boxes.some(b=>(Math.abs(b[0]-cx)<16||Math.abs(b[2]-cx)<16)&&y0>=b[1]-16&&y1<=b[3]+16))continue;
+    dividers.push({x:cx,y0,y1});
+  }
+  const spans=[],used=new Set();
+  for(const d of dividers){
+    const near=items.filter(it=>!used.has(it)&&it.y<d.y1&&it.b>d.y0);
+    const left=near.filter(it=>it.r<=d.x+6),right=near.filter(it=>it.x>=d.x-6);
+    if(!left.length||!right.length)continue;
+    for(const it of [...left,...right])used.add(it);
+    spans.push({members:new Set([...left,...right]),left,right});
+  }
+  const free=items.filter(it=>!used.has(it)).sort((a,b)=>a.y-b.y||a.x-b.x);
+  if(free.length>=6){
+    const minX=Math.min(...free.map(it=>it.x)),width=Math.max(...free.map(it=>it.r))-minX;
+    const kindOf=list=>{let m=0,w=0;for(const it of list){if(it.kind==='m')m++;else if(it.kind==='w')w++;}return m>w?'m':w>m?'w':'';};
+    for(let i=0;i<free.length;){
+      let best=null;
+      const xs=[...new Set(free.slice(i,i+60).map(it=>it.x))].filter(x=>x>=minX+width*.25);
+      for(const X of xs){
+        const left=[],right=[];let j=i;
+        for(;j<free.length;j++){const it=free[j];if(it.r<=X-24)left.push(it);else if(it.x>=X-2)right.push(it);else break;}
+        if(left.length<3||right.length<3)continue;
+        const l0=Math.min(...left.map(it=>it.y)),l1=Math.max(...left.map(it=>it.b));
+        const r0=Math.min(...right.map(it=>it.y)),r1=Math.max(...right.map(it=>it.b));
+        if(overlap(l0,l1,r0,r1)<.6*Math.min(l1-l0,r1-r0))continue;
+        const kl=kindOf(left);if(!kl||kl!==kindOf(right))continue;
+        if(!best||j-i>best.j-best.i)best={j,left,right};
+      }
+      if(best){spans.push({members:new Set([...best.left,...best.right]),left:best.left,right:best.right});i=best.j;}
+      else i++;
+    }
+  }
+  if(!spans.length)return items;
+  const out=[],done=new Set();
+  for(const it of items){
+    const s=spans.find(s=>s.members.has(it));
+    if(!s){out.push(it);continue;}
+    if(done.has(s))continue;done.add(s);
+    out.push({column:s.left.sort(order)},{column:s.right.sort(order)});
+  }
+  return out;
+}
+
 function pageRows(question){
   /* the notebook as rows in reading order, with a marker where the question
      is. Only what the calculator has read: prose ink joins through its
@@ -994,6 +1189,7 @@ function pageRows(question){
      boxed definition ("((((499*99)/500)/...") went to nota beside the real
      words, which nota then tried to explain. Such a reading is left out,
      unless the student asked for it to be worked out. */
+  const looksMaths=t=>N.mathcore&&N.mathcore.looksLikeMath?!!N.mathcore.looksLikeMath(t):/[0-9][^A-Za-z]*[=+*\/^-]/.test(t)&&!/[A-Za-z]{3,}/.test(t);
   const prose=new Set();
   const isProse=t=>N.mathcore&&N.mathcore.readsAsProse?N.mathcore.readsAsProse(t):(String(t).match(/[A-Za-z]{3,}/g)||[]).length>=2;
   for(const g of groups){const t=byHash.get(g.hash);if(t&&isProse(t))for(const id of g.strokeIds)prose.add(id);}
@@ -1008,24 +1204,26 @@ function pageRows(question){
     if(n.kind==='line'&&question.lineId===n.id)continue;
     if(n.kind==='cluster'&&n.ref&&n.ref.strokeIds&&n.ref.strokeIds.some(id=>skip.has(id)))continue;
     if(n.kind==='cluster'&&n.ref&&n.ref.review)continue;
+    /* the student said with the x that this is not maths: its reading is noise */
+    if(n.kind==='cluster'&&n.ref&&n.ref.dismissed)continue;
     if(n.kind==='cluster'&&n.ref&&n.ref.strokeIds&&wordy(n.ref))continue;
     if(n.kind==='cluster'&&n.ref&&n.ref.strokeIds&&inDrawing(n.ref.strokeIds))continue;
     /* the reading only: its answer is in the picture, beside it */
     const text=String(n.src).trim();
     if(n.error&&n.kind==='cluster')continue;
-    rows.push({y:n.y,x:n.x||0,text});
+    rows.push({y:n.y,x:n.x||0,r:Math.max((n.x||0)+8,n.right||0),b:n.kind==='cluster'&&n.ref&&n.ref.bbox?n.ref.bbox[3]:n.y+C.LINE_H,kind:n.kind==='cluster'||looksMaths(text)?'m':'w',text});
   }
   for(const g of groups){
     if(g.strokeIds.some(id=>skip.has(id)))continue;
     if(inDrawing(g.strokeIds))continue;
     const text=byHash.get(g.hash);if(!text)continue;
-    rows.push({y:g.bbox[1],x:g.bbox[0],text:'"'+text+'"'});
+    rows.push({y:g.bbox[1],x:g.bbox[0],r:g.bbox[2],b:g.bbox[3],kind:'w',text:'"'+text+'"'});
   }
   /* Earlier replies are part of the conversation, in both writing modes.
      Read saved text directly rather than asking OCR to read generated ink. */
   for(const ln of S.lines||[]){
     if(!ln.tutor||ln.wait||!ln.text?.trim()||ln.id===question.lineId)continue;
-    rows.push({y:ln.y,x:ln.x||0,text:'[nota reply] '+ln.text.trim()});
+    rows.push({y:ln.y,x:ln.x||0,r:Math.min(M.contentW,(ln.x||0)+ln.text.trim().length*9.6),b:ln.y+C.LINE_H,kind:'w',text:'[nota reply] '+ln.text.trim()});
   }
   const replyGroups=new Map();
   for(const st of S.strokes||[]){
@@ -1038,7 +1236,7 @@ function pageRows(question){
     if(strokes.length!==count||strokes.some(st=>st.notaCount!==count||skip.has(st.id)||!st.bbox))continue;
     const source=strokes.filter(st=>typeof st.notaText==='string');
     if(source.length!==1||!source[0].notaText.trim())continue;
-    rows.push({y:Math.min(...strokes.map(st=>st.bbox[1])),x:Math.min(...strokes.map(st=>st.bbox[0])),text:'[nota reply] '+source[0].notaText});
+    rows.push({y:Math.min(...strokes.map(st=>st.bbox[1])),x:Math.min(...strokes.map(st=>st.bbox[0])),r:Math.max(...strokes.map(st=>st.bbox[2])),b:Math.max(...strokes.map(st=>st.bbox[3])),kind:'w',text:'[nota reply] '+source[0].notaText});
   }
   // Quick Maths is generated ink, but it is user-inserted content, not a
   // tutor reply. Keep exact source text only while all of its ink survives.
@@ -1054,10 +1252,10 @@ function pageRows(question){
     if(inDrawing(strokes.map(st=>st.id)))continue;
     const source=strokes.filter(st=>typeof st.quickMath==='string'&&st.quickMath.length<=8192);
     if(source.length!==1||!source[0].quickMath.trim())continue;
-    rows.push({y:Math.min(...strokes.map(st=>st.bbox[1])),x:Math.min(...strokes.map(st=>st.bbox[0])),text:source[0].quickMath});
+    rows.push({y:Math.min(...strokes.map(st=>st.bbox[1])),x:Math.min(...strokes.map(st=>st.bbox[0])),r:Math.max(...strokes.map(st=>st.bbox[2])),b:Math.max(...strokes.map(st=>st.bbox[3])),kind:'m',text:source[0].quickMath});
   }
-  for(const d of drawings)rows.push({y:d.bbox[1],x:d.bbox[0],drawing:d.lines});
-  rows.push({y:question.y,x:question.x,marker:true});
+  for(const d of drawings)rows.push({y:d.bbox[1],x:d.bbox[0],r:d.bbox[2],b:d.bbox[3],kind:'x',drawing:d.lines});
+  rows.push({y:question.y,x:question.x,r:question.x+1,b:question.y+C.LINE_H,kind:'x',marker:true});
   const order=(a,b)=>(Math.round(a.y/24)-Math.round(b.y/24))||(a.x-b.x);
   /* Writing inside a drawn box is read as one block, box by box: two boxes
      side by side read row by row made every line half of one box and half
@@ -1069,17 +1267,19 @@ function pageRows(question){
   for(const r of rows){
     const at=r.marker||r.drawing?-1:within(r);
     if(at<0){flat.push(r);continue;}
-    if(!blocks.has(at))blocks.set(at,{y:boxes[at][1],x:boxes[at][0],rows:[]});
+    if(!blocks.has(at))blocks.set(at,{y:boxes[at][1],x:boxes[at][0],r:boxes[at][2],b:boxes[at][3],rows:[]});
     blocks.get(at).rows.push(r);
   }
-  for(const b of blocks.values())flat.push({y:b.y,x:b.x,block:b.rows.sort(order)});
+  for(const b of blocks.values())flat.push({y:b.y,x:b.x,r:b.r,b:b.b,kind:'x',block:b.rows.sort(order)});
   flat.sort(order);
   const MARK='>>> the question is written here',lines=[];
-  for(const r of flat){
-    if(r.block){lines.push('[box]');for(const x of r.block)lines.push(x.text);lines.push('[end of box]');}
+  const say=r=>{
+    if(r.column){lines.push('[column]');for(const x of r.column)say(x);lines.push('[end of column]');}
+    else if(r.block){lines.push('[box]');for(const x of r.block)lines.push(x.text);lines.push('[end of box]');}
     else if(r.drawing)lines.push(...r.drawing);
     else lines.push(r.marker?MARK:r.text);
-  }
+  };
+  for(const r of columns(flat,order))say(r);
   const at=lines.indexOf(MARK);
   let left=18000;const kept=new Map();
   for(const i of lines.map((_,i)=>i).filter(i=>Math.abs(i-at)<=48).sort((a,b)=>Math.abs(a-at)-Math.abs(b-at))){if(left<=0)break;const row=String(lines[i]).slice(0,Math.min(3000,left));kept.set(i,row);left-=row.length+1;}
@@ -1811,9 +2011,10 @@ async function fireTyped(id){
   const control=new AbortController(),run={question:call.question,abort:()=>control.abort(),done:false,superseded:false,answer:'',reply};
   typedRuns.set(id,run);
   const completed=await answer(call.question,{x:0,y:ln.y,lineId:id},{
-    feed(piece){ if(control.signal.aborted)return; run.answer+=piece; if(!reply.update(tidy(run.answer,true).replace(/(?<!\\)\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]/g,m=>m.replace(/\s*\n\s*/g,' ')).trim()))control.abort(); },
+    feed(piece){ if(control.signal.aborted)return; run.answer+=piece; if(!reply.update(typedReply(run.answer,false)))control.abort(); },
     /* the paper under the reply goes once the last word is in */
-    finish(){ run.done=true; reply.done(); },
+    /* a table still held back is set out once the last word is in */
+    finish(){ run.done=true; reply.update(typedReply(run.answer,true)); reply.done(); },
     /* nothing arrived, or the reply was cut short: the lines go too, unless a
        newer question has already taken them over */
     failed(){ run.failed=true;if(run.superseded)return;if(!run.answer.trim())reply.remove();else reply.done(); },
