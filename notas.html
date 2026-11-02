@@ -2,11 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v182">
+<meta name="notas-version" content="v183">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="stylesheet" href="./app-install.css">
+<!-- the chosen language: its words load before the page so even the launch screen is in it -->
+<script src="./i18n.js"></script>
 <script src="./app-install.js" defer></script>
 <link rel="icon" type="image/png" sizes="32x32" href="./assets/icon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="./assets/icon-16.png">
@@ -1096,6 +1098,11 @@ button.mi:active{transform:scale(.99);background:var(--tint-2)}
 .mi .k{margin-left:auto;font:400 12px var(--ui);color:var(--ink-3);letter-spacing:0;white-space:nowrap}
 /* a segmented control: a sliding graphite thumb inside a tinted track */
 .seg{display:inline-flex;background:var(--tint);border-radius:var(--r-pill);padding:2px;gap:0}
+/* the three languages need their own line: each name whole, side by side */
+.mi.mi-lang{flex-wrap:wrap;row-gap:10px}
+.mi-lang-pick{flex:1 1 100%;display:flex}
+.mi-lang .seg{display:flex;width:100%}
+.mi-lang .seg button{flex:1;white-space:nowrap}
 /* a row of colours in settings: the theme's own first, a picker last */
 .colors{display:inline-flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;margin-left:auto}
 .colors button,.colors .pick{position:relative;width:26px;height:26px;border-radius:50%;background:var(--c);flex:none;
@@ -1238,6 +1245,18 @@ body:has(.sheet:not(.leave)) #toast{top:calc(var(--safe-t) + 12px)}
 .intro-demo{margin-top:32px}
 .intro-fade{opacity:0;transform:translateY(6px);transition:opacity .45s ease,transform .45s cubic-bezier(.22,1,.36,1)}
 .intro-fade.on{opacity:1;transform:none}
+/* the first screen: the heading turns through the languages above them */
+.intro-choose{display:block;min-height:1.25em;font:500 clamp(26px,6.4vw,34px)/1.25 var(--ui);letter-spacing:-.01em;transition:opacity .35s ease,transform .35s ease}
+.intro-choose.swap{opacity:0;transform:translateY(-5px)}
+.i-langs{display:flex;flex-direction:column;gap:12px;width:min(360px,100%)}
+.i-lang{display:flex;align-items:center;justify-content:space-between;min-height:58px;padding:0 20px;border:1.5px solid color-mix(in srgb,var(--i-ink) 20%,transparent);border-radius:16px;background:var(--i-bg);color:var(--i-ink);font:500 17px/1.2 var(--ui);text-align:left;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:border-color .2s,background .25s,color .25s,opacity .3s,transform .15s}
+.i-lang i{font-size:18px;opacity:0;transform:scale(.6);transition:opacity .25s,transform .3s cubic-bezier(.22,1,.36,1)}
+@media(hover:hover){.i-lang:hover:not(:disabled){border-color:var(--i-ink)}}
+.i-lang:active:not(:disabled){transform:scale(.985)}
+.i-lang:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+.i-lang[data-on]{background:var(--i-ink);border-color:var(--i-ink);color:var(--i-bg)}
+.i-lang[data-on] i{opacity:1;transform:none}
+.i-lang:disabled:not([data-on]){opacity:.35;cursor:default}
 .intro-hand{font:400 calc(var(--s,1)*26px)/1.3 var(--hand);transition:opacity .4s}
 /* the demonstrations: pictures of the notebook, not the notebook */
 .i-paper{position:relative;padding:16px 20px 18px;border:1px solid var(--i-faint);border-radius:14px;background:var(--i-card);color:var(--graphite);font:400 16px/1.9 var(--type);min-height:96px}
@@ -2000,7 +2019,8 @@ html[data-motion="off"] .prep-trace::before{transform:scaleX(1);opacity:.55}
 <script>
 /* Namespace and error guard. Each subsystem below lives in its own script tag
    so that a syntax error in one cannot take the whole app down. */
-window.N = { ready:{}, libs:{} };
+/* keep what loaded before this (the language) */
+window.N = Object.assign(window.N||{}, { ready:{}, libs:{} });
 /* This banner had no timer, so the one thing every user saw after any error
    was a permanent "Something broke" that nothing could dismiss - including for
    failures the app had already recovered from by itself. It now clears like
@@ -2043,7 +2063,7 @@ const S = {
   strokes:[], lines:[], images:[], annos:[], pdf:null,
   clusters:[], nodes:[], textTranscripts:[],
   tool:'text', lastTool:'pen',
-  settings:{ angle:'deg', fractions:false, aiOn:true, theme:'auto', voice:false, recognizer:'ink', touchDraw:true, animations:true, textColor:'', notaColor:'', notaFont:'', notaOn:true, textRecognitionOn:true, backgroundRemovalOn:true, handwritingRecognitionOn:true },
+  settings:{ angle:'deg', fractions:false, aiOn:true, language:(window.N&&N.i18n&&N.i18n.lang)||'en', theme:'auto', voice:false, recognizer:'ink', touchDraw:true, animations:true, textColor:'', notaColor:'', notaFont:'', notaOn:true, textRecognitionOn:true, backgroundRemovalOn:true, handwritingRecognitionOn:true },
   docH:1600, dirty:false, selection:[], imageSelection:null, savedRev:0, remoteRev:0
 };
 
@@ -2069,7 +2089,7 @@ function strokeById(id){
 }
 const reducedMotion = () => { if(S.settings.animations===false) return true; try{ return matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; } };
 
-const APP_PREF_KEYS = ['theme','touchDraw','voice','recognizer','animations','textColor','notaColor','notaFont','notaOn','textRecognitionOn','backgroundRemovalOn','handwritingRecognitionOn'];
+const APP_PREF_KEYS = ['language','theme','touchDraw','voice','recognizer','animations','textColor','notaColor','notaFont','notaOn','textRecognitionOn','backgroundRemovalOn','handwritingRecognitionOn'];
 function appPrefs(){
   try{ return JSON.parse(localStorage.getItem('notas.prefs')||'{}')||{}; }catch(e){ return {}; }
 }
@@ -8692,6 +8712,8 @@ function menuSheet(){
     '<hr>' +
     '<button class="mi" id="disable-ai"><i class="ph ph-sparkle"></i>disable AI features<span class="k"><i class="ph ph-caret-right"></i></span></button>' +
     '<h3>settings</h3>' +
+    '<div class="mi mi-lang"><span>default language</span><span class="mi-lang-pick"><span class="seg" id="seg-lang" role="group" aria-label="default language" data-no-i18n>' +
+      [['en','English'],['ms','Bahasa Melayu'],['zh','中文']].map(([v,name])=>'<button data-v="'+v+'" lang="'+(v==='zh'?'zh-Hans':v)+'" aria-pressed="'+((N.i18n?N.i18n.lang:'en')===v)+'">'+name+'</button>').join('') + '</span></span></div>' +
     '<label class="mi" for="rename"><span>note name</span><input class="keyin" id="rename" value="'+esc(S.title)+'" style="max-width:220px;margin:0 0 0 auto"></label>' +
     '<div class="mi"><span>angles</span><span style="margin-left:auto"><span class="seg" id="seg-angle" role="group" aria-label="angles">' +
       '<button data-v="deg" aria-pressed="'+(S.settings.angle==='deg')+'">degrees</button>' +
@@ -8780,6 +8802,7 @@ function menuSheet(){
   seg('seg-frac',  v=>{ S.settings.fractions = v==='1'; N.mathcore.run(); C.markDirty(); });
   seg('seg-motion',v=>{S.settings.animations=v==='1';document.documentElement.dataset.motion=S.settings.animations?'on':'off';if(!S.settings.animations)document.getAnimations().forEach(a=>a.cancel());C.savePrefs();});
   seg('seg-theme', v=>{ S.settings.theme = v; applyTheme(); C.savePrefs(); });
+  seg('seg-lang', v=>{ if(N.i18n) N.i18n.set(v).then(ok=>{ if(ok){ S.settings.language = v; C.savePrefs(); } }); });
   /* a colour row sets its setting from a swatch or, live, from the picker */
   const colours = (id, key)=>{
     const row = box.querySelector('#'+id), pick = row.querySelector('.pick');
@@ -9658,7 +9681,7 @@ window.addEventListener('keydown', e=>{
   if(!mod && !e.altKey && k === 'e' && !e.repeat){ springFrom = S.tool; springAt = Date.now(); N.ink.setTool('eraser'); }
   if(e.key === 'Delete' || e.key === 'Backspace'){
     if(S.imageSelection){
-      const del=[...document.querySelectorAll('#selbar button')].find(b=>b.textContent==='delete');
+      const del=[...document.querySelectorAll('#selbar button')].find(b=>(N.i18n?N.i18n.source(b):b.textContent).trim()==='delete');
       if(del)del.click();
     }else if(S.selection.length){
       N.ink.deleteSelection();
@@ -11084,15 +11107,18 @@ N.library = { open, close, toggle, refresh, leaving, changed, boot, importBundle
 const C=N.core,S=C.S;
 const KEY='notas.tut';
 const keyboard=()=>{try{return matchMedia('(hover:hover) and (pointer:fine)').matches;}catch{return true;}};
+/* the intro draws its own words, so it asks for them in the chosen language */
+const T=s=>N.i18n?N.i18n.t(s):s;
 const MIGHT_MISS='things you might miss.';
 const SCREENS=[
+  {picker:true,interactive:true,say:'Choose your language.',demo:pickerDemo},
   {say:'hey, student.',big:true},
   {say:'this is your paper.',demo:paperDemo,alt:'a typed line, the water cycle, and a handwritten line under it.'},
   {say:'don\'t think about calculating maths. think about what you are going to create with maths.',demo:mathsDemo,
    alt:'typed, 12 x 7 gets 84 beside it in blue. 3 + 3 = shows 6 waiting, and space writes it in.'},
   {say:'also your handwriting too.',sub:'make sure it is neat, or it might have some mistakes.',demo:handDemo,
    alt:'handwritten, 5 x 6 = gets 30 in blue.'},
-  {say:'let me introduce myself.',demo:notaDemo,
+  {say:'let me introduce myself.',demo:notaDemo,reply:true,
    alt:'handwritten, hey nota, this is me. nota answers in red: '},
   {eyebrow:MIGHT_MISS,interactive:true,say:'tap the eraser again.',sub:'it becomes the pixel eraser, which rubs out only what it passes over. tap once more to switch back.',demo:eraserDemo},
   {eyebrow:MIGHT_MISS,interactive:true,say:'tap the pen again.',sub:'for its colours and sizes. the text tool does the same.',demo:penDemo},
@@ -11102,9 +11128,8 @@ const SCREENS=[
   {say:'good luck.',big:true,end:true}
 ];
 const REPLY='hi, I\'m nota. start with hey nota, ask me anything about your page, and I\'ll answer right here.';
-SCREENS[4].alt+=REPLY;
 
-let root=null,stage=null,dots=null,live=null;
+let root=null,stage=null,dots=null,live=null,skipBtn=null;
 let on=false,closing=false,at=0,list=[],tl=null,settled=false,endTimer=0,resizeTimer=0,startTimer=0,launchWatch=null;
 let inerted=[],returnTo=null,waiting=[],holdTimer=0,fadeTimer=0,paused=false,acted=true,generation=0;
 
@@ -11124,6 +11149,7 @@ function wobble(seed){let s=seed|0||1;return()=>{s=(s*1103515245+12345)&0x7fffff
 function Ink(text,o){
   const scale=o.scale,student=o.hand==='student';
   const run=w=>N.nota&&N.nota.handRun?N.nota.handRun(w):null;
+  if(CJK.test(text))return Brush(text,o);
   if(!run('a'))return Lettering(text,o);
   const slant=student?.2:0,jit=student?.7:.35,pad=Math.ceil((student?7:4)*scale);
   const space=16*scale,rowH=(o.rowH||40)*scale,maxW=Math.max(60,o.maxW-pad*2);
@@ -11131,15 +11157,15 @@ function Ink(text,o){
   for(const word of String(text).split(/\s+/).filter(Boolean)){
     const r=run(word),w=r.w*scale;let x=row.length?width+space:0;
     if(row.length&&x+w>maxW){rows.push(row);row=[];x=0;}
-    row.push({r,x,w});width=x+w;
+    row.push({r,x,w,word});width=x+w;
   }
   if(row.length)rows.push(row);
   const rnd=wobble(o.seed||[...text].reduce((n,c)=>n*31+c.charCodeAt(0)|0,7));
   const strokes=[];let total=0,wide=0;
   rows.forEach((line,i)=>{
     const base=pad+12*scale+i*rowH;
-    for(const {r,x,w} of line){
-      wide=Math.max(wide,x+w);words.push({x:pad+x,w,top:base-12*scale,bottom:base+9*scale});
+    for(const {r,x,w,word} of line){
+      wide=Math.max(wide,x+w);words.push({t:word,x:pad+x,w,top:base-12*scale,bottom:base+9*scale});
       for(const p of r.paths){
         const pts=[];let len=0;
         for(let k=0;k<p.length;k+=2){
@@ -11175,6 +11201,16 @@ function Ink(text,o){
   }
   const duration=Math.round(clamp(total/(o.speed||1.2),250,o.maxMs||3000));
   return {el:canvas,duration,words,
+    find(term){
+      const want=String(term).toLowerCase().split(/\s+/).filter(Boolean),bare=s=>s.toLowerCase().replace(/[.,!?;:]+$/,'');
+      for(let i=0;i+want.length<=words.length;i++){
+        if(want.every((w,k)=>bare(words[i+k].t)===w)){
+          const a=words[i],b=words[i+want.length-1];
+          return {x:a.x,w:b.x+b.w-a.x,top:a.top,bottom:a.bottom};
+        }
+      }
+      return null;
+    },
     play(){
       cancelAnimationFrame(raf);const t0=performance.now();
       const tick=now=>{shown=total*Math.min(1,(now-t0)/duration);draw();if(shown<total)raf=requestAnimationFrame(tick);};
@@ -11184,10 +11220,93 @@ function Ink(text,o){
     stop(){cancelAnimationFrame(raf);},
     recolor(c){ink=c;draw();}};
 }
+/* Chinese has no strokes in nota's pen face: each character is written in
+   turn, swept in from its left like a pen moving across it */
+const CJK=/[⺀-鿿　-〿＀-￯]/;
+const CJK_FONT='"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC","Noto Sans SC","Source Han Sans SC",sans-serif';
+function Brush(text,o){
+  const student=o.hand==='student',size=Math.round(o.scale*24);
+  const font=(student?'italic ':'')+'400 '+size+'px '+CJK_FONT;
+  const pad=Math.ceil(size*.18),lineH=Math.round(size*1.5),maxW=Math.max(60,o.maxW-pad*2);
+  const m=document.createElement('canvas').getContext('2d');m.font=font;
+  const NO_START='，。、！？：；）」』》,.!?:;)';
+  const pos=[];let x=0,row=0,wide=0;
+  for(const c of String(text)){
+    const w=m.measureText(c).width;
+    if(x>0&&x+w>maxW&&!NO_START.includes(c)){row++;x=0;}
+    pos.push({c,x,w,row});x+=w;wide=Math.max(wide,x);
+  }
+  const cw=Math.ceil(wide+pad*2),ch=Math.ceil(pad*2+(row+1)*lineH);
+  const canvas=el('canvas'),dpr=Math.min(3,window.devicePixelRatio||1);
+  canvas.width=Math.ceil(cw*dpr);canvas.height=Math.ceil(ch*dpr);canvas.style.width=cw+'px';canvas.style.height=ch+'px';
+  canvas.setAttribute('aria-hidden','true');
+  const ctx=canvas.getContext('2d');let ink=o.color,shown=0,raf=0;
+  const n=Math.max(1,pos.length),duration=Math.round(clamp(n*85,300,o.maxMs||3000)),per=duration/n;
+  function draw(){
+    ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,cw,ch);
+    ctx.font=font;ctx.fillStyle=ink;ctx.textBaseline='middle';
+    pos.forEach((p,i)=>{
+      const f=clamp((shown-i*per)/per,0,1);if(!f)return;
+      const top=pad+p.row*lineH;
+      ctx.save();ctx.beginPath();ctx.rect(pad+p.x-2,top,(p.w+4)*f,lineH);ctx.clip();
+      ctx.fillText(p.c,pad+p.x,top+lineH/2);ctx.restore();
+    });
+  }
+  return {el:canvas,duration,
+    find(term){
+      const at=String(text).indexOf(term);if(at<0)return null;
+      const part=pos.slice(at,at+[...term].length);if(!part.length)return null;
+      const top=pad+part[0].row*lineH;
+      return {x:pad+part[0].x,w:part[part.length-1].x+part[part.length-1].w-part[0].x,top:top+lineH*.12,bottom:top+lineH*.88};
+    },
+    play(){
+      cancelAnimationFrame(raf);const t0=performance.now();
+      const tick=now=>{shown=Math.min(duration,now-t0);draw();if(shown<duration)raf=requestAnimationFrame(tick);};
+      raf=requestAnimationFrame(tick);
+    },
+    finish(){cancelAnimationFrame(raf);shown=duration;draw();},
+    stop(){cancelAnimationFrame(raf);},
+    recolor(c){ink=c;draw();}};
+}
+/* the heading of the first screen, in each language in turn */
+const CHOOSE=[['en','Choose your language.'],['ms','Pilih bahasa kamu.'],['zh','选择你的语言。']];
+function Rotator(){
+  const span=el('span','intro-choose');let i=0,timer=0;
+  const showText=()=>{span.textContent=CHOOSE[i][1];span.lang=CHOOSE[i][0]==='zh'?'zh-Hans':CHOOSE[i][0];};
+  showText();
+  const turn=()=>{
+    if(reduced()){i=(i+1)%CHOOSE.length;showText();return;}
+    span.classList.add('swap');
+    setTimeout(()=>{i=(i+1)%CHOOSE.length;showText();span.classList.remove('swap');},350);
+  };
+  return {el:span,duration:300,
+    play(){clearInterval(timer);timer=setInterval(turn,2400);},
+    finish(){if(!timer)timer=setInterval(turn,2400);},
+    stop(){clearInterval(timer);timer=0;},
+    recolor(){}};
+}
+const LANG_BUTTONS=[['en','English'],['ms','Bahasa Melayu'],['zh','中文']];
+function pickerDemo(d,t,ctx){
+  const box=el('div','i-langs intro-fade');box.setAttribute('role','group');box.setAttribute('aria-label','Choose your language. Pilih bahasa kamu. 选择你的语言。');
+  let chosen=false;
+  for(const [code,name] of LANG_BUTTONS){
+    const b=el('button','i-lang');b.type='button';b.lang=code==='zh'?'zh-Hans':code;
+    b.append(el('span',null,name),el('i','ph ph-check'));
+    if(N.i18n&&N.i18n.lang===code)b.dataset.was='';
+    b.onclick=async()=>{
+      if(chosen)return;chosen=true;
+      b.dataset.on='';box.querySelectorAll('.i-lang').forEach(x=>{x.disabled=true;});b.disabled=false;b.setAttribute('aria-pressed','true');
+      if(N.i18n)await N.i18n.set(code);
+      relabel();ctx.done();
+    };
+    box.append(b);
+  }
+  d.append(box);fadeIn(t,box,300);
+}
 /* without the pen face (nota.js missing) the line is set in the hand font */
 function Lettering(text,o){
   const span=el('span','intro-hand',text);span.style.setProperty('--s',o.scale);span.style.color=o.color;span.style.opacity='0';
-  return {el:span,duration:300,words:[],play(){span.style.opacity='1';},finish(){span.style.opacity='1';},stop(){},recolor(c){span.style.color=c;}};
+  return {el:span,duration:300,words:[],find(){return null;},play(){span.style.opacity='1';},finish(){span.style.opacity='1';},stop(){},recolor(c){span.style.color=c;}};
 }
 
 /* ---- a timeline that can be played, or jumped to its end ---- */
@@ -11227,8 +11346,8 @@ function tap(t,node){t.do(()=>{node.classList.remove('tap');void node.offsetWidt
 
 function paperDemo(d,t){
   const card=paper(d,t),l=typedLine(card);
-  type(t,l,'the water cycle.');t.wait(300).do(()=>{l.caret.hidden=true;});
-  const w=Ink('rain, rivers, sea, clouds.',{scale:handScale(),maxW:inner(card),color:color('--graphite'),hand:'student'});
+  type(t,l,T('the water cycle.'));t.wait(300).do(()=>{l.caret.hidden=true;});
+  const w=Ink(T('rain, rivers, sea, clouds.'),{scale:handScale(),maxW:inner(card),color:color('--graphite'),hand:'student'});
   card.append(w.el);t.write(w);
 }
 function mathsDemo(d,t){
@@ -11250,11 +11369,11 @@ function handDemo(d,t){
 }
 function notaDemo(d,t){
   const card=paper(d,t);
-  const q=Ink('hey nota, this is me.',{scale:handScale()*1.1,maxW:inner(card),color:color('--graphite'),hand:'student'});
+  const q=Ink(T('hey nota, this is me.'),{scale:handScale()*1.1,maxW:inner(card),color:color('--graphite'),hand:'student'});
   card.append(q.el);t.write(q,350);
   /* taken: the question turns blue, as it does on the page, and nota answers */
   t.do(()=>q.recolor(color('--blue'))).wait(800);
-  const r=Ink(REPLY,{scale:handScale()*.92,maxW:inner(card),color:color('--nota'),hand:'nota',maxMs:3600,speed:1});
+  const r=Ink(T(REPLY),{scale:handScale()*.92,maxW:inner(card),color:color('--nota'),hand:'nota',maxMs:3600,speed:1});
   r.el.style.marginTop='4px';card.append(r.el);t.write(r);
 }
 /* the tips are tried, not watched: the screen waits for the student's own taps */
@@ -11264,7 +11383,7 @@ function pill(d,t,icons,target){
   const tools={};
   for(const name of icons){
     const b=name===target?el('button','i-tool'):el('span','i-tool');
-    if(name===target){b.type='button';b.setAttribute('aria-label',TOOL_NAMES[name]);}else b.setAttribute('aria-hidden','true');
+    if(name===target){b.type='button';b.setAttribute('aria-label',T(TOOL_NAMES[name]));}else b.setAttribute('aria-hidden','true');
     b.append(el('i','ph ph-'+name));bar.append(b);tools[name]=b;
   }
   const label=el('div','i-label');label.setAttribute('aria-live','polite');
@@ -11277,11 +11396,11 @@ function invite(t,node,label,text,taps){
 function eraserDemo(d,t,ctx){
   const p=pill(d,t,['text-t','pencil-simple','eraser','selection'],'eraser'),b=p.tools.eraser;let taps=0;
   p.tools['text-t'].classList.add('on');
-  invite(t,b,p.label,'tap the eraser.',()=>taps);
+  invite(t,b,p.label,T('tap the eraser.'),()=>taps);
   b.onclick=()=>{
     if(taps>=2)return;taps++;ripple(b);b.classList.add('i-want');
-    if(taps===1){p.tools['text-t'].classList.remove('on');b.classList.add('on');p.label.textContent='stroke eraser. now tap it again.';}
-    else{b.firstChild.className='ph ph-circle-dashed';b.classList.remove('i-want');b.setAttribute('aria-label','pixel eraser');p.label.textContent='pixel eraser.';ctx.done();}
+    if(taps===1){p.tools['text-t'].classList.remove('on');b.classList.add('on');p.label.textContent=T('stroke eraser. now tap it again.');}
+    else{b.firstChild.className='ph ph-circle-dashed';b.classList.remove('i-want');b.setAttribute('aria-label',T('pixel eraser'));p.label.textContent=T('pixel eraser.');ctx.done();}
   };
 }
 function penDemo(d,t,ctx){
@@ -11293,11 +11412,11 @@ function penDemo(d,t,ctx){
   for(const h of [2,4,7]){const s=el('span','i-width');s.style.height=h+'px';pop.append(s);}
   p.box.prepend(pop);
   p.tools['text-t'].classList.add('on');
-  invite(t,b,p.label,'tap the pen.',()=>taps);
+  invite(t,b,p.label,T('tap the pen.'),()=>taps);
   b.onclick=()=>{
     if(taps>=2)return;taps++;ripple(b);
-    if(taps===1){p.tools['text-t'].classList.remove('on');b.classList.add('on');p.label.textContent='now tap it again.';}
-    else{pop.classList.add('on');b.classList.remove('i-want');p.label.textContent='its colours and sizes.';ctx.done();}
+    if(taps===1){p.tools['text-t'].classList.remove('on');b.classList.add('on');p.label.textContent=T('now tap it again.');}
+    else{pop.classList.add('on');b.classList.remove('i-want');p.label.textContent=T('its colours and sizes.');ctx.done();}
   };
 }
 function slideDemo(d,t,ctx){
@@ -11305,21 +11424,21 @@ function slideDemo(d,t,ctx){
   strip.setAttribute('aria-hidden','true');
   for(const name of ['text-t','pencil-simple','eraser','selection']){const s=el('span','i-tool');s.append(el('i','ph ph-'+name));strip.append(s);}
   strip.firstChild.classList.add('on');
-  const place=el('span','i-place');place.append(el('i','ph ph-image-square'),document.createTextNode('place image'));
+  const place=el('span','i-place');place.append(el('i','ph ph-image-square'),document.createTextNode(T('place image')));
   strip.append(el('span','i-div'),place);
-  const more=el('button','i-more');more.type='button';more.setAttribute('aria-label','more tools');more.append(el('i','ph ph-caret-right'));
+  const more=el('button','i-more');more.type='button';more.setAttribute('aria-label',T('more tools'));more.append(el('i','ph ph-caret-right'));
   const finger=el('span','i-finger');finger.setAttribute('aria-hidden','true');
   const label=el('div','i-label');label.setAttribute('aria-live','polite');
   bar.append(strip,more,finger);box.append(bar,label);d.append(box);fadeIn(t,box,300);
   let opened=false,from=null;
-  t.do(()=>{if(!opened){label.textContent='swipe the tools to the left.';bar.classList.add('i-hint');}});
+  t.do(()=>{if(!opened){label.textContent=T('swipe the tools to the left.');bar.classList.add('i-hint');}});
   const open=()=>{
     if(opened)return;opened=true;bar.classList.remove('i-hint');bar.classList.add('open');more.setAttribute('aria-expanded','true');
     /* as wide as the screen allows, then along to the end of the tray */
     const room=Math.max(strip.clientWidth,box.clientWidth-more.offsetWidth-14);
     strip.style.width=Math.min(strip.scrollWidth,room)+'px';
     setTimeout(()=>strip.scrollTo({left:strip.scrollWidth,behavior:reduced()?'auto':'smooth'}),380);
-    label.textContent='place image.';ctx.done();
+    label.textContent=T('place image.');ctx.done();
   };
   more.onclick=open;
   bar.addEventListener('pointerdown',e=>{if(e.target.closest('button'))return;from={x:e.clientX,id:e.pointerId};try{bar.setPointerCapture(e.pointerId);}catch{}});
@@ -11327,7 +11446,7 @@ function slideDemo(d,t,ctx){
   const lift=()=>{from=null;};bar.addEventListener('pointerup',lift);bar.addEventListener('pointercancel',lift);
 }
 function cropDemo(d,t,ctx){
-  const pic=el('button','i-pic intro-fade');pic.type='button';pic.setAttribute('aria-label','a picture. double-tap it to crop.');
+  const pic=el('button','i-pic intro-fade');pic.type='button';pic.setAttribute('aria-label',T('a picture. double-tap it to crop.'));
   pic.innerHTML='<svg viewBox="0 0 260 160" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="i-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9CC9EE"/><stop offset="1" stop-color="#E4F1FB"/></linearGradient></defs>'+
     '<rect width="260" height="160" fill="url(#i-sky)"/><circle cx="196" cy="46" r="18" fill="#F6C453"/>'+
     '<path d="M0 118 Q60 70 120 108 T260 96 V160 H0Z" fill="#7DB37A"/><path d="M0 138 Q90 108 170 132 T260 128 V160 H0Z" fill="#4F8F55"/></svg>';
@@ -11335,10 +11454,10 @@ function cropDemo(d,t,ctx){
   const label=el('div','i-label');label.setAttribute('aria-live','polite');
   pic.append(ring,crop);d.append(pic,label);fadeIn(t,pic,500);
   let cropped=false,last=0;
-  invite(t,pic,label,'double-tap the picture.',()=>cropped);
+  invite(t,pic,label,T('double-tap the picture.'),()=>cropped);
   const cut=()=>{
     if(cropped)return;cropped=true;pic.classList.remove('i-want');
-    crop.classList.add('on');label.textContent='crop it, then tap done.';
+    crop.classList.add('on');label.textContent=T('crop it, then tap done.');
     setTimeout(()=>{crop.classList.add('in');ctx.done();},450);
   };
   pic.addEventListener('click',e=>{
@@ -11348,17 +11467,18 @@ function cropDemo(d,t,ctx){
     const r=pic.getBoundingClientRect();ring.style.left=(e.clientX-r.left)+'px';ring.style.top=(e.clientY-r.top)+'px';ripple(ring);
     const now=performance.now();
     if(e.detail>=2||now-last<450){cut();return;}
-    last=now;label.textContent='and once more, quickly.';
+    last=now;label.textContent=T('and once more, quickly.');
   });
 }
 function searchDemo(d,t){
   const box=el('div','intro-fade'),field=el('div','i-search'),words=el('span'),caret=el('span','i-caret');
   field.append(el('i','ph ph-magnifying-glass'),words,caret);caret.hidden=true;box.append(field);d.append(box);fadeIn(t,box,300);
-  const l={words,caret};type(t,l,'volcano',85);
-  const result=el('div','i-result intro-fade');result.append(el('strong',null,'geography.'));
+  const ex=(N.i18n&&N.i18n.extra('search'))||{term:'volcano',line:'the volcano erupted.'};
+  const l={words,caret};type(t,l,ex.term,85);
+  const result=el('div','i-result intro-fade');result.append(el('strong',null,T('geography.')));
   const mark=el('div','i-mark');result.append(mark);box.append(result);
-  const w=Ink('the volcano erupted.',{scale:handScale()*.9,maxW:Math.max(120,result.clientWidth-28),color:color('--graphite'),hand:'student'});
-  const hi=el('span');const v=w.words[1];
+  const w=Ink(ex.line,{scale:handScale()*.9,maxW:Math.max(120,result.clientWidth-28),color:color('--graphite'),hand:'student'});
+  const hi=el('span');const v=w.find(ex.term);
   if(v){Object.assign(hi.style,{left:(v.x-3)+'px',width:(v.w+6)+'px',top:(v.top-4)+'px',height:(v.bottom-v.top+8)+'px'});mark.append(hi);}
   mark.append(w.el);
   t.wait(300).do(()=>{caret.hidden=true;w.finish();});fadeIn(t,result,250);t.do(()=>hi.classList.add('on')).wait(400);
@@ -11368,15 +11488,21 @@ function searchDemo(d,t){
 const FADE=520;
 function build(){
   root=el('div');root.id='intro';root.tabIndex=-1;
-  root.setAttribute('role','dialog');root.setAttribute('aria-modal','true');root.setAttribute('aria-label','welcome to notas');
+  root.setAttribute('role','dialog');root.setAttribute('aria-modal','true');
   /* the one control: leave now, from any screen */
-  const top=el('div','intro-top'),skip=el('button','intro-skipall','skip all');skip.type='button';
+  const top=el('div','intro-top'),skip=skipBtn=el('button','intro-skipall');skip.type='button';
   skip.onclick=()=>close(false);top.append(skip);
   stage=el('main','intro-stage pre');
   const foot=el('div','intro-foot');dots=el('div','intro-dots');dots.setAttribute('aria-hidden','true');foot.append(dots);
   live=el('div','sr-only');live.setAttribute('role','status');live.setAttribute('aria-live','polite');
   root.append(top,stage,foot,live);
+  relabel();
   document.body.append(root);
+}
+/* the page's own words, again once a language is chosen */
+function relabel(){
+  if(!root)return;
+  root.setAttribute('aria-label',T('welcome to notas'));skipBtn.textContent=T('skip all');
 }
 /* a second to take in a screen once it has all arrived, or once the
    student has done what it asked */
@@ -11390,12 +11516,12 @@ function render(i,instant){
   [...dots.children].forEach((d,k)=>{if(k===i)d.dataset.on='';else delete d.dataset.on;});
   const head=el('h1','intro-say');head.id='intro-say';stage.append(head);
   let eyebrow=null,sub=null;
-  if(sc.eyebrow){eyebrow=el('p','intro-eyebrow intro-fade',sc.eyebrow);stage.prepend(eyebrow);}
-  if(sc.sub){sub=el('p','intro-sub intro-fade',sc.sub);stage.append(sub);}
+  if(sc.eyebrow){eyebrow=el('p','intro-eyebrow intro-fade',T(sc.eyebrow));stage.prepend(eyebrow);}
+  if(sc.sub){sub=el('p','intro-sub intro-fade',T(sc.sub));stage.append(sub);}
   const demo=sc.demo?el('div','intro-demo'):null;if(demo)stage.append(demo);
-  live.textContent=[sc.eyebrow,sc.say,sc.sub,sc.alt].filter(Boolean).join(' ');
-  head.append(el('span','sr-only',sc.say));
-  const pen=Ink(sc.say,{scale:sc.big?bigScale():headScale(),maxW:stage.clientWidth,color:color('--i-ink'),rowH:sc.big?36:38,maxMs:sc.big?1500:3200});
+  live.textContent=sc.picker?'Choose your language. Pilih bahasa kamu. 选择你的语言。':[sc.eyebrow,sc.say,sc.sub,sc.alt].filter(Boolean).map(T).join(' ')+(sc.reply?T(REPLY):'');
+  head.append(el('span','sr-only',sc.picker?'Choose your language. Pilih bahasa kamu. 选择你的语言。':T(sc.say)));
+  const pen=sc.picker?Rotator():Ink(T(sc.say),{scale:sc.big?bigScale():headScale(),maxW:stage.clientWidth,color:color('--i-ink'),rowH:sc.big?36:38,maxMs:sc.big?1500:3200});
   head.prepend(pen.el);
   tl=Timeline();
   tl.wait(instant?0:220);

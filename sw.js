@@ -1,5 +1,5 @@
 'use strict';
-const CACHE='notas-local-v182';
+const CACHE='notas-local-v183';
 self.addEventListener('message',event=>{
   if(event.data?.type==='GET_VERSION')event.ports[0]?.postMessage({version:CACHE.replace('notas-local-','')});
   // The update button explicitly applies this installed build. Only the
@@ -21,7 +21,7 @@ const SHELL=['./app-install.js','./app-install.css','./pdf-notebook.js','./notas
   './assets/smart/ort.wasm.min.js?v=4043d2de','./assets/smart/ort-wasm-simd-threaded.js?v=5687566b','./assets/smart/ort-wasm-simd-threaded.wasm?v=be0e1299',
   // the background remover's runtime script and loader; its binary (27 MB, in parts) is kept the first time it is fetched
   './assets/smart/ort.webgpu.min.js?v=ed951b6e','./assets/smart/ort-wasm-simd-threaded.asyncify.js?v=dee69056',
-  './local-math-help.js','./diagram.js','./nota.js','./nota-fonts.js','./collab.js','./manifest.webmanifest','./asset-manifest.json',
+  './i18n.js','./i18n-ms.js','./i18n-zh.js','./local-math-help.js','./diagram.js','./nota.js','./nota-fonts.js','./collab.js','./manifest.webmanifest','./asset-manifest.json',
   './assets/icon-16.png','./assets/icon-32.png','./assets/icon-192.png','./assets/icon-512.png',
   './assets/icon-maskable-512.png','./assets/apple-touch-icon.png',
   // the wordmark is drawn through a CSS mask on the launch screen and top bar

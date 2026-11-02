@@ -6,7 +6,8 @@ import {startServer} from '../scripts/serve.mjs';
 /* The intro: a white page before the notebook that plays on its own, one
    idea per screen fading into the next, then the notebook. Nothing to press.
    It never asks nota anything and never touches the note. */
-const SAYS=['hey, student.','this is your paper.',
+const PICK='Choose your language. Pilih bahasa kamu. 选择你的语言。';
+const SAYS=[PICK,'hey, student.','this is your paper.',
   'don\'t think about calculating maths. think about what you are going to create with maths.',
   'also your handwriting too.','let me introduce myself.','tap the eraser again.','tap the pen again.',
   'swipe the tools left.','double-tap a picture.','search reads your handwriting.','good luck.'];
@@ -23,11 +24,10 @@ try{
   await page.addInitScript(()=>localStorage.setItem('notas.prefs',JSON.stringify({handwritingRecognitionOn:false,textRecognitionOn:false,backgroundRemovalOn:false,notaOn:true})));
   await context.route(/\/nota\/chat$|api\.cerebras\.ai|oxionai\.com/,route=>{requests++;return route.abort();});
   await page.goto(base+'/notas.html');
-  await page.waitForFunction(()=>window.N?.tutorial?.running&&document.querySelector('#preparing').classList.contains('done')&&document.querySelector('#intro h1 canvas'));
+  await page.waitForFunction(()=>window.N?.tutorial?.running&&document.querySelector('#preparing').classList.contains('done')&&document.querySelector('#intro .i-lang'));
 
   const expected=SAYS;
   assert.equal(await page.evaluate(()=>N.tutorial.screens),expected.length);
-  assert.equal(await page.locator('#intro button:not(.intro-skipall)').count(),0,'nothing to press but skip all: no next');
   assert.equal((await page.locator('.intro-skipall').textContent()),'skip all');
   assert.equal(await page.locator('#topbar').evaluate(el=>!!el.closest('[inert]')),true,'the notebook waits behind the intro');
   const bg=await page.locator('#intro').evaluate(el=>getComputedStyle(el).backgroundColor);
@@ -42,16 +42,27 @@ try{
    assert.equal(await page.evaluate(()=>N.tutorial.screen),i);
    assert.equal(await page.locator('#intro h1 .sr-only').textContent(),expected[i]);
    if(i===0){
+    /* the first screen asks for a language, each in its own words, and waits */
     await page.waitForFunction(()=>N.tutorial.settled,null,{timeout:12000});
     await page.screenshot({path:`test-results/intro-00-${label}.png`});
+    assert.deepEqual(await page.locator('#intro .i-lang').allTextContents(),['English','Bahasa Melayu','中文']);
+    await page.waitForTimeout(1600);
+    assert.equal(await page.evaluate(()=>N.tutorial.screen),0,'the language screen waits for a choice');
+    if(touch)await page.locator('#intro .i-lang',{hasText:'English'}).tap();else await page.locator('#intro .i-lang',{hasText:'English'}).click();
+    await page.waitForFunction(()=>N.tutorial.screen===1,null,{timeout:6000});
+    assert.equal(await page.evaluate(()=>N.i18n.lang),'en');
+    i=1;await page.waitForFunction(()=>N.tutorial.settled,null,{timeout:12000});
+    assert.equal(await page.locator('#intro h1 .sr-only').textContent(),expected[1]);
+    assert.equal(await page.locator('#intro button:not(.intro-skipall)').count(),0,'nothing to press but skip all: no next');
+    await page.screenshot({path:`test-results/intro-01-${label}.png`});
     /* taps and keys do not move it on; it goes with its own flow */
     await page.mouse.click(width/2,height/2);await page.keyboard.press('Enter');await page.keyboard.press('ArrowRight');
-    assert.equal(await page.evaluate(()=>N.tutorial.screen),0,'a tap or a key never skips ahead');
-    /* the first screen moves on by itself, fading into the second */
-    await page.waitForFunction(()=>N.tutorial.screen===1,null,{timeout:12000});
+    assert.equal(await page.evaluate(()=>N.tutorial.screen),1,'a tap or a key never skips ahead');
+    /* the greeting moves on by itself, fading into the next */
+    await page.waitForFunction(()=>N.tutorial.screen===2,null,{timeout:12000});
     if(motion!=='reduce')assert.equal(await page.locator('.intro-stage').evaluate(el=>el.classList.contains('out')),false);
     await page.waitForFunction(()=>N.tutorial.settled,null,{timeout:12000});
-    i=1;assert.equal(await page.locator('#intro h1 .sr-only').textContent(),expected[1]);
+    i=2;assert.equal(await page.locator('#intro h1 .sr-only').textContent(),expected[2]);
    }
    await page.waitForFunction(()=>N.tutorial.settled,null,{timeout:12000});
    const fit=await page.evaluate(()=>{
@@ -62,19 +73,19 @@ try{
    assert.deepEqual(fit,{wide:0,overflow:false},`screen ${i} fits ${label}`);
    await page.screenshot({path:`test-results/intro-${String(i).padStart(2,'0')}-${label}.png`});
    if(i===expected.length-1)break;
-   const tip={5:'button.i-tool',6:'button.i-tool',7:'.i-slide',8:'button.i-pic'}[i];
+   const tip={6:'button.i-tool',7:'button.i-tool',8:'.i-slide',9:'button.i-pic'}[i];
    if(tip&&(width===1280||width===390)){
     /* a tip waits for the student to try it, then moves on a second later */
     await page.waitForTimeout(1600);
     assert.equal(await page.evaluate(()=>N.tutorial.screen),i,`screen ${i} waits to be tried`);
     const target=page.locator('#intro '+tip);
     assert.equal(await target.evaluate(el=>el.classList.contains(el.classList.contains('i-slide')?'i-hint':'i-want')),true,'what to do is shown');
-    if(i===7){
+    if(i===8){
      /* a swipe from right to left on a mouse; the › on a phone */
      if(touch)await page.locator('#intro button.i-more').tap();
      else{const b=await target.boundingBox();await page.mouse.move(b.x+b.width-50,b.y+b.height/2);await page.mouse.down();for(let k=1;k<=8;k++)await page.mouse.move(b.x+b.width-50-k*12,b.y+b.height/2);await page.mouse.up();}
     }
-    else if(i===8){if(touch){await target.tap();await target.tap();}else await target.dblclick();}
+    else if(i===9){if(touch){await target.tap();await target.tap();}else await target.dblclick();}
     else for(let k=0;k<2;k++){if(touch)await target.tap();else await target.click();}
     const tried=Date.now();
     await page.waitForFunction(n=>N.tutorial.screen===n,i+1,{timeout:6000});
@@ -101,14 +112,14 @@ try{
   /* the menu replays it, and escape leaves at once */
   await page.locator('#btn-menu').click();
   await page.locator('#mi-tut').click();
-  await page.waitForFunction(()=>document.querySelector('#intro h1 canvas'));
+  await page.waitForFunction(()=>document.querySelector('#intro .i-lang'));
   assert.equal(await page.evaluate(()=>N.tutorial.screen),0);
   await page.keyboard.press('Escape');
   await page.waitForFunction(()=>!document.getElementById('intro'),null,{timeout:3000});
 
   /* skip all leaves from any screen at once */
   await page.evaluate(()=>N.tutorial.start(true));
-  await page.waitForFunction(()=>document.querySelector('#intro h1 canvas'));
+  await page.waitForFunction(()=>document.querySelector('#intro .i-lang'));
   await page.evaluate(()=>{N.tutorial.next();N.tutorial.next();});
   if(touch)await page.locator('.intro-skipall').tap();else await page.locator('.intro-skipall').click();
   await page.waitForFunction(()=>!document.getElementById('intro'),null,{timeout:3000});

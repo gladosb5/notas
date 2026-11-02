@@ -1101,6 +1101,8 @@ const NOTE_TOOLS=[
     description:'Reads one note: its typed lines and what was read of its handwriting.',
     parameters:{type:'object',properties:{id:{type:'string',description:'The note\'s id, from list_notes.'}},required:['id']}}}
 ];
+/* in Malay or Chinese, nota is told to answer in it */
+const system=()=>{const rule=N.i18n&&N.i18n.replyRule&&N.i18n.replyRule();return rule?SYSTEM+'\n'+rule:SYSTEM;};
 const TOOL_SYSTEM='You can look at the person\'s other notes in this notebook with two tools: list_notes lists them (with a query, those matching its words first) and read_note reads one by its id. Use them when the question is about their notes (a test, a quiz, a summary, what they wrote about something) or names a topic or note that is not on this page: list, read the one to three notes that fit, then answer from them. Do not use them when the page or general knowledge answers the question. Never mention the tools, the ids or looking anything up in the answer.';
 const TOOL_ROUNDS=3,TOOL_CALLS=4,TOOL_ERRORS=3,TOOL_CHARS=32000,LIST_MAX=30,READ_CHARS=5000,TOOL_TAG='<tool_call>',TOOL_HOLD=160;
 const GRAB_TEXT='nota is grabbing your notes for its reference.';
@@ -1286,7 +1288,7 @@ function fitConversation(messages){
 async function streamTools(question,context,onDelta,signal,picture,model,{onGrab}={},onAlive){
   const text=ask(context,question,'');
   const pictures=picture?[{...picture,what:'the page'}]:[];
-  const messages=[{role:'system',content:SYSTEM+'\n'+TOOL_SYSTEM},{role:'user',content:pictures.length?[{type:'text',text},{type:'image_url',image_url:{url:picture.url}}]:text}];
+  const messages=[{role:'system',content:system()+'\n'+TOOL_SYSTEM},{role:'user',content:pictures.length?[{type:'text',text},{type:'image_url',image_url:{url:picture.url}}]:text}];
   const budget={left:TOOL_CHARS};
   let total='',errors=0,extras=true;
   for(let round=0;;round++){
@@ -1398,7 +1400,7 @@ async function streamAttempt(question,context,onDelta,signal,picture,model,tools
   const pictures=picture?[{...picture,what:'the page'}]:[];
   const body={
     model,stream:true,max_tokens:CONFIG.maxTokens,temperature:0.3,
-    messages:[{role:'system',content:SYSTEM},{role:'user',content:pictures.length?[{type:'text',text},...pictures.map(p=>({type:'image_url',image_url:{url:p.url}}))]:text}],
+    messages:[{role:'system',content:system()},{role:'user',content:pictures.length?[{type:'text',text},...pictures.map(p=>({type:'image_url',image_url:{url:p.url}}))]:text}],
     ...CONFIG.extras
   };
   debugRequest(body,pictures);

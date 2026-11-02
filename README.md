@@ -21,6 +21,7 @@ Keep the same address and browser profile to return to your notes. Export import
 
 - Pen and typed notes, pictures, selection, undo/redo, and note import/export.
 - A short first-visit intro, written in nota's hand, that can be replayed from the menu.
+- English, Malay (Bahasa Melayu) and Chinese (简体中文): chosen on the intro's first screen or in settings, for the whole app and nota's answers. The words are in `i18n/catalogue.json`; `node scripts/build-i18n.mjs` builds them.
 - Local handwriting recognition, maths calculations, and Quick Maths insertion.
 - Offline use after the app and required models have been cached.
 - Optional on-device image background removal; its larger model loads when needed.
