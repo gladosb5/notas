@@ -141,7 +141,7 @@ const SYSTEM=[
   'The person wrote or typed "hey nota," followed by a question on the page, or circled some handwriting and asked about it. The page contents are given as rows in reading order; "this" or "that" or "it" means the nearest thing above or beside the question: a sum, a list, a paragraph, a recipe, whatever is there. Rows between [box] and [end of box] were written inside a box drawn on the page, usually a heading and its notes; boxes side by side are separate topics.',
   'The rows are machine readings of handwriting and can contain misread words or stray symbols. Read them for their meaning and ignore fragments that make no sense, rather than explaining them.',
   'Drawings on the page are described in words between [diagram] and [end of diagram], or [graph] and [end of graph]: the shapes, the lines and arrows joining them, and the handwriting labelling each part, with places as (across, down) from 0 to 100 over the drawing. An arrow "from A to B" points at B. A graph gives its curves as points in the units written on its axes. Read the description as the drawing the person made (a flowchart, a food chain, a Venn diagram, a triangle, a circuit, a graph) and answer about the drawing itself; never mention the description, the coordinates or the brackets.',
-  'A question may come with a picture of the page around it: the person\'s handwriting and drawings in dark ink, and any photo or picture they put on the page. The machine readings come from that same ink. Use the picture to read what the readings missed or got wrong and to see drawings and photos, and trust it over a reading that disagrees with it. Never mention that you were sent a picture.',
+  'A question may come with a picture of the page around it: the person\'s handwriting, typed lines and drawings in dark ink, and any photo or picture they put on the page. The machine readings come from that same ink. Use the picture to read what the readings missed or got wrong and to see drawings and photos, and trust it over a reading that disagrees with it. Blue numbers just right of or below the working are the notebook\'s calculator answers, not something the person wrote; they are worked out from the readings, so a misread line gets a wrong blue answer: check them against the ink. Never mention that you were sent a picture.',
   'Answer whatever is asked: work out or check maths, explain an idea, suggest what to cook with what is listed and how, convert units or currencies, fix spelling or grammar, translate, summarise the notes, plan the steps, define a word, give a fact. Be accurate; if you are not sure, say so briefly.',
   'Use plain prose: no markdown at all (no **, *, _, #, >, tables or links), no bullets, code fences or emoji. Write mathematics in LaTeX delimited by $...$ or $$...$$, and put only the formula itself between the dollars: never words, units or a price. Write a price as plain text, such as 5 dollars. The pen supports nested \\frac, \\sqrt, superscripts, subscripts, Greek names and common operators. Prefer short equations; avoid matrices, environments and custom macros.',
   'Be brief: one to three short sentences, at most about 45 words, unless the person asks for the full working, the steps, a list or a recipe, then give short numbered lines, one per line.',
@@ -861,6 +861,41 @@ function loadPicture(src){
     img.onload=()=>done(true);img.onerror=()=>done(false);img.src=src;
   });
 }
+/* What the student sees beside the working: the calculator's answers, as
+   the blue chips show them, and the typed lines they sit beside. They go to
+   nota in the picture, where they are, and not as words: an answer pasted
+   into the text as "[= 84]" was taken for something the student wrote, and
+   nota got confused by it. Only finished answers: a reading still waiting
+   for its Solve, an error or a calculation under way is left out. */
+function pageAnswers(box){
+  const out=[];
+  for(const el of document.querySelectorAll('#margin .chip')){
+    if(el.classList.contains('offer')||el.classList.contains('error'))continue;
+    const n=(S.nodes||[]).find(x=>x.id===el.dataset.node);
+    if(!n||!n.result||n.pending||n.error)continue;
+    const x=parseFloat(el.style.left),top=parseFloat(el.style.top);
+    if(!isFinite(x)||!isFinite(top))continue;
+    const cs=getComputedStyle(el),size=parseFloat(cs.fontSize)||21;
+    const w=el.offsetWidth||size*String(n.result).length*0.6,h=el.offsetHeight||size*1.2;
+    if(x+w<box[0]||x>box[2]||top+h<box[1]||top>box[3])continue;
+    out.push({text:String(n.result),x:x+(parseFloat(cs.paddingLeft)||10),y:top+h/2,size,typed:el.classList.contains('typed'),box:[x,top,x+w,top+h]});
+  }
+  return out;
+}
+/* the student's own typed lines in the band, as the page sets them */
+function typedIn(box){
+  return (S.lines||[]).filter(l=>!l.tutor&&!l.wait&&l.text&&l.text.trim()&&l.y+C.LINE_H>=box[1]&&l.y<=box[3]);
+}
+function paintAnswers(ctx,lines,answers){
+  ctx.textBaseline='top';ctx.fillStyle='#1b1d21';ctx.font='400 16px "IBM Plex Mono","SF Mono",Consolas,monospace';
+  for(const l of lines)ctx.fillText(l.text.replace(/\s+/g,' '),(l.x||0)+2,l.y+5);
+  ctx.textBaseline='middle';ctx.fillStyle='#3670b2';
+  for(const a of answers){
+    ctx.font=a.typed?'400 '+a.size+'px "IBM Plex Mono","SF Mono",Consolas,monospace':'600 '+a.size+'px Caveat,"Segoe Script","Comic Sans MS",cursive';
+    ctx.fillText(a.text,a.x,a.y);
+  }
+}
+
 async function pagePicture(where,drawings){
   let box;
   if(where.picture){const b=where.picture,pad=24;box=[b[0]-pad,b[1]-pad,b[2]+pad,b[3]+pad];}
@@ -874,9 +909,11 @@ async function pagePicture(where,drawings){
   const meets=b=>b[2]>=box[0]&&b[0]<=box[2]&&b[3]>=box[1]&&b[1]<=box[3];
   const ink=S.strokes.filter(st=>(st.author==='user'||st.author==='ai')&&st.bbox&&Array.isArray(st.pts)&&meets(st.bbox));
   const pics=(S.images||[]).filter(im=>meets([im.x,im.y,im.x+im.w,im.y+im.h]));
-  if(!pics.length&&!ink.length)return null;
+  const answers=pageAnswers(box),typed=answers.length?typedIn(box):[];
+  /* answers are sent only in the picture, so maths near the question makes one */
+  if(!pics.length&&!ink.length&&!answers.length)return null;
   /* the band widens to the writing in it, which can run past the column */
-  if(!where.picture)for(const b of [...ink.map(st=>st.bbox),...pics.map(im=>[im.x,im.y,im.x+im.w,im.y+im.h])]){box[0]=Math.min(box[0],b[0]-8);box[2]=Math.max(box[2],b[2]+8);}
+  if(!where.picture)for(const b of [...ink.map(st=>st.bbox),...pics.map(im=>[im.x,im.y,im.x+im.w,im.y+im.h]),...answers.map(a=>a.box)]){box[0]=Math.min(box[0],b[0]-8);box[2]=Math.max(box[2],b[2]+8);}
   const w=box[2]-box[0],h=box[3]-box[1];
   const loaded=await Promise.all(pics.map(im=>loadPicture(im.src)));
   for(let scale=Math.min(2,PICTURE_MAX/Math.max(w,h)),quality=0.85,tries=0;tries<4;tries++,scale*=0.75,quality-=0.1){
@@ -891,6 +928,7 @@ async function pagePicture(where,drawings){
       else ctx.drawImage(el,im.x,im.y,im.w,im.h);
     });
     paintInk(ctx,ink,scale);
+    paintAnswers(ctx,typed,answers);
     let url;try{url=cv.toDataURL('image/jpeg',quality);}catch(e){return null;}
     if(url.startsWith('data:image/jpeg;base64,')&&url.length<=PICTURE_CHARS)return {url,w:cv.width,h:cv.height};
   }
@@ -972,8 +1010,8 @@ function pageRows(question){
     if(n.kind==='cluster'&&n.ref&&n.ref.review)continue;
     if(n.kind==='cluster'&&n.ref&&n.ref.strokeIds&&wordy(n.ref))continue;
     if(n.kind==='cluster'&&n.ref&&n.ref.strokeIds&&inDrawing(n.ref.strokeIds))continue;
-    let text=String(n.src).trim();
-    if(n.result&&!n.stated)text+='   [= '+n.result+']';
+    /* the reading only: its answer is in the picture, beside it */
+    const text=String(n.src).trim();
     if(n.error&&n.kind==='cluster')continue;
     rows.push({y:n.y,x:n.x||0,text});
   }
