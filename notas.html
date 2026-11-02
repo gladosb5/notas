@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v181">
+<meta name="notas-version" content="v182">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -1212,6 +1212,11 @@ body:has(.sheet:not(.leave)) #toast{top:calc(var(--safe-t) + 12px)}
 :root[data-theme="dark"] #intro{--i-bg:var(--paper);--i-ink:var(--graphite);--i-mute:var(--ink-2);--i-faint:var(--rule);--i-card:#1E1E21;--i-dim:rgba(0,0,0,.55)}
 #intro.leaving{opacity:0;pointer-events:none}
 #intro[data-instant],#intro[data-instant] *{transition:none!important;animation:none!important}
+.intro-top{display:flex;justify-content:flex-end;width:100%;max-width:560px;min-height:44px;margin:0 auto;transition:opacity .6s}
+#intro[data-last] .intro-top{opacity:0;pointer-events:none}
+.intro-skipall{min-height:44px;min-width:44px;padding:10px 2px;border:0;background:none;color:var(--i-mute);font:400 14px/1 var(--ui);cursor:pointer;-webkit-tap-highlight-color:transparent}
+@media(hover:hover){.intro-skipall:hover{color:var(--i-ink);text-decoration:underline;text-underline-offset:4px}}
+.intro-skipall:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:4px}
 .intro-foot{display:flex;align-items:center;justify-content:center;width:100%;max-width:560px;min-height:32px;margin:0 auto;transition:opacity .6s}
 #intro[data-last] .intro-foot{opacity:0}
 .intro-dots{display:flex;gap:6px;align-items:center}
@@ -1252,6 +1257,18 @@ body:has(.sheet:not(.leave)) #toast{top:calc(var(--safe-t) + 12px)}
 .i-pill{display:inline-flex;gap:4px;padding:5px;border:1px solid var(--i-faint);border-radius:999px;background:var(--i-bg)}
 .i-tool{position:relative;display:grid;place-items:center;width:44px;height:44px;border-radius:50%;color:var(--i-mute);font-size:22px;transition:background .2s,color .2s}
 .i-tool.on{background:var(--i-faint);color:var(--i-ink)}
+button.i-tool,button.i-pic{padding:0;border:0;background:none;color:inherit;font:inherit;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+button.i-tool{color:var(--i-mute);font-size:22px}
+button.i-tool.on{color:var(--i-ink)}
+button.i-tool:focus-visible,button.i-pic:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+button.i-pic{display:block}
+/* what to tap breathes, gently */
+.i-want::before{content:"";position:absolute;inset:-4px;border:2px solid var(--i-ink);border-radius:50%;opacity:0;pointer-events:none;animation:i-want 1.8s ease-out infinite}
+.i-pic.i-want::before{inset:6px;border-color:rgba(255,255,255,.95);border-radius:6px;animation-name:i-want-in}
+@keyframes i-want-in{0%{transform:scale(.97);opacity:.8}70%,100%{transform:scale(1.01);opacity:0}}
+@keyframes i-want{0%{transform:scale(.9);opacity:.45}70%,100%{transform:scale(1.18);opacity:0}}
+@media(prefers-reduced-motion:reduce){.i-want::before{animation:none;opacity:.3;transform:none}}
+.i-pic+.i-label{margin-top:12px}
 .i-tool.tap::after,.i-tap.tap::after{content:"";position:absolute;inset:0;border:2px solid var(--i-ink);border-radius:50%;animation:i-tap .45s ease-out forwards}
 @keyframes i-tap{from{transform:scale(.55);opacity:.7}to{transform:scale(1.35);opacity:0}}
 .i-label{color:var(--i-mute);font-size:13px;min-height:1.5em}
@@ -1261,9 +1278,24 @@ body:has(.sheet:not(.leave)) #toast{top:calc(var(--safe-t) + 12px)}
 .i-sw[data-on]{box-shadow:0 0 0 2px var(--i-bg),0 0 0 3.5px var(--i-ink)}
 .i-width{width:22px;border-radius:2px;background:var(--i-ink)}
 .i-sep{width:1px;align-self:stretch;background:var(--i-faint)}
+/* the tray: the tools slide left to show place image at the end */
+.i-slide{position:relative;align-items:center;touch-action:none;cursor:grab}
+.i-strip{display:flex;align-items:center;gap:4px;width:188px;overflow:hidden;transition:width .45s cubic-bezier(.22,1,.36,1)}
+.i-strip>*{flex:none}
+.i-div{width:1px;height:24px;margin:0 4px;background:var(--i-faint)}
+.i-place{display:inline-flex;align-items:center;gap:6px;height:44px;padding:0 14px;color:var(--i-ink);font:500 14px/1 var(--ui);white-space:nowrap}
+.i-place i{font-size:20px}
+button.i-more{display:grid;place-items:center;width:32px;height:44px;padding:0;border:0;background:none;color:var(--i-mute);font-size:18px;cursor:pointer;touch-action:manipulation}
+button.i-more i{transition:transform .35s}
+.i-slide.open button.i-more i{transform:rotate(180deg)}
+button.i-more:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:8px}
+.i-finger{position:absolute;top:50%;right:40px;width:24px;height:24px;margin-top:-12px;border-radius:50%;background:var(--i-ink);opacity:0;pointer-events:none}
+.i-slide.i-hint .i-finger{animation:i-finger 2s ease-in-out infinite}
+@keyframes i-finger{0%{transform:translateX(0);opacity:0}15%{opacity:.22}70%{transform:translateX(-130px);opacity:.22}85%,100%{transform:translateX(-130px);opacity:0}}
+@media(prefers-reduced-motion:reduce){.i-slide.i-hint .i-finger{animation:none;opacity:.18}}
 .i-pic{position:relative;width:min(260px,100%);aspect-ratio:13/8;border-radius:6px;overflow:hidden}
 .i-pic svg{display:block;width:100%;height:100%}
-.i-tap{position:absolute;left:50%;top:50%;width:44px;height:44px;margin:-22px 0 0 -22px;pointer-events:none}
+.i-tap{position:absolute;left:50%;top:50%;width:44px;height:44px;margin:-22px 0 0 -22px;pointer-events:none;z-index:1}
 .i-crop{position:absolute;inset:0;border:1.5px solid #fff;box-shadow:0 0 0 999px rgba(0,0,0,.42);opacity:0;transition:opacity .3s,inset .7s cubic-bezier(.22,1,.36,1)}
 .i-crop.on{opacity:1}
 .i-crop.in{inset:12% 18% 14% 10%}
@@ -11062,9 +11094,10 @@ const SCREENS=[
    alt:'handwritten, 5 x 6 = gets 30 in blue.'},
   {say:'let me introduce myself.',demo:notaDemo,
    alt:'handwritten, hey nota, this is me. nota answers in red: '},
-  {eyebrow:MIGHT_MISS,say:'tap the eraser again.',sub:'it becomes the pixel eraser, which rubs out only what it passes over. tap once more to switch back.',demo:eraserDemo},
-  {eyebrow:MIGHT_MISS,say:'tap the pen again.',sub:'for its colours and sizes. the text tool does the same.',demo:penDemo},
-  {eyebrow:MIGHT_MISS,say:'double-tap a picture.',sub:'to crop it. drag the corners, then tap done.',demo:cropDemo},
+  {eyebrow:MIGHT_MISS,interactive:true,say:'tap the eraser again.',sub:'it becomes the pixel eraser, which rubs out only what it passes over. tap once more to switch back.',demo:eraserDemo},
+  {eyebrow:MIGHT_MISS,interactive:true,say:'tap the pen again.',sub:'for its colours and sizes. the text tool does the same.',demo:penDemo},
+  {eyebrow:MIGHT_MISS,interactive:true,say:'swipe the tools left.',sub:'place image waits at the end of the tray. the › at the side does the same.',demo:slideDemo},
+  {eyebrow:MIGHT_MISS,interactive:true,say:'double-tap a picture.',sub:'to crop it. drag the corners, then tap done.',demo:cropDemo},
   {eyebrow:MIGHT_MISS,say:'search reads your handwriting.',sub:'find a note by something you wrote by hand.',demo:searchDemo},
   {say:'good luck.',big:true,end:true}
 ];
@@ -11073,7 +11106,7 @@ SCREENS[4].alt+=REPLY;
 
 let root=null,stage=null,dots=null,live=null;
 let on=false,closing=false,at=0,list=[],tl=null,settled=false,endTimer=0,resizeTimer=0,startTimer=0,launchWatch=null;
-let inerted=[],returnTo=null,waiting=[],holdTimer=0,fadeTimer=0,paused=false;
+let inerted=[],returnTo=null,waiting=[],holdTimer=0,fadeTimer=0,paused=false,acted=true,generation=0;
 
 function done(){try{return localStorage.getItem(KEY)==='done';}catch{return false;}}
 function remember(){try{localStorage.setItem(KEY,'done');}catch{}}
@@ -11224,38 +11257,99 @@ function notaDemo(d,t){
   const r=Ink(REPLY,{scale:handScale()*.92,maxW:inner(card),color:color('--nota'),hand:'nota',maxMs:3600,speed:1});
   r.el.style.marginTop='4px';card.append(r.el);t.write(r);
 }
-function pill(d,t,icons){
-  const box=el('div','i-tools'),bar=el('div','i-pill');bar.setAttribute('aria-hidden','true');
-  const tools={};for(const name of icons){const b=el('span','i-tool');b.append(el('i','ph ph-'+name));bar.append(b);tools[name]=b;}
-  box.append(bar);d.append(box);box.classList.add('intro-fade');fadeIn(t,box,300);return {box,bar,tools};
+/* the tips are tried, not watched: the screen waits for the student's own taps */
+const TOOL_NAMES={'text-t':'text','pencil-simple':'pen','eraser':'eraser','selection':'select'};
+function pill(d,t,icons,target){
+  const box=el('div','i-tools'),bar=el('div','i-pill');
+  const tools={};
+  for(const name of icons){
+    const b=name===target?el('button','i-tool'):el('span','i-tool');
+    if(name===target){b.type='button';b.setAttribute('aria-label',TOOL_NAMES[name]);}else b.setAttribute('aria-hidden','true');
+    b.append(el('i','ph ph-'+name));bar.append(b);tools[name]=b;
+  }
+  const label=el('div','i-label');label.setAttribute('aria-live','polite');
+  box.append(bar,label);d.append(box);box.classList.add('intro-fade');fadeIn(t,box,300);return {box,bar,tools,label};
 }
-function eraserDemo(d,t){
-  const p=pill(d,t,['text-t','pencil-simple','eraser','selection']),b=p.tools.eraser,label=el('div','i-label');p.box.append(label);
-  t.do(()=>{p.tools['text-t'].classList.add('on');}).wait(400);
-  tap(t,b);t.do(()=>{p.tools['text-t'].classList.remove('on');b.classList.add('on');label.textContent='stroke eraser.';}).wait(900);
-  tap(t,b);t.do(()=>{b.firstChild.className='ph ph-circle-dashed';label.textContent='pixel eraser.';}).wait(300);
+function ripple(node){node.classList.remove('tap');void node.offsetWidth;node.classList.add('tap');setTimeout(()=>node.classList.remove('tap'),460);}
+function invite(t,node,label,text,taps){
+  t.do(()=>{if(taps())return;label.textContent=text;node.classList.add('i-want');});
 }
-function penDemo(d,t){
-  const p=pill(d,t,['text-t','pencil-simple','eraser','selection']),b=p.tools['pencil-simple'];
+function eraserDemo(d,t,ctx){
+  const p=pill(d,t,['text-t','pencil-simple','eraser','selection'],'eraser'),b=p.tools.eraser;let taps=0;
+  p.tools['text-t'].classList.add('on');
+  invite(t,b,p.label,'tap the eraser.',()=>taps);
+  b.onclick=()=>{
+    if(taps>=2)return;taps++;ripple(b);b.classList.add('i-want');
+    if(taps===1){p.tools['text-t'].classList.remove('on');b.classList.add('on');p.label.textContent='stroke eraser. now tap it again.';}
+    else{b.firstChild.className='ph ph-circle-dashed';b.classList.remove('i-want');b.setAttribute('aria-label','pixel eraser');p.label.textContent='pixel eraser.';ctx.done();}
+  };
+}
+function penDemo(d,t,ctx){
+  const p=pill(d,t,['text-t','pencil-simple','eraser','selection'],'pencil-simple'),b=p.tools['pencil-simple'];let taps=0;
   const pop=el('div','i-pop');pop.setAttribute('aria-hidden','true');
   ['--graphite','--blue','--red'].forEach((v,i)=>{const s=el('span','i-sw');s.style.background='var('+v+')';if(!i)s.dataset.on='';pop.append(s);});
   for(const c of ['#2E8B57','#C98A0B']){const s=el('span','i-sw');s.style.background=c;pop.append(s);}
   pop.append(el('span','i-sep'));
   for(const h of [2,4,7]){const s=el('span','i-width');s.style.height=h+'px';pop.append(s);}
   p.box.prepend(pop);
-  t.do(()=>p.tools['text-t'].classList.add('on')).wait(400);
-  tap(t,b);t.do(()=>{p.tools['text-t'].classList.remove('on');b.classList.add('on');}).wait(800);
-  tap(t,b);t.do(()=>pop.classList.add('on')).wait(400);
+  p.tools['text-t'].classList.add('on');
+  invite(t,b,p.label,'tap the pen.',()=>taps);
+  b.onclick=()=>{
+    if(taps>=2)return;taps++;ripple(b);
+    if(taps===1){p.tools['text-t'].classList.remove('on');b.classList.add('on');p.label.textContent='now tap it again.';}
+    else{pop.classList.add('on');b.classList.remove('i-want');p.label.textContent='its colours and sizes.';ctx.done();}
+  };
 }
-function cropDemo(d,t){
-  const pic=el('div','i-pic intro-fade');pic.setAttribute('aria-hidden','true');
-  pic.innerHTML='<svg viewBox="0 0 260 160" preserveAspectRatio="xMidYMid slice"><defs><linearGradient id="i-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9CC9EE"/><stop offset="1" stop-color="#E4F1FB"/></linearGradient></defs>'+
+function slideDemo(d,t,ctx){
+  const box=el('div','i-tools intro-fade'),bar=el('div','i-pill i-slide'),strip=el('span','i-strip');
+  strip.setAttribute('aria-hidden','true');
+  for(const name of ['text-t','pencil-simple','eraser','selection']){const s=el('span','i-tool');s.append(el('i','ph ph-'+name));strip.append(s);}
+  strip.firstChild.classList.add('on');
+  const place=el('span','i-place');place.append(el('i','ph ph-image-square'),document.createTextNode('place image'));
+  strip.append(el('span','i-div'),place);
+  const more=el('button','i-more');more.type='button';more.setAttribute('aria-label','more tools');more.append(el('i','ph ph-caret-right'));
+  const finger=el('span','i-finger');finger.setAttribute('aria-hidden','true');
+  const label=el('div','i-label');label.setAttribute('aria-live','polite');
+  bar.append(strip,more,finger);box.append(bar,label);d.append(box);fadeIn(t,box,300);
+  let opened=false,from=null;
+  t.do(()=>{if(!opened){label.textContent='swipe the tools to the left.';bar.classList.add('i-hint');}});
+  const open=()=>{
+    if(opened)return;opened=true;bar.classList.remove('i-hint');bar.classList.add('open');more.setAttribute('aria-expanded','true');
+    /* as wide as the screen allows, then along to the end of the tray */
+    const room=Math.max(strip.clientWidth,box.clientWidth-more.offsetWidth-14);
+    strip.style.width=Math.min(strip.scrollWidth,room)+'px';
+    setTimeout(()=>strip.scrollTo({left:strip.scrollWidth,behavior:reduced()?'auto':'smooth'}),380);
+    label.textContent='place image.';ctx.done();
+  };
+  more.onclick=open;
+  bar.addEventListener('pointerdown',e=>{if(e.target.closest('button'))return;from={x:e.clientX,id:e.pointerId};try{bar.setPointerCapture(e.pointerId);}catch{}});
+  bar.addEventListener('pointermove',e=>{if(from&&e.pointerId===from.id&&e.clientX-from.x<-28){from=null;open();}});
+  const lift=()=>{from=null;};bar.addEventListener('pointerup',lift);bar.addEventListener('pointercancel',lift);
+}
+function cropDemo(d,t,ctx){
+  const pic=el('button','i-pic intro-fade');pic.type='button';pic.setAttribute('aria-label','a picture. double-tap it to crop.');
+  pic.innerHTML='<svg viewBox="0 0 260 160" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="i-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9CC9EE"/><stop offset="1" stop-color="#E4F1FB"/></linearGradient></defs>'+
     '<rect width="260" height="160" fill="url(#i-sky)"/><circle cx="196" cy="46" r="18" fill="#F6C453"/>'+
     '<path d="M0 118 Q60 70 120 108 T260 96 V160 H0Z" fill="#7DB37A"/><path d="M0 138 Q90 108 170 132 T260 128 V160 H0Z" fill="#4F8F55"/></svg>';
-  const ring=el('span','i-tap'),crop=el('div','i-crop');for(let i=0;i<4;i++)crop.append(el('b'));
-  pic.append(ring,crop);d.append(pic);fadeIn(t,pic,500);
-  t.do(()=>ring.classList.add('tap')).wait(200).do(()=>{ring.classList.remove('tap');void ring.offsetWidth;ring.classList.add('tap');}).wait(450)
-   .do(()=>{ring.classList.remove('tap');crop.classList.add('on');}).wait(450).do(()=>crop.classList.add('in')).wait(700);
+  const ring=el('span','i-tap'),crop=el('span','i-crop');for(let i=0;i<4;i++)crop.append(el('b'));
+  const label=el('div','i-label');label.setAttribute('aria-live','polite');
+  pic.append(ring,crop);d.append(pic,label);fadeIn(t,pic,500);
+  let cropped=false,last=0;
+  invite(t,pic,label,'double-tap the picture.',()=>cropped);
+  const cut=()=>{
+    if(cropped)return;cropped=true;pic.classList.remove('i-want');
+    crop.classList.add('on');label.textContent='crop it, then tap done.';
+    setTimeout(()=>{crop.classList.add('in');ctx.done();},450);
+  };
+  pic.addEventListener('click',e=>{
+    if(cropped)return;
+    /* a keyboard press is the keyboard's double-tap */
+    if(e.detail===0){cut();return;}
+    const r=pic.getBoundingClientRect();ring.style.left=(e.clientX-r.left)+'px';ring.style.top=(e.clientY-r.top)+'px';ripple(ring);
+    const now=performance.now();
+    if(e.detail>=2||now-last<450){cut();return;}
+    last=now;label.textContent='and once more, quickly.';
+  });
 }
 function searchDemo(d,t){
   const box=el('div','intro-fade'),field=el('div','i-search'),words=el('span'),caret=el('span','i-caret');
@@ -11275,21 +11369,22 @@ const FADE=520;
 function build(){
   root=el('div');root.id='intro';root.tabIndex=-1;
   root.setAttribute('role','dialog');root.setAttribute('aria-modal','true');root.setAttribute('aria-label','welcome to notas');
+  /* the one control: leave now, from any screen */
+  const top=el('div','intro-top'),skip=el('button','intro-skipall','skip all');skip.type='button';
+  skip.onclick=()=>close(false);top.append(skip);
   stage=el('main','intro-stage pre');
   const foot=el('div','intro-foot');dots=el('div','intro-dots');dots.setAttribute('aria-hidden','true');foot.append(dots);
   live=el('div','sr-only');live.setAttribute('role','status');live.setAttribute('aria-live','polite');
-  root.append(stage,foot,live);
+  root.append(top,stage,foot,live);
   document.body.append(root);
 }
-/* long enough to read what is on the screen once it has all arrived */
-function holdFor(sc){
-  if(sc.end)return 1300;
-  const words=(sc.say+' '+(sc.sub||'')).length;
-  return clamp(1100+words*30,1800,4400)+(sc.demo?700:0)+(reduced()?900:0);
-}
+/* a second to take in a screen once it has all arrived, or once the
+   student has done what it asked */
+const HOLD=1000;
 function render(i,instant){
   clearTimeout(holdTimer);clearTimeout(endTimer);tl&&tl.stop();
-  at=i;settled=false;const sc=list[i];
+  at=i;settled=false;const sc=list[i];acted=!sc.interactive;
+  const mine=++generation,ctx={done(){if(mine!==generation||acted)return;acted=true;if(settled)holdTimer=setTimeout(onward,HOLD);}};
   if(sc.end)root.dataset.last='';else delete root.dataset.last;
   stage.replaceChildren();
   [...dots.children].forEach((d,k)=>{if(k===i)d.dataset.on='';else delete d.dataset.on;});
@@ -11307,7 +11402,7 @@ function render(i,instant){
   if(eyebrow)fadeIn(tl,eyebrow,150);
   tl.write(pen,sc.big?200:150);
   if(sub)fadeIn(tl,sub,250);
-  if(demo)sc.demo(demo,tl);
+  if(demo)sc.demo(demo,tl,ctx);
   /* the screen rises in from just below, quietly */
   stage.style.transition='none';stage.classList.remove('out');stage.classList.add('pre');void stage.offsetWidth;
   stage.style.transition='';stage.classList.remove('pre');
@@ -11319,9 +11414,8 @@ function finishNow(){
 }
 function settle(){
   if(settled||!on)return;settled=true;
-  const sc=list[at];
-  if(sc.end)endTimer=setTimeout(()=>close(true),holdFor(sc));
-  else holdTimer=setTimeout(onward,holdFor(sc));
+  if(list[at].end)endTimer=setTimeout(()=>close(true),HOLD);
+  else if(acted)holdTimer=setTimeout(onward,HOLD);
 }
 /* a hidden tab holds the screen it is on, so nothing is missed */
 function onward(){

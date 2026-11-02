@@ -9,7 +9,7 @@ import {startServer} from '../scripts/serve.mjs';
 const SAYS=['hey, student.','this is your paper.',
   'don\'t think about calculating maths. think about what you are going to create with maths.',
   'also your handwriting too.','let me introduce myself.','tap the eraser again.','tap the pen again.',
-  'double-tap a picture.','search reads your handwriting.','good luck.'];
+  'swipe the tools left.','double-tap a picture.','search reads your handwriting.','good luck.'];
 
 const server=await startServer(0),browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
 const base=`http://127.0.0.1:${server.address().port}`;
@@ -27,7 +27,8 @@ try{
 
   const expected=SAYS;
   assert.equal(await page.evaluate(()=>N.tutorial.screens),expected.length);
-  assert.equal(await page.locator('#intro button').count(),0,'nothing to press: no next, no skip');
+  assert.equal(await page.locator('#intro button:not(.intro-skipall)').count(),0,'nothing to press but skip all: no next');
+  assert.equal((await page.locator('.intro-skipall').textContent()),'skip all');
   assert.equal(await page.locator('#topbar').evaluate(el=>!!el.closest('[inert]')),true,'the notebook waits behind the intro');
   const bg=await page.locator('#intro').evaluate(el=>getComputedStyle(el).backgroundColor);
   if(theme==='light')assert.equal(bg,'rgb(255, 255, 255)','a white page');else assert.notEqual(bg,'rgb(255, 255, 255)','dark mode keeps the dark paper');
@@ -61,6 +62,27 @@ try{
    assert.deepEqual(fit,{wide:0,overflow:false},`screen ${i} fits ${label}`);
    await page.screenshot({path:`test-results/intro-${String(i).padStart(2,'0')}-${label}.png`});
    if(i===expected.length-1)break;
+   const tip={5:'button.i-tool',6:'button.i-tool',7:'.i-slide',8:'button.i-pic'}[i];
+   if(tip&&(width===1280||width===390)){
+    /* a tip waits for the student to try it, then moves on a second later */
+    await page.waitForTimeout(1600);
+    assert.equal(await page.evaluate(()=>N.tutorial.screen),i,`screen ${i} waits to be tried`);
+    const target=page.locator('#intro '+tip);
+    assert.equal(await target.evaluate(el=>el.classList.contains(el.classList.contains('i-slide')?'i-hint':'i-want')),true,'what to do is shown');
+    if(i===7){
+     /* a swipe from right to left on a mouse; the › on a phone */
+     if(touch)await page.locator('#intro button.i-more').tap();
+     else{const b=await target.boundingBox();await page.mouse.move(b.x+b.width-50,b.y+b.height/2);await page.mouse.down();for(let k=1;k<=8;k++)await page.mouse.move(b.x+b.width-50-k*12,b.y+b.height/2);await page.mouse.up();}
+    }
+    else if(i===8){if(touch){await target.tap();await target.tap();}else await target.dblclick();}
+    else for(let k=0;k<2;k++){if(touch)await target.tap();else await target.click();}
+    const tried=Date.now();
+    await page.waitForFunction(n=>N.tutorial.screen===n,i+1,{timeout:6000});
+    const waited=Date.now()-tried;
+    assert.ok(waited>=900,`a second to take it in, waited ${waited}`);
+    await page.waitForFunction(()=>N.tutorial.settled,null,{timeout:12000});
+    continue;
+   }
    await page.evaluate(()=>N.tutorial.next());
   }
   /* good luck. fades into the notebook on its own */
@@ -83,6 +105,14 @@ try{
   assert.equal(await page.evaluate(()=>N.tutorial.screen),0);
   await page.keyboard.press('Escape');
   await page.waitForFunction(()=>!document.getElementById('intro'),null,{timeout:3000});
+
+  /* skip all leaves from any screen at once */
+  await page.evaluate(()=>N.tutorial.start(true));
+  await page.waitForFunction(()=>document.querySelector('#intro h1 canvas'));
+  await page.evaluate(()=>{N.tutorial.next();N.tutorial.next();});
+  if(touch)await page.locator('.intro-skipall').tap();else await page.locator('.intro-skipall').click();
+  await page.waitForFunction(()=>!document.getElementById('intro'),null,{timeout:3000});
+  assert.equal(await page.locator('#topbar').evaluate(el=>!!el.closest('[inert]')),false);
 
   assert.equal(requests,0,'the intro never asks nota');
   assert.deepEqual(errors,[]);
