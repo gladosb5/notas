@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {startServer} from '../scripts/serve.mjs';
 
-/* The intro: a white page before the notebook, one idea per screen, then the
-   notebook. It never asks nota anything and never touches the note. */
+/* The intro: a white page before the notebook that plays on its own, one
+   idea per screen fading into the next, then the notebook. Nothing to press.
+   It never asks nota anything and never touches the note. */
 const SAYS=['hey, student.','this is your paper.',
   'don\'t think about calculating maths. think about what you are going to create with maths.',
   'also your handwriting too.','let me introduce myself.','tap the eraser again.','tap the pen again.',
-  'double-tap a picture.','search reads your handwriting.','press ? for shortcuts.','good luck.'];
+  'double-tap a picture.','search reads your handwriting.','good luck.'];
 
 const server=await startServer(0),browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
 const base=`http://127.0.0.1:${server.address().port}`;
@@ -24,8 +25,9 @@ try{
   await page.goto(base+'/notas.html');
   await page.waitForFunction(()=>window.N?.tutorial?.running&&document.querySelector('#preparing').classList.contains('done')&&document.querySelector('#intro h1 canvas'));
 
-  const expected=SAYS.filter(s=>!(touch&&s==='press ? for shortcuts.'));
-  assert.equal(await page.evaluate(()=>N.tutorial.screens),expected.length,'the keyboard screen is for keyboards only');
+  const expected=SAYS;
+  assert.equal(await page.evaluate(()=>N.tutorial.screens),expected.length);
+  assert.equal(await page.locator('#intro button').count(),0,'nothing to press: no next, no skip');
   assert.equal(await page.locator('#topbar').evaluate(el=>!!el.closest('[inert]')),true,'the notebook waits behind the intro');
   const bg=await page.locator('#intro').evaluate(el=>getComputedStyle(el).backgroundColor);
   if(theme==='light')assert.equal(bg,'rgb(255, 255, 255)','a white page');else assert.notEqual(bg,'rgb(255, 255, 255)','dark mode keeps the dark paper');
@@ -38,12 +40,19 @@ try{
   for(let i=0;i<expected.length;i++){
    assert.equal(await page.evaluate(()=>N.tutorial.screen),i);
    assert.equal(await page.locator('#intro h1 .sr-only').textContent(),expected[i]);
-   if(!await page.evaluate(()=>N.tutorial.settled)){
-    /* a tap while nota writes finishes the screen instead of skipping it */
-    await page.mouse.click(width/2,height/2);
-    assert.equal(await page.evaluate(()=>N.tutorial.screen),i,'the first tap finishes writing');
-    assert.equal(await page.evaluate(()=>N.tutorial.settled),true);
+   if(i===0){
+    await page.waitForFunction(()=>N.tutorial.settled,null,{timeout:12000});
+    await page.screenshot({path:`test-results/intro-00-${label}.png`});
+    /* taps and keys do not move it on; it goes with its own flow */
+    await page.mouse.click(width/2,height/2);await page.keyboard.press('Enter');await page.keyboard.press('ArrowRight');
+    assert.equal(await page.evaluate(()=>N.tutorial.screen),0,'a tap or a key never skips ahead');
+    /* the first screen moves on by itself, fading into the second */
+    await page.waitForFunction(()=>N.tutorial.screen===1,null,{timeout:12000});
+    if(motion!=='reduce')assert.equal(await page.locator('.intro-stage').evaluate(el=>el.classList.contains('out')),false);
+    await page.waitForFunction(()=>N.tutorial.settled,null,{timeout:12000});
+    i=1;assert.equal(await page.locator('#intro h1 .sr-only').textContent(),expected[1]);
    }
+   await page.waitForFunction(()=>N.tutorial.settled,null,{timeout:12000});
    const fit=await page.evaluate(()=>{
     const stage=document.querySelector('.intro-stage').getBoundingClientRect(),root=document.getElementById('intro');
     const wide=[...root.querySelectorAll('canvas,.i-paper,.i-pill,.i-pop,.i-search,.i-result,.i-pic,.i-sheet')].filter(e=>e.getBoundingClientRect().width).map(e=>e.getBoundingClientRect()).filter(r=>r.left<stage.left-1||r.right>stage.right+1);
@@ -51,13 +60,8 @@ try{
    });
    assert.deepEqual(fit,{wide:0,overflow:false},`screen ${i} fits ${label}`);
    await page.screenshot({path:`test-results/intro-${String(i).padStart(2,'0')}-${label}.png`});
-   if(i===1&&!touch){
-    await page.keyboard.press('ArrowLeft');assert.equal(await page.evaluate(()=>N.tutorial.screen),0,'arrow left goes back');
-    await page.keyboard.press('ArrowRight');assert.equal(await page.evaluate(()=>N.tutorial.screen),1);
-    if(!await page.evaluate(()=>N.tutorial.settled))await page.keyboard.press('Enter');
-   }
    if(i===expected.length-1)break;
-   if(touch)await page.locator('.intro-next').tap();else await page.keyboard.press('Enter');
+   await page.evaluate(()=>N.tutorial.next());
   }
   /* good luck. fades into the notebook on its own */
   await page.waitForFunction(()=>!N.tutorial.running&&!document.getElementById('intro'),null,{timeout:5000});
@@ -78,12 +82,6 @@ try{
   await page.waitForFunction(()=>document.querySelector('#intro h1 canvas'));
   assert.equal(await page.evaluate(()=>N.tutorial.screen),0);
   await page.keyboard.press('Escape');
-  await page.waitForFunction(()=>!document.getElementById('intro'),null,{timeout:3000});
-
-  /* skip is always there */
-  await page.evaluate(()=>N.tutorial.start(true));
-  await page.waitForFunction(()=>document.querySelector('#intro h1 canvas'));
-  await page.locator('.intro-skip').click();
   await page.waitForFunction(()=>!document.getElementById('intro'),null,{timeout:3000});
 
   assert.equal(requests,0,'the intro never asks nota');

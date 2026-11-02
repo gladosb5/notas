@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v180">
+<meta name="notas-version" content="v181">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -1204,7 +1204,7 @@ body:has(.sheet:not(.leave)) #toast{top:calc(var(--safe-t) + 12px)}
   padding:max(12px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
   background:var(--i-bg);color:var(--i-ink);font:400 15px/1.5 var(--ui);
   -webkit-user-select:none;user-select:none;touch-action:pan-y;outline:none;
-  transition:opacity .6s cubic-bezier(.22,1,.36,1);
+  transition:opacity .9s cubic-bezier(.22,1,.36,1);
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]) #intro{--i-bg:var(--paper);--i-ink:var(--graphite);--i-mute:var(--ink-2);--i-faint:var(--rule);--i-card:#1E1E21;--i-dim:rgba(0,0,0,.55)}
@@ -1212,18 +1212,16 @@ body:has(.sheet:not(.leave)) #toast{top:calc(var(--safe-t) + 12px)}
 :root[data-theme="dark"] #intro{--i-bg:var(--paper);--i-ink:var(--graphite);--i-mute:var(--ink-2);--i-faint:var(--rule);--i-card:#1E1E21;--i-dim:rgba(0,0,0,.55)}
 #intro.leaving{opacity:0;pointer-events:none}
 #intro[data-instant],#intro[data-instant] *{transition:none!important;animation:none!important}
-#intro button{min-height:44px;min-width:44px;padding:10px 4px;border:0;background:none;color:var(--i-mute);font:400 14px/1 var(--ui);cursor:pointer;-webkit-tap-highlight-color:transparent}
-@media(hover:hover){#intro button:hover{text-decoration:underline;text-underline-offset:4px}}
-#intro button:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:4px}
-.intro-top,.intro-foot{display:flex;align-items:center;width:100%;max-width:560px;margin:0 auto}
-.intro-top{justify-content:flex-end}
-.intro-foot{justify-content:space-between;min-height:44px}
-#intro .intro-next{color:var(--i-ink)}
-#intro[data-last] .intro-foot,#intro[data-last] .intro-skip{visibility:hidden}
+.intro-foot{display:flex;align-items:center;justify-content:center;width:100%;max-width:560px;min-height:32px;margin:0 auto;transition:opacity .6s}
+#intro[data-last] .intro-foot{opacity:0}
 .intro-dots{display:flex;gap:6px;align-items:center}
 .intro-dots i{width:6px;height:6px;border-radius:3px;background:var(--i-faint);transition:width .3s cubic-bezier(.22,1,.36,1),background .3s}
 .intro-dots i[data-on]{width:18px;background:var(--i-ink)}
-.intro-stage{flex:1;min-height:0;width:100%;max-width:560px;margin:0 auto;padding:12px 0;overflow-y:auto;display:flex;flex-direction:column}
+.intro-stage{flex:1;min-height:0;width:100%;max-width:560px;margin:0 auto;padding:12px 0;overflow-y:auto;display:flex;flex-direction:column;
+  transition:opacity .52s ease,transform .7s cubic-bezier(.22,1,.36,1)}
+/* one screen lifts away as the next rises in */
+.intro-stage.out{opacity:0;transform:translateY(-10px)}
+.intro-stage.pre{opacity:0;transform:translateY(12px)}
 /* spacers centre the page and give way when it is taller than the screen */
 .intro-stage::before,.intro-stage::after{content:"";flex:1 0 0}
 .intro-stage::after{flex-grow:1.3}
@@ -1281,10 +1279,6 @@ body:has(.sheet:not(.leave)) #toast{top:calc(var(--safe-t) + 12px)}
 .i-mark{position:relative}
 .i-mark span{position:absolute;border-radius:4px;background:color-mix(in srgb,var(--blue) 22%,transparent);opacity:0;transition:opacity .4s}
 .i-mark span.on{opacity:1}
-.i-sheet{margin-top:14px;width:min(260px,100%);padding:12px 16px;border:1px solid var(--i-faint);border-radius:14px;background:var(--i-card);font-size:14px}
-.i-sheet strong{display:block;margin-bottom:6px;font-weight:600}
-.i-sheet div{display:flex;justify-content:space-between;align-items:center;padding:4px 0;color:var(--i-mute)}
-.i-sheet kbd{font:500 12px/1 var(--ui);color:var(--i-ink)}
 @media(max-width:600px){.intro-sub{font-size:15px}.intro-demo{margin-top:24px}}
 @media(max-height:560px){.intro-demo{margin-top:16px}}
 
@@ -11057,7 +11051,6 @@ N.library = { open, close, toggle, refresh, leaving, changed, boot, importBundle
 'use strict';
 const C=N.core,S=C.S;
 const KEY='notas.tut';
-const mac=/Mac|iPhone|iPad/.test(navigator.platform||navigator.userAgent||'');
 const keyboard=()=>{try{return matchMedia('(hover:hover) and (pointer:fine)').matches;}catch{return true;}};
 const MIGHT_MISS='things you might miss.';
 const SCREENS=[
@@ -11073,15 +11066,14 @@ const SCREENS=[
   {eyebrow:MIGHT_MISS,say:'tap the pen again.',sub:'for its colours and sizes. the text tool does the same.',demo:penDemo},
   {eyebrow:MIGHT_MISS,say:'double-tap a picture.',sub:'to crop it. drag the corners, then tap done.',demo:cropDemo},
   {eyebrow:MIGHT_MISS,say:'search reads your handwriting.',sub:'find a note by something you wrote by hand.',demo:searchDemo},
-  {eyebrow:MIGHT_MISS,say:'press ? for shortcuts.',sub:'every key in one list.',demo:keysDemo,when:keyboard},
   {say:'good luck.',big:true,end:true}
 ];
 const REPLY='hi, I\'m nota. start with hey nota, ask me anything about your page, and I\'ll answer right here.';
 SCREENS[4].alt+=REPLY;
 
-let root=null,stage=null,dots=null,live=null,nextBtn=null;
+let root=null,stage=null,dots=null,live=null;
 let on=false,closing=false,at=0,list=[],tl=null,settled=false,endTimer=0,resizeTimer=0,startTimer=0,launchWatch=null;
-let inerted=[],swipe=null,returnTo=null,waiting=[];
+let inerted=[],returnTo=null,waiting=[],holdTimer=0,fadeTimer=0,paused=false;
 
 function done(){try{return localStorage.getItem(KEY)==='done';}catch{return false;}}
 function remember(){try{localStorage.setItem(KEY,'done');}catch{}}
@@ -11277,39 +11269,26 @@ function searchDemo(d,t){
   mark.append(w.el);
   t.wait(300).do(()=>{caret.hidden=true;w.finish();});fadeIn(t,result,250);t.do(()=>hi.classList.add('on')).wait(400);
 }
-function keysDemo(d,t){
-  const box=el('div','intro-fade'),key=el('span','i-key','?');key.style.cssText='min-width:44px;height:40px;font-size:16px';
-  const sheet=el('div','i-sheet intro-fade');sheet.setAttribute('aria-hidden','true');sheet.append(el('strong',null,'keyboard shortcuts'));
-  const mod=mac?'⌘':'ctrl';
-  for(const [what,keys] of [['pen','P'],['eraser','E'],['undo',mod+' Z'],['search',mod+' K']]){const r=el('div');r.append(el('span',null,what),el('kbd',null,keys));sheet.append(r);}
-  box.append(key,sheet);d.append(box);fadeIn(t,box,400);
-  t.do(()=>key.classList.add('press')).wait(160).do(()=>key.classList.remove('press'));fadeIn(t,sheet,300);
-}
 
-/* ---- the page ---- */
+/* ---- the page: it plays on its own, each screen fading into the next ---- */
+const FADE=520;
 function build(){
   root=el('div');root.id='intro';root.tabIndex=-1;
   root.setAttribute('role','dialog');root.setAttribute('aria-modal','true');root.setAttribute('aria-label','welcome to notas');
-  const top=el('div','intro-top'),skip=el('button','intro-skip','skip');skip.type='button';top.append(skip);
-  stage=el('main','intro-stage');
-  const foot=el('div','intro-foot');dots=el('div','intro-dots');dots.setAttribute('aria-hidden','true');
-  nextBtn=el('button','intro-next','next');nextBtn.type='button';foot.append(dots,nextBtn);
+  stage=el('main','intro-stage pre');
+  const foot=el('div','intro-foot');dots=el('div','intro-dots');dots.setAttribute('aria-hidden','true');foot.append(dots);
   live=el('div','sr-only');live.setAttribute('role','status');live.setAttribute('aria-live','polite');
-  root.append(top,stage,foot,live);
-  skip.onclick=()=>close(false);
-  nextBtn.onclick=()=>advance();
-  root.addEventListener('pointerdown',e=>{swipe=e.isPrimary?{x:e.clientX,y:e.clientY,id:e.pointerId}:null;});
-  root.addEventListener('pointerup',e=>{
-    const s=swipe;swipe=null;if(!s||s.id!==e.pointerId||closing||e.target.closest('button'))return;
-    const dx=e.clientX-s.x,dy=e.clientY-s.y;
-    if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.5){dx<0?advance():back();return;}
-    if(Math.hypot(dx,dy)<12&&e.button===0)advance();
-  });
-  root.addEventListener('pointercancel',()=>{swipe=null;});
+  root.append(stage,foot,live);
   document.body.append(root);
 }
-function show(i,instant){
-  clearTimeout(endTimer);tl&&tl.stop();
+/* long enough to read what is on the screen once it has all arrived */
+function holdFor(sc){
+  if(sc.end)return 1300;
+  const words=(sc.say+' '+(sc.sub||'')).length;
+  return clamp(1100+words*30,1800,4400)+(sc.demo?700:0)+(reduced()?900:0);
+}
+function render(i,instant){
+  clearTimeout(holdTimer);clearTimeout(endTimer);tl&&tl.stop();
   at=i;settled=false;const sc=list[i];
   if(sc.end)root.dataset.last='';else delete root.dataset.last;
   stage.replaceChildren();
@@ -11324,10 +11303,14 @@ function show(i,instant){
   const pen=Ink(sc.say,{scale:sc.big?bigScale():headScale(),maxW:stage.clientWidth,color:color('--i-ink'),rowH:sc.big?36:38,maxMs:sc.big?1500:3200});
   head.prepend(pen.el);
   tl=Timeline();
+  tl.wait(instant?0:220);
   if(eyebrow)fadeIn(tl,eyebrow,150);
   tl.write(pen,sc.big?200:150);
   if(sub)fadeIn(tl,sub,250);
   if(demo)sc.demo(demo,tl);
+  /* the screen rises in from just below, quietly */
+  stage.style.transition='none';stage.classList.remove('out');stage.classList.add('pre');void stage.offsetWidth;
+  stage.style.transition='';stage.classList.remove('pre');
   tl.play(settle);
   if(instant||reduced())finishNow();
 }
@@ -11336,25 +11319,33 @@ function finishNow(){
 }
 function settle(){
   if(settled||!on)return;settled=true;
-  if(list[at].end)endTimer=setTimeout(()=>close(true),reduced()?1400:1100);
+  const sc=list[at];
+  if(sc.end)endTimer=setTimeout(()=>close(true),holdFor(sc));
+  else holdTimer=setTimeout(onward,holdFor(sc));
 }
-function advance(){
+/* a hidden tab holds the screen it is on, so nothing is missed */
+function onward(){
   if(!on||closing)return;
-  if(!settled){finishNow();return;}
-  if(at<list.length-1)show(at+1);else close(true);
+  if(document.hidden){paused=true;return;}
+  go(at+1);
 }
-function back(){if(on&&!closing&&at>0)show(at-1,true);}
+function onVisible(){if(on&&paused&&!document.hidden){paused=false;holdTimer=setTimeout(onward,1200);}}
+function go(i,instant){
+  if(!on||closing)return;
+  if(i>=list.length){close(true);return;}
+  clearTimeout(fadeTimer);
+  if(instant||reduced()){render(i,instant);return;}
+  stage.classList.add('out');
+  fadeTimer=setTimeout(()=>{if(on&&!closing)render(i);},FADE);
+}
+/* nothing to press: the notebook's keys stay asleep, and Escape is the
+   keyboard's quiet way out */
 function onKey(e){
-  if(!on)return;
-  if(e.key==='Tab')return;
+  if(!on||e.key==='Tab')return;
   e.stopPropagation();
-  if(closing)return;
-  if(e.key==='Escape'){e.preventDefault();close(false);return;}
-  if((e.key==='Enter'||e.key===' ')&&e.target.closest&&e.target.closest('#intro button'))return;
-  if(['Enter',' ','ArrowRight','PageDown'].includes(e.key)){e.preventDefault();advance();}
-  else if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();back();}
+  if(e.key==='Escape'&&!closing){e.preventDefault();close(false);}
 }
-function onResize(){clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(on&&!closing)show(at,true);},150);}
+function onResize(){clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(on&&!closing&&!stage.classList.contains('out'))render(at,true);},150);}
 /* the launch screen fades to this page, so it starts once that has gone */
 function launchGone(){const p=document.getElementById('preparing');return !p||p.hidden||p.classList.contains('done');}
 function begin(){
@@ -11364,26 +11355,28 @@ function begin(){
       launchWatch.observe(document.getElementById('preparing'),{attributes:true,attributeFilter:['class','hidden']});}
     return;
   }
-  startTimer=setTimeout(()=>{if(on){root.focus({preventScroll:true});show(0);}},reduced()?0:380);
+  startTimer=setTimeout(()=>{if(on){root.focus({preventScroll:true});render(0);}},reduced()?0:300);
 }
 function start(force){
   if(on||(!force&&done()))return;
-  on=true;closing=false;at=0;returnTo=document.activeElement;
+  on=true;closing=false;paused=false;at=0;returnTo=document.activeElement;
   list=SCREENS.filter(s=>!s.when||s.when());
   build();
   for(let i=0;i<list.length;i++)dots.append(el('i'));
   inerted=[...document.body.children].filter(e=>e!==root&&e.id!=='preparing'&&!e.inert&&!['SCRIPT','STYLE','LINK','TEMPLATE'].includes(e.tagName));
   inerted.forEach(e=>e.inert=true);
   window.addEventListener('keydown',onKey,true);window.addEventListener('resize',onResize);
+  document.addEventListener('visibilitychange',onVisible);
   begin();
 }
 function teardown(){
-  clearTimeout(endTimer);clearTimeout(resizeTimer);clearTimeout(startTimer);
+  clearTimeout(endTimer);clearTimeout(resizeTimer);clearTimeout(startTimer);clearTimeout(holdTimer);clearTimeout(fadeTimer);
   launchWatch&&launchWatch.disconnect();launchWatch=null;tl&&tl.stop();tl=null;
   window.removeEventListener('keydown',onKey,true);window.removeEventListener('resize',onResize);
+  document.removeEventListener('visibilitychange',onVisible);
   inerted.forEach(e=>e.inert=false);inerted=[];
   const held=!!root&&root.contains(document.activeElement);
-  root&&root.remove();root=null;on=false;closing=false;
+  root&&root.remove();root=null;on=false;closing=false;paused=false;
   if(held){
     if(returnTo&&returnTo.isConnected&&returnTo!==document.body)returnTo.focus({preventScroll:true});
     else if(S.tool==='text'&&keyboard())N.text.focusLast();
@@ -11393,17 +11386,20 @@ function teardown(){
 }
 function close(complete){
   if(!on||closing)return;
-  closing=true;remember();clearTimeout(endTimer);
+  closing=true;remember();clearTimeout(endTimer);clearTimeout(holdTimer);clearTimeout(fadeTimer);
   if(complete)live.textContent='';
   if(reduced()){teardown();return;}
   root.classList.add('leaving');
   let gone=false;const end=()=>{if(!gone){gone=true;teardown();}};
-  root.addEventListener('transitionend',e=>{if(e.target===root)end();});setTimeout(end,700);
+  root.addEventListener('transitionend',e=>{if(e.target===root)end();});setTimeout(end,1100);
 }
 /* what should not pop up over the intro waits for it to end */
 function after(fn){if(on)waiting.push(fn);else fn();}
-N.tutorial={start,after,maybeStart(){if(!done())start(false);},/* finishing from code counts as seen, even before the intro has opened */
+N.tutorial={start,after,maybeStart(){if(!done())start(false);},
+  /* finishing from code counts as seen, even before the intro has opened */
   finish(){remember();if(on)teardown();},
+  /* for tests: the next screen now, without the wait */
+  next(){if(on&&!closing){clearTimeout(holdTimer);go(at+1,true);}},
   get running(){return on;},get screen(){return on?at:-1;},get screens(){return list.length;},get settled(){return settled;}};
 })();
 </script>
