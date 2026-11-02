@@ -78,6 +78,25 @@ try{
   assert.equal(await panel.isHidden(),true,'the box closes once sent');
   await page.waitForFunction(()=>N.core.S.strokes.some(s=>s.author==='ai'),null,{timeout:8000});
 
+  /* send without prompt: no question of their own, nota works out what is circled */
+  await circle();
+  if(touch)await ask.tap();else await ask.click();
+  await panel.waitFor({state:'visible'});
+  const plain=page.locator('#askpanel-plain');
+  assert.equal(await plain.textContent(),'send without prompt');
+  const fits=await page.evaluate(()=>{const p=document.getElementById('askpanel').getBoundingClientRect();return [...document.querySelectorAll('#askpanel button')].every(b=>{const r=b.getBoundingClientRect();return r.left>=p.left-1&&r.right<=p.right+1;});});
+  assert.ok(fits,'both buttons fit inside the box');
+  await page.screenshot({path:`test-results/ask-panel-plain-${width}.png`});
+  if(touch)await plain.tap();else await plain.click();
+  for(let i=0;i<80&&calls.length<2;i++)await page.waitForTimeout(100);
+  assert.equal(calls.length,2,'sent without a prompt');
+  const plainWords=said(calls[1].messages.find(m=>m.role==='user').content);
+  assert.match(plainWords,/the person circled some handwriting/,'nota is asked to work out what is circled');
+  assert.doesNotMatch(plainWords,/asked: "/,'with no question of the student\'s own');
+  assert.equal(await panel.isHidden(),true,'the box closes');
+  await page.waitForFunction(n=>N.core.S.strokes.filter(s=>s.author==='ai').length>n,await page.evaluate(()=>N.core.S.strokes.filter(s=>s.author==='ai').length)-1,{timeout:8000});
+  await page.waitForFunction(()=>!N.nota.askBlocked(),null,{timeout:8000});
+
   /* the box goes when the circle does */
   await circle();
   if(touch)await ask.tap();else await ask.click();

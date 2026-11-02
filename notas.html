@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v187">
+<meta name="notas-version" content="v188">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -1218,7 +1218,13 @@ body:has(.sheet:not(.leave)) #toast{top:calc(var(--safe-t) + 12px)}
   background:var(--panel);color:var(--graphite);font:400 15px/1.45 var(--ui);
 }
 #askpanel textarea:focus{border-color:color-mix(in srgb,var(--graphite) 45%,transparent)}
-#askpanel .ap-foot{display:flex;align-items:center;justify-content:space-between;gap:10px}
+#askpanel .ap-foot{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 10px}
+#askpanel .ap-actions{display:flex;align-items:center;gap:4px;margin-left:auto}
+/* asking without a question: the quieter of the two */
+#askpanel-plain{min-height:36px;padding:7px 12px;border-radius:var(--r-pill);color:var(--ink-2);font:500 13px var(--ui);transition:background-color .15s ease,color .15s ease,transform .18s var(--pop)}
+@media(hover:hover){#askpanel-plain:hover{background:var(--tint);color:var(--graphite)}}
+#askpanel-plain:active{transform:scale(.95)}
+#askpanel-plain:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 #askpanel-count{font:400 12px var(--ui);color:var(--ink-2);font-variant-numeric:tabular-nums}
 #askpanel-count[data-full]{color:var(--red)}
 #askpanel-go{
@@ -1451,6 +1457,7 @@ button.i-more:focus-visible{outline:2px solid var(--blue);outline-offset:2px;bor
   /* 16px keeps a phone from zooming in on the box */
   #askpanel textarea{ font-size:16px }
   #askpanel-go{ min-height:44px;padding:10px 18px;font-size:15px }
+  #askpanel-plain{ min-height:44px;padding:10px 12px;font-size:14px }
 
   /* panels: a bottom sheet with a grab edge, rows tall enough for a thumb,
      and 16px inputs so the field never zooms */
@@ -2050,7 +2057,7 @@ html[data-motion="off"] .prep-trace::before{transform:scaleX(1);opacity:.55}
 <div id="askpanel" role="dialog" aria-label="ask nota" hidden>
   <label for="askpanel-in">what would you like to ask nota?</label>
   <textarea id="askpanel-in" rows="1" aria-label="your question for nota" enterkeyhint="send" autocomplete="off" spellcheck="true"></textarea>
-  <div class="ap-foot"><span id="askpanel-count">0 / 100 words</span><button id="askpanel-go" type="button" disabled><i class="ph ph-arrow-elbow-down-left" aria-hidden="true"></i>enter</button></div>
+  <div class="ap-foot"><span id="askpanel-count">0 / 100 words</span><span class="ap-actions"><button id="askpanel-plain" type="button">send without prompt</button><button id="askpanel-go" type="button" disabled><i class="ph ph-arrow-elbow-down-left" aria-hidden="true"></i>enter</button></span></div>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="page-accessible" class="sr-only" role="region" aria-label="notebook contents"></div>
@@ -4892,7 +4899,7 @@ function duplicateSelection(){
    student writes what they want to know (up to 100 words; a Chinese
    character counts as one), and enter, or the Enter key, sends it with a
    picture of what is circled. Escape, or the circle going away, closes it. */
-const askPanel=$('#askpanel'),askIn=$('#askpanel-in'),askGo=$('#askpanel-go'),askCount=$('#askpanel-count');
+const askPanel=$('#askpanel'),askIn=$('#askpanel-in'),askGo=$('#askpanel-go'),askPlain=$('#askpanel-plain'),askCount=$('#askpanel-count');
 const ASK_WORDS=100,ASK_WORD=/[\u3400-\u9fff\uf900-\ufaff]|[^\s\u3400-\u9fff\uf900-\ufaff]+/g;
 let askFor='';
 const askOpen=()=>!askPanel.hidden;
@@ -4933,6 +4940,8 @@ askIn.addEventListener('keydown',e=>{
   else if(e.key==='Escape'){e.preventDefault();closeAsk();showSelBar(true);}
 });
 askGo.onclick=sendAsk;
+/* no question of their own: nota works out what is circled and helps with it */
+askPlain.onclick=()=>{ closeAsk(); N.nota.askSelection(); };
 /* under the circle when there is room, above it when there is not, and
    always clear of a phone's keyboard */
 function placeAsk(){
