@@ -1576,7 +1576,16 @@ async function askText(question,context,onDelta,signal){
     throw e;
   }finally{busy--;}
 }
-async function askSelection(){
+/* why a circled question cannot be asked right now, or nothing */
+function askBlocked(){
+  if(!enabled())return 'nota is off. enable it in the menu.';
+  if(askingSelection||busy)return 'nota is still busy.';
+  if(!navigator.onLine)return 'nota needs a connection.';
+  return '';
+}
+/* prompt: what the student typed in the box under the lasso, when they did */
+async function askSelection(prompt){
+  const own=typeof prompt==='string'?prompt.trim().slice(0,2000):'';
   if(!enabled()){C.toast('nota is off. enable it in the menu.');return;}
   const ids=(S.selection||[]).slice();
   if(!ids.length){C.toast('circle some handwriting with the lasso first.');return;}
@@ -1585,7 +1594,9 @@ async function askSelection(){
      and nothing is read or asked */
   if(overloaded()){ const b=selectedBox(ids); if(b){ N.ink.clearSelection(); showOverloaded({x:b[0],y:b[3]}); } return; }
   if(!navigator.onLine){C.toast('nota needs a connection.');return;}
-  if(!N.recog||!N.recog.readStrokesText){C.toast('enable handwriting in settings to ask nota.');return;}
+  /* a question of their own can go with the picture alone */
+  const canRead=!!(N.recog&&N.recog.readStrokesText);
+  if(!canRead&&!own){C.toast('enable handwriting in settings to ask nota.');return;}
   askingSelection=true;
   const selectedNote=S.id,selectedEpoch=noteEpoch;
   const skip=new Set(ids);
@@ -1599,15 +1610,17 @@ async function askSelection(){
   if(drawn.length&&inDrawing>=ids.length*0.5){
     askingSelection=false;
     const box=selectedBox(ids);if(!box){C.status('');unsay();return;}
-    const question='the person circled this drawing on the page and asked about it:\n'+drawn.map(d=>d.lines.join('\n')).join('\n')+
+    const question=own
+      ?'the person circled this drawing on the page and asked: "'+own+'"\n'+drawn.map(d=>d.lines.join('\n')).join('\n')+'\nanswer their question about it.'
+      :'the person circled this drawing on the page and asked about it:\n'+drawn.map(d=>d.lines.join('\n')).join('\n')+
       '\nsay briefly what it shows, then help with it: answer it if it asks something, check it if it is working, explain the idea if it is a diagram from a lesson.';
     const rowH=Math.min(60,Math.max(12,window.NOTAS_DIAGRAM.heightOf(S.strokes.filter(st=>st.author==='user'))));
     const writer=Writer({x:box[0],y:box[3],right:box[2],rowH,skip});
     await answer(question,{x:box[0],y:box[1],below:box[3],skip,picture:box},writer);
     return;
   }
-  let reading;
-  try{reading=await N.recog.readStrokesText(ids);}
+  let reading={text:'',confidence:0,maths:''};
+  if(canRead)try{reading=await N.recog.readStrokesText(ids);}
   catch(e){if(!enabled()||noteEpoch!==selectedEpoch)return;askingSelection=false;C.status('');unsay();C.toast(String(e.message||'nota could not read this.').toLowerCase());return;}
   if(!enabled()||S.id!==selectedNote||noteEpoch!==selectedEpoch)return;
   askingSelection=false;
@@ -1624,9 +1637,15 @@ async function askSelection(){
      sent a picture of what was circled and reads it there */
   const bbox=reading.bbox||selectedBox(ids),rowH=Math.min(60,Math.max(12,bbox[3]-bbox[1]));
   /* circled ink that is itself "hey nota, ..." is simply that question */
-  const call=text&&parseCall(text);
+  const call=!own&&text&&parseCall(text);
   let question;
-  if(call&&call.question)question=call.question;
+  if(own){
+    question='the person circled something on the page (it is in the picture) and asked: "'+own+'".';
+    if(text)question+=' the text reader makes the circled writing: "'+text+'".';
+    if(maths&&maths!==text)question+=' the maths reader makes it: "'+maths+'".';
+    question+=' answer their question about what they circled.';
+  }
+  else if(call&&call.question)question=call.question;
   else{
     question='the person circled some handwriting the notebook could not read well; it is in the picture.';
     if(text)question+=' the text reader makes it: "'+text+'".';
@@ -1964,7 +1983,7 @@ function toggle(){
   for(const control of activeAnswers)control.abort();
   for(const run of typedRuns.values())if(!run.done)run.abort();
 }
-N.nota={handRun,enabled,toggle,forgetLocalInk,localStroke,ownsInk,reset,restoreInk,overloaded,askText,tools:NOTE_TOOLS,toolLimits:{rounds:TOOL_ROUNDS,calls:TOOL_CALLS},isCallStroke,isAskedStroke,drawings:readDrawings,onTranscript,onTyped,askSelection,parseCall,callLength,drawWaiting,mathMatches,tidy,spell,Writer,get busy(){return busy>0;},get writing(){return queue.length;},config:CONFIG,
+N.nota={handRun,askBlocked,enabled,toggle,forgetLocalInk,localStroke,ownsInk,reset,restoreInk,overloaded,askText,tools:NOTE_TOOLS,toolLimits:{rounds:TOOL_ROUNDS,calls:TOOL_CALLS},isCallStroke,isAskedStroke,drawings:readDrawings,onTranscript,onTyped,askSelection,parseCall,callLength,drawWaiting,mathMatches,tidy,spell,Writer,get busy(){return busy>0;},get writing(){return queue.length;},config:CONFIG,
   /* the page as nota reads it, for the console: N.nota.context() */
   context(where){ where=where||liveWhere(); return pageRows({...where,diagrams:knownDrawings(where.skip)}); }};
 })();

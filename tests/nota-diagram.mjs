@@ -9,7 +9,7 @@ import {startServer} from '../scripts/serve.mjs';
 
 const server=await startServer(0);
 const base=`http://127.0.0.1:${server.address().port}`;
-const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
+const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
 const context=await browser.newContext({viewport:{width:1280,height:900},serviceWorkers:'block'});
 const page=await context.newPage();
 page.on('pageerror',e=>{throw e;});
@@ -17,7 +17,7 @@ const calls=[];
 // a question's words, whether it went as text alone or as text and a picture of the page
 const said=c=>typeof c==='string'?c:c.filter(p=>p.type==='text').map(p=>p.text).join('\n');
 const sse=text=>text.split(/(?<= )/).map(piece=>`data: ${JSON.stringify({choices:[{delta:{content:piece}}]})}\n\n`).join('')+'data: [DONE]\n\n';
-await context.route(/\/nota\/chat$|api\.cerebras\.ai/,route=>{
+await context.route(/\/nota\/chat$|api\.cerebras\.ai|oxionai\.com/,route=>{
   calls.push(JSON.parse(route.request().postData()||'{}'));
   route.fulfill({status:200,contentType:'text/event-stream',body:sse('It starts, checks x and prints it.')});
 });
@@ -65,7 +65,7 @@ try{
   assert.equal(calls.length,1,'one question, one request');
   const sent=said(calls[0].messages[1].content),system=calls[0].messages[0].content;
   assert.match(system,/\[diagram\] and \[end of diagram\]/,'nota is told how drawings are described');
-  assert.equal(calls[0].model,'qwen-3.8-27b','a typed question with drawings near it goes to the model that sees them');
+  assert.equal(calls[0].model,'claude-opus-5.5','a typed question with drawings near it goes to the primary, which sees them');
   const picture=calls[0].messages[1].content.find(p=>p.type==='image_url');
   assert.ok(picture&&/^data:image\/jpeg;base64,/.test(picture.image_url.url),'the drawings go as a picture too');
   const size=await page.evaluate(url=>new Promise(r=>{const i=new Image();i.onload=()=>r([i.naturalWidth,i.naturalHeight]);i.src=url;}),picture.image_url.url);
@@ -95,11 +95,14 @@ try{
   const ask=page.locator('#selbar button',{hasText:'ask nota'});
   assert.equal(await ask.count(),1,'a circled drawing is offered to nota');
   await ask.click();
+  /* the box under the lasso takes the question in the student's own words */
+  await page.locator('#askpanel-in').fill('what does this flowchart do?');
+  await page.locator('#askpanel-go').click();
   for(let i=0;i<80&&calls.length<2;i++)await page.waitForTimeout(100);
   assert.equal(calls.length,2,'asking about the circled drawing makes a request');
   const q=said(calls[1].messages[1].content);
-  assert.match(q,/Question: the person circled this drawing/,'the question is about the drawing');
-  assert.equal(calls[1].model,'qwen-3.8-27b');
+  assert.match(q,/Question: the person circled this drawing on the page and asked: "what does this flowchart do\?"/,'the question is theirs, about the drawing');
+  assert.equal(calls[1].model,'claude-opus-5.5');
   const circled=calls[1].messages[1].content.find(p=>p.type==='image_url');
   const circledSize=await page.evaluate(url=>new Promise(r=>{const i=new Image();i.onload=()=>r([i.naturalWidth,i.naturalHeight]);i.src=url;}),circled.image_url.url);
   assert.ok(circledSize[1]<size[1],'the circled drawing is sent on its own, not the whole page: '+circledSize+' vs '+size);

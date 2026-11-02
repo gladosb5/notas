@@ -246,6 +246,26 @@
    "zh": "默认语言"
   },
   {
+   "en": "what would you like to ask nota?",
+   "ms": "apa yang kamu nak tanya nota?",
+   "zh": "你想问nota什么？"
+  },
+  {
+   "en": "{0} / 100 words",
+   "ms": "{0} / 100 perkataan",
+   "zh": "{0} / 100 个词"
+  },
+  {
+   "en": "enter",
+   "ms": "hantar",
+   "zh": "发送"
+  },
+  {
+   "en": "your question for nota",
+   "ms": "soalan kamu untuk nota",
+   "zh": "你要问nota的问题"
+  },
+  {
    "en": "notas",
    "ms": "notas",
    "zh": "notas"

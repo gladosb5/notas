@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v184">
+<meta name="notas-version" content="v185">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -482,7 +482,7 @@ input:focus-visible,textarea:focus-visible{outline:none}
 /* The frost diffuses actual content behind the surface. Reflections stay at the
    curved perimeter instead of painting a moving white hotspot across the face.
    The fine grain is fixed, so it never shimmers while writing or scrolling. */
-.glass,#topbar,#pill,#penpop,#textpop,#dlpop,#selbar,#toast,#save-alert,#askbar,.sheet .box,#local-status,#offline-status{
+.glass,#topbar,#pill,#penpop,#textpop,#dlpop,#selbar,#askpanel,#toast,#save-alert,#askbar,.sheet .box,#local-status,#offline-status{
   background-color:var(--glass);
   background-image:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath fill='%23808b9b' opacity='.025' filter='url(%23n)' d='M0 0h128v128H0z'/%3E%3C/svg%3E"),
@@ -493,7 +493,7 @@ input:focus-visible,textarea:focus-visible{outline:none}
 }
 /* A masked hairline follows the real radius, including the pill ends. It sits
    above the fill without intercepting controls or clipping their focus rings. */
-.glass::after,#topbar::after,#pill::after,#penpop::after,#textpop::after,#dlpop::after,#selbar::after,#toast::after,#save-alert::after,#askbar::after,.sheet .box::after,#local-status::after,#offline-status::after{
+.glass::after,#topbar::after,#pill::after,#penpop::after,#textpop::after,#dlpop::after,#selbar::after,#askpanel::after,#toast::after,#save-alert::after,#askbar::after,.sheet .box::after,#local-status::after,#offline-status::after{
   content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;
   pointer-events:none;
   background:linear-gradient(155deg,var(--glass-rim) 0%,var(--glass-rim-soft) 32%,transparent 50%,var(--glass-bounce) 78%,var(--glass-rim-soft) 100%);
@@ -504,13 +504,13 @@ input:focus-visible,textarea:focus-visible{outline:none}
 }
 .sheet .box{position:relative}
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
-  .glass,#topbar,#pill,#penpop,#textpop,#dlpop,#selbar,#toast,#save-alert,#askbar,.sheet .box,#local-status,#offline-status{background:var(--panel)}
+  .glass,#topbar,#pill,#penpop,#textpop,#dlpop,#selbar,#askpanel,#toast,#save-alert,#askbar,.sheet .box,#local-status,#offline-status{background:var(--panel)}
 }
 @media (prefers-reduced-transparency: reduce){
-  .glass,#topbar,#pill,#penpop,#textpop,#dlpop,#selbar,#toast,#save-alert,#askbar,.sheet .box,#local-status,#offline-status{
+  .glass,#topbar,#pill,#penpop,#textpop,#dlpop,#selbar,#askpanel,#toast,#save-alert,#askbar,.sheet .box,#local-status,#offline-status{
     background:var(--panel) !important;-webkit-backdrop-filter:none;backdrop-filter:none;
   }
-  .glass::after,#topbar::after,#pill::after,#penpop::after,#textpop::after,#dlpop::after,#selbar::after,#toast::after,#save-alert::after,#askbar::after,.sheet .box::after,#local-status::after,#offline-status::after{display:none}
+  .glass::after,#topbar::after,#pill::after,#penpop::after,#textpop::after,#dlpop::after,#selbar::after,#askpanel::after,#toast::after,#save-alert::after,#askbar::after,.sheet .box::after,#local-status::after,#offline-status::after{display:none}
   .sheet{-webkit-backdrop-filter:none !important;backdrop-filter:none !important}
 }
 
@@ -1203,6 +1203,33 @@ body:has(.sheet:not(.leave)) #toast{top:calc(var(--safe-t) + 12px)}
 @media(prefers-reduced-motion:reduce){#selbar button[aria-busy="true"]::before{animation:none}}
 #selbar button:hover{background:var(--tint)}
 #selbar button:active{transform:scale(.95)}
+/* ---- asking nota about the circled ink: a question of the student's own ---- */
+#askpanel{
+  /* above the install card: it is what the student is typing into */
+  position:fixed;z-index:36;display:flex;flex-direction:column;gap:8px;
+  width:min(360px,calc(100vw - 24px));padding:14px 14px 10px;border-radius:20px;
+  animation:chipIn .32s var(--pop);
+}
+#askpanel[hidden]{display:none}
+#askpanel label{font:500 14px/1.35 var(--ui);color:var(--graphite)}
+#askpanel textarea{
+  display:block;width:100%;box-sizing:border-box;min-height:44px;max-height:132px;resize:none;
+  padding:10px 12px;border:1px solid var(--rule);border-radius:12px;outline:none;
+  background:var(--panel);color:var(--graphite);font:400 15px/1.45 var(--ui);
+}
+#askpanel textarea:focus{border-color:color-mix(in srgb,var(--graphite) 45%,transparent)}
+#askpanel .ap-foot{display:flex;align-items:center;justify-content:space-between;gap:10px}
+#askpanel-count{font:400 12px var(--ui);color:var(--ink-2);font-variant-numeric:tabular-nums}
+#askpanel-count[data-full]{color:var(--red)}
+#askpanel-go{
+  display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:7px 14px;border-radius:var(--r-pill);
+  background:var(--graphite);color:var(--paper);font:500 13px var(--ui);
+  transition:opacity .15s ease,transform .18s var(--pop);
+}
+#askpanel-go i{font-size:15px}
+#askpanel-go:active:not(:disabled){transform:scale(.95)}
+#askpanel-go:disabled{opacity:.3;cursor:default}
+#askpanel-go:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 
 /* ---- intro: a white page before the notebook, one idea at a time ---- */
 #intro{
@@ -1377,7 +1404,7 @@ button.i-more:focus-visible{outline:2px solid var(--blue);outline-offset:2px;bor
 }
 @media print{
   body{overflow:visible}
-  #topbar,#pill,#penpop,#textpop,#dlpop,#ask-dot,#askbar,#toast,#selbar,#intro,.sheet,
+  #topbar,#pill,#penpop,#textpop,#dlpop,#ask-dot,#askbar,#toast,#selbar,#askpanel,#intro,.sheet,
   #local-status,#offline-status{display:none !important}
 }
 
@@ -1421,6 +1448,9 @@ button.i-more:focus-visible{outline:2px solid var(--blue);outline-offset:2px;bor
 
   #selbar{ padding:5px;gap:3px }
   #selbar button{ padding:11px 18px;font-size:15px;min-height:44px }
+  /* 16px keeps a phone from zooming in on the box */
+  #askpanel textarea{ font-size:16px }
+  #askpanel-go{ min-height:44px;padding:10px 18px;font-size:15px }
 
   /* panels: a bottom sheet with a grab edge, rows tall enough for a thumb,
      and 16px inputs so the field never zooms */
@@ -2016,6 +2046,12 @@ html[data-motion="off"] .prep-trace::before{transform:scaleX(1);opacity:.55}
 </div>
 
 <div id="selbar" hidden></div>
+<!-- asking nota about what is circled, in the student's own words -->
+<div id="askpanel" role="dialog" aria-label="ask nota" hidden>
+  <label for="askpanel-in">what would you like to ask nota?</label>
+  <textarea id="askpanel-in" rows="1" aria-label="your question for nota" enterkeyhint="send" autocomplete="off" spellcheck="true"></textarea>
+  <div class="ap-foot"><span id="askpanel-count">0 / 100 words</span><button id="askpanel-go" type="button" disabled><i class="ph ph-arrow-elbow-down-left" aria-hidden="true"></i>enter</button></div>
+</div>
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="page-accessible" class="sr-only" role="region" aria-label="notebook contents"></div>
 
@@ -4851,10 +4887,76 @@ function duplicateSelection(){
 /* The bar's buttons are built once per selection kind and only moved
    afterwards. Rebuilding four buttons and measuring them on every pointermove
    was DOM churn in the middle of a drag. */
+/* ---- asking nota about the circled ink, in the student's own words ----
+   "ask nota" opens a box under the lasso instead of asking at once: the
+   student writes what they want to know (up to 100 words; a Chinese
+   character counts as one), and enter, or the Enter key, sends it with a
+   picture of what is circled. Escape, or the circle going away, closes it. */
+const askPanel=$('#askpanel'),askIn=$('#askpanel-in'),askGo=$('#askpanel-go'),askCount=$('#askpanel-count');
+const ASK_WORDS=100,ASK_WORD=/[\u3400-\u9fff\uf900-\ufaff]|[^\s\u3400-\u9fff\uf900-\ufaff]+/g;
+let askFor='';
+const askOpen=()=>!askPanel.hidden;
+function openAsk(){
+  const why=N.nota&&N.nota.askBlocked&&N.nota.askBlocked();
+  if(why){C.toast(why);return;}
+  askFor=S.selection.join(',');askIn.value='';countAsk();
+  $('#selbar').hidden=true;askPanel.hidden=false;placeAsk();
+  askIn.focus({preventScroll:true});
+}
+function closeAsk(){
+  if(askPanel.hidden)return;
+  askPanel.hidden=true;askFor='';
+  if(document.activeElement===askIn)askIn.blur();
+}
+function countAsk(){
+  let words=askIn.value.match(ASK_WORD)||[];
+  /* past the limit the extra words do not go in */
+  if(words.length>ASK_WORDS){
+    ASK_WORD.lastIndex=0;let m,n=0,end=0;
+    while(n<ASK_WORDS&&(m=ASK_WORD.exec(askIn.value))){n++;end=m.index+m[0].length;}
+    ASK_WORD.lastIndex=0;
+    askIn.value=askIn.value.slice(0,end);words=askIn.value.match(ASK_WORD)||[];
+  }
+  askCount.textContent=words.length+' / '+ASK_WORDS+' words';
+  askCount.toggleAttribute('data-full',words.length>=ASK_WORDS);
+  askGo.disabled=!askIn.value.trim();
+  askIn.style.height='auto';askIn.style.height=Math.min(132,askIn.scrollHeight+2)+'px';
+}
+function sendAsk(){
+  const question=askIn.value.trim();if(!question)return;
+  closeAsk();N.nota.askSelection(question);
+}
+askIn.addEventListener('input',()=>{countAsk();placeAsk();});
+askIn.addEventListener('keydown',e=>{
+  e.stopPropagation();   /* letters typed here are words, not shortcuts */
+  if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();sendAsk();}
+  else if(e.key==='Escape'){e.preventDefault();closeAsk();showSelBar(true);}
+});
+askGo.onclick=sendAsk;
+/* under the circle when there is room, above it when there is not, and
+   always clear of a phone's keyboard */
+function placeAsk(){
+  if(askPanel.hidden||!S.selection.length)return;
+  const bb=selectionBox(),r=sc.getBoundingClientRect(),z=M.zoom;
+  const left=r.left+M.colLeft-sc.scrollLeft+bb[0]*z,top=r.top+bb[1]*z-sc.scrollTop,bottom=r.top+bb[3]*z-sc.scrollTop;
+  const w=askPanel.offsetWidth,h=askPanel.offsetHeight,vv=window.visualViewport;
+  const viewTop=vv?vv.offsetTop:0,viewBottom=vv?vv.offsetTop+vv.height:innerHeight;
+  let y=bottom+14;
+  if(y+h>viewBottom-8)y=top-14-h;
+  y=C.clamp(y,viewTop+8,Math.max(viewTop+8,viewBottom-h-8));
+  askPanel.style.left=Math.round(C.clamp(left,8,Math.max(8,innerWidth-w-8)))+'px';
+  askPanel.style.top=Math.round(y)+'px';
+}
+if(window.visualViewport){visualViewport.addEventListener('resize',placeAsk);visualViewport.addEventListener('scroll',placeAsk);}
 let selBarKind='',selBarMemo=null,selBarSize=null;
 function showSelBar(refresh=false){
   if(refresh===true)selBarKind='';
   const bar = $('#selbar');
+  /* the question box stands in for the bar while it is open */
+  if(askOpen()){
+    if(S.imageSelection||!S.selection.length||S.selection.join(',')!==askFor)closeAsk();
+    else{ bar.hidden = true; placeAsk(); return; }
+  }
   if(!S.selection.length&&!S.imageSelection){ bar.hidden = true; selBarKind = ''; return; }
   /* the picture under the hand — moved, sized or turned — draws bare: the
      options step aside with its outline and come back when the hand lifts */
@@ -4888,7 +4990,7 @@ function showSelBar(refresh=false){
       mk('delete',()=>deleteImage(S.imageSelection));
     }else{
       if(S.settings.handwritingRecognitionOn!==false) mk('solve this', ()=>{ N.recog && N.recog.solveSelection(); });
-      if(kind === 'ink-unread') mk('ask nota', ()=>{ N.nota.askSelection(); });
+      if(kind === 'ink-unread') mk('ask nota', openAsk);
       mk('copy', ()=>copySelection(false));
       mk('duplicate', duplicateSelection);
       mk('delete', deleteSelection);
