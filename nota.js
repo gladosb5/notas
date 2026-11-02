@@ -26,6 +26,7 @@ const enabled=()=>S.settings.notaOn!==false;
 const CONFIG={
   url:'https://api.cerebras.ai/v1/chat/completions',
   model:'qwen-3.8-27b',
+  zenmuxModel:'deepseek/deepseek-v4.1-flash',
   textModel:'gpt-oss-120b',
   fallbackModel:'@cf/qwen/qwen3.8-27b',
   visionWaitMs:12000,
@@ -1193,8 +1194,8 @@ function debugRequest(body,pictures){
 async function post(tries,signal,pictured){
   let error=null;
   // Cloudflare credentials stay on the server; never send its model or a Cerebras key to the wrong provider.
-  const cloudflare=tries[0]?.model===CONFIG.fallbackModel;
-  for(const url of cloudflare?[CONFIG.proxy]:[CONFIG.proxy,CONFIG.url]){
+  const proxyOnly=[CONFIG.fallbackModel,CONFIG.zenmuxModel].includes(tries[0]?.model);
+  for(const url of proxyOnly?[CONFIG.proxy]:[CONFIG.proxy,CONFIG.url]){
     if(url===CONFIG.url&&!hasKey()){error=new Error('nota needs a key. add it in nota.js.');break;}
     let unreachable=false;
     const headers={'Content-Type':'application/json','Accept':'text/event-stream'};
@@ -1350,8 +1351,9 @@ async function streamTools(question,context,onDelta,signal,picture,model,{onGrab
    would be refused the same way, so Cloudflare is the last attempt. */
 function providerSpent(error){ return error.status===402||!!error.overloaded&&!error.siteLimit; }
 async function stream(question,context,onDelta,signal,picture,typed=false,onFallback,tools=null){
-  const cerebras=m=>m!==CONFIG.fallbackModel;
-  let models=typed?[CONFIG.textModel,CONFIG.fallbackModel]:[CONFIG.model,CONFIG.fallbackModel,CONFIG.textModel];
+  const cerebras=m=>m===CONFIG.model||m===CONFIG.textModel;
+  let models=typed?[CONFIG.textModel,CONFIG.zenmuxModel,CONFIG.fallbackModel]
+    :[CONFIG.model,CONFIG.zenmuxModel,CONFIG.fallbackModel,CONFIG.textModel];
   for(let i=0;i<models.length;i++){
     if(signal.aborted)throw new DOMException('Question withdrawn','AbortError');
     const model=models[i],last=i===models.length-1,attempt=new AbortController();
@@ -1370,8 +1372,8 @@ async function stream(question,context,onDelta,signal,picture,typed=false,onFall
       return result;
     }catch(error){
       // Never mix answers, replay tools, retry cancellation, or bypass site limits.
-      if(last||received||signal.aborted||error.siteLimit||error.toolsFailed||[401,403].includes(error.status))throw error;
-      if(cerebras(model)&&providerSpent(error))models=[...models.slice(0,i+1),...models.slice(i+1).filter(m=>!cerebras(m))];
+      if(last||received||signal.aborted||error.siteLimit||error.toolsFailed)throw error;
+      if(cerebras(model)&&(providerSpent(error)||[401,403].includes(error.status)))models=[...models.slice(0,i+1),...models.slice(i+1).filter(m=>!cerebras(m))];
     }finally{
       clearTimeout(timer);attempt.abort();signal.removeEventListener('abort',cancel);
     }

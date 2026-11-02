@@ -151,9 +151,9 @@
     const i=indexAt(pages,y),p=pages[i],next=pages[i+1];
     return next&&y>=p.y+p.h&&next.y-y<y-(p.y+p.h)?i+1:i;
   }
-  function clip(ctx,st){
-    if(!S.pdf||!st?.pts?.length)return false;
-    const p=S.pdf.pages[ownerIn(S.pdf.pages,st.pts[1])];
+  function clip(ctx,st,pdf=S.pdf){
+    if(!pdf?.pages?.length||!st?.pts?.length)return false;
+    const p=pdf.pages[ownerIn(pdf.pages,st.pts[1])];
     ctx.save();ctx.beginPath();ctx.rect(0,p.y,W,p.h);ctx.clip();return true;
   }
   function current(){
@@ -375,6 +375,28 @@
       const cv=await renderPage(p,Math.min(2,Math.sqrt(12e6/(W*p.h))));
       try{if(pdf!==S.pdf)throw Error('the note changed during export.');ctx.drawImage(cv,0,p.y,W,p.h);}finally{cv.width=cv.height=0;}
     }
+  }
+
+  /* Draw stored PDFs for note thumbnails, including PDFs from inactive notes. */
+  async function paintThumbBackground(ctx,pdf,top,height){
+    if(!pdf?.pages)return;
+    const current=pdf===S.pdf;
+    const doc=current?await open():await bytesOf(pdf).then(documentFrom);
+    if(!doc)return;
+    try{
+      for(const p of pdf.pages){
+        if(p.y+p.h<=top||p.y>=top+height)continue;
+        ctx.fillStyle='#fff';ctx.fillRect(0,p.y,W,p.h);
+        if(p.source===null)continue;
+        const page=await doc.getPage(p.source+1),viewport=view(page,p,Math.min(1,Math.sqrt(3e6/(W*p.h))));
+        const cv=document.createElement('canvas');
+        cv.width=Math.ceil(viewport.width);cv.height=Math.ceil(viewport.height);
+        try{
+          await page.render({canvasContext:cv.getContext('2d'),viewport,background:'white'}).promise;
+          ctx.drawImage(cv,0,p.y,W,p.h);
+        }finally{cv.width=cv.height=0;}
+      }
+    }finally{if(!current)await doc.loadingTask.destroy();}
   }
 
   /* ---- the page list: thumbnails are drawn only while they are in view ---- */
@@ -990,6 +1012,6 @@
   /* stored originals nothing refers to any more are cleared once a session,
      well after start-up */
   setTimeout(()=>{const run=()=>collect().catch(()=>{});window.requestIdleCallback?requestIdleCallback(run,{timeout:30000}):run();},90000);
-  N.pdf={validate,draw,refresh,pageAt,current,go,choose,importFile,insertBlank,movePage,rotatePage,deletePage,exportFile,paintBackground,libs,clip,fit,search,openFind,closeFind,
+  N.pdf={validate,draw,refresh,pageAt,current,go,choose,importFile,insertBlank,movePage,rotatePage,deletePage,exportFile,paintBackground,paintThumbBackground,libs,clip,fit,search,openFind,closeFind,
     bytesOf,stash,inline,collect,setField,goDest,showOutline,openAsk,closeAsk,width:W};
 })();

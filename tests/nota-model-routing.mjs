@@ -3,17 +3,17 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {startServer} from '../scripts/serve.mjs';
 const typedPrimary='gpt-oss-120b';
-const primary='qwen-3.8-27b',cloudflare='@cf/qwen/qwen3.8-27b',textModel='gpt-oss-120b';
+const primary='qwen-3.8-27b',zenmux='deepseek/deepseek-v4.1-flash',cloudflare='@cf/qwen/qwen3.8-27b',textModel='gpt-oss-120b';
 const server=await startServer(0),browser=await chromium.launch({channel:'msedge',headless:true});
 try{
  const page=await browser.newPage({serviceWorkers:'block'});
  const source=(await readFile(new URL('../nota.js',import.meta.url),'utf8')).replace('N.nota={','N.nota={stream,');
  await page.route('**/nota.js',r=>r.fulfill({contentType:'application/javascript',body:source}));
- const calls=[];let mode='ok',cfMode='ok',txMode='ok';
+ const calls=[];let mode='ok',zmMode='ok',cfMode='ok',txMode='ok';
  const sse=delta=>'data: '+JSON.stringify({choices:[{delta}]})+'\n\ndata: [DONE]\n\n';
  await page.route(/\/nota\/chat$|api\.cerebras\.ai/,async route=>{
   const body=route.request().postDataJSON();calls.push({body,url:route.request().url()});
-  const failure=body.model===primary?mode:body.model===cloudflare?cfMode:txMode;
+  const failure=body.model===primary?mode:body.model===zenmux?zmMode:body.model===cloudflare?cfMode:txMode;
   if(failure==='http')return route.fulfill({status:503,body:'model unavailable'});
   if(failure==='network')return route.abort('failed');
   if(failure==='empty')return route.fulfill({contentType:'text/event-stream',body:'data: [DONE]\n\n'});
@@ -46,69 +46,82 @@ try{
  assert.deepEqual(models(),[primary]);assert.ok(image(calls[0]));
  for(mode of ['http','network','empty','error','daily','timeout']){
   assert.deepEqual(await run(),{text:'answer',fallbacks:1,grabs:0},mode);
-  assert.deepEqual(models(),[primary,cloudflare],mode);
-  assert.ok(image(calls[1]),mode+' Cloudflare keeps the image');
+  assert.deepEqual(models(),[primary,zenmux],mode);
+  assert.ok(image(calls[1]),mode+' ZenMux keeps the image');
   assert.ok(calls[1].url.endsWith('/nota/chat'));
   assert.deepEqual(calls[1].body.messages,calls[0].body.messages);
  }
- mode='http';
+ mode='http';zmMode='http';
  for(cfMode of ['http','network','empty','error','daily','timeout','unconfigured']){
-  assert.deepEqual(await run(),{text:'answer',fallbacks:2,grabs:0},cfMode);
-  assert.deepEqual(models(),[primary,cloudflare,textModel]);
-  assert.ok(image(calls[1]));assert.ok(!image(calls[2]));
-  assert.match(calls[2].body.messages[1].content,/page context/);
+  assert.deepEqual(await run(),{text:'answer',fallbacks:3,grabs:0},cfMode);
+  assert.deepEqual(models(),[primary,zenmux,cloudflare,textModel]);
+  assert.ok(image(calls[2]));assert.ok(!image(calls[3]));
+  assert.match(calls[3].body.messages[1].content,/page context/);
  }
  cfMode='ok';
- for(mode of ['site','auth','cancel','partial']){
+ for(mode of ['site','cancel','partial']){
   const result=await run();assert.equal(result.error,true,mode);assert.equal(result.fallbacks,0,mode);
   assert.deepEqual(models(),[primary]);
  }
- mode='http';
- for(cfMode of ['site','auth','partial']){
-  const result=await run();assert.equal(result.error,true,cfMode);assert.equal(result.fallbacks,1,cfMode);
-  assert.deepEqual(models(),[primary,cloudflare]);
+ mode='auth';zmMode='ok';
+ assert.deepEqual(await run(),{text:'answer',fallbacks:1,grabs:0});
+ assert.deepEqual(models(),[primary,zenmux]);
+ mode='http';zmMode='http';
+ for(cfMode of ['site','partial']){
+  const result=await run();assert.equal(result.error,true,cfMode);assert.equal(result.fallbacks,2,cfMode);
+  assert.deepEqual(models(),[primary,zenmux,cloudflare]);
  }
+ cfMode='auth';
+ assert.deepEqual(await run(),{text:'answer',fallbacks:3,grabs:0});
+ assert.deepEqual(models(),[primary,zenmux,cloudflare,textModel]);
  // A browser Cerebras key never routes Cloudflare directly to Cerebras.
  mode='http';
  await page.evaluate(()=>localStorage.setItem('notas.nota.key','csk-test-browser-only'));
  for(cfMode of ['absent','network']){
-  assert.deepEqual(await run(),{text:'answer',fallbacks:2,grabs:0});
-  assert.deepEqual(models(),[primary,cloudflare,textModel]);
+  assert.deepEqual(await run(),{text:'answer',fallbacks:3,grabs:0});
+  assert.deepEqual(models(),[primary,zenmux,cloudflare,textModel]);
   assert.ok(calls.every(c=>c.url.endsWith('/nota/chat')));
  }
  await page.evaluate(()=>localStorage.removeItem('notas.nota.key'));
  // Tools still work on Cloudflare, and a tool round never triggers another provider.
  cfMode='ok';
- assert.deepEqual(await run(false,true),{text:'answer',fallbacks:1,grabs:0});
- assert.deepEqual(models(),[primary,cloudflare]);assert.ok(calls[1].body.tools);
+ assert.deepEqual(await run(false,true),{text:'answer',fallbacks:2,grabs:0});
+ assert.deepEqual(models(),[primary,zenmux,cloudflare]);assert.ok(calls[2].body.tools);
  cfMode='tool-error';
  const result=await run(false,true);assert.equal(result.error,true);assert.equal(result.grabs,3);
- assert.ok(models().slice(1).every(m=>m===cloudflare));
+ assert.ok(models().slice(2).every(m=>m===cloudflare));
  // Cerebras out of credit or out of its day: its text model would be refused
  // too, so Cloudflare is the last attempt and is not cut off by the wait.
+ zmMode='ok';
  for(mode of ['payment','daily']){
   cfMode='ok';
   assert.deepEqual(await run(),{text:'answer',fallbacks:1,grabs:0},mode);
-  assert.deepEqual(models(),[primary,cloudflare],mode);
+  assert.deepEqual(models(),[primary,zenmux],mode);
+ }
+ zmMode='http';
+ for(mode of ['payment','daily']){
+  cfMode='ok';
+  assert.deepEqual(await run(),{text:'answer',fallbacks:2,grabs:0},mode);
+  assert.deepEqual(models(),[primary,zenmux,cloudflare],mode);
   cfMode='timeout';
-  assert.deepEqual(await run(),{text:'late',fallbacks:1,grabs:0},mode+' slow Cloudflare');
-  assert.deepEqual(models(),[primary,cloudflare],mode);
+  assert.deepEqual(await run(),{text:'late',fallbacks:2,grabs:0},mode+' slow Cloudflare');
+  assert.deepEqual(models(),[primary,zenmux,cloudflare],mode);
   cfMode='http';
   const spent=await run();assert.equal(spent.error,true,mode);
-  assert.deepEqual(models(),[primary,cloudflare],mode);
+  assert.deepEqual(models(),[primary,zenmux,cloudflare],mode);
  }
  // A typed question falls back to Cloudflare as well.
  if(typedPrimary===textModel){
-  mode='ok';cfMode='ok';txMode='payment';
+  mode='ok';zmMode='ok';cfMode='ok';txMode='payment';
   assert.deepEqual(await run(true),{text:'answer',fallbacks:1,grabs:0});
-  assert.deepEqual(models(),[textModel,cloudflare]);
+  assert.deepEqual(models(),[textModel,zenmux]);
   assert.ok(!image(calls[0]),'GPT-OSS gets words only');
-  assert.ok(image(calls[1]),'the Qwen fallback gets the page picture');
+  assert.ok(image(calls[1]),'ZenMux fallback gets the page picture');
   txMode='ok';
  }
  // Cloudflare's Qwen streams its thinking for longer than the wait before
  // its words; a model that is thinking is not abandoned for the next one.
- mode='http';calls.length=0;
+ mode='http';zmMode='http';calls.length=0;
  const thinking=await page.evaluate(async cloudflare=>{
   const real=window.fetch;
   window.fetch=async(url,init)=>{
@@ -126,6 +139,6 @@ try{
   return text;
  },cloudflare);
  assert.equal(thinking,'thought');
- assert.deepEqual(models(),[primary]);
- console.log('Three-provider routing passed: image preservation, text-only final fallback, tools, failure/timeout, site/auth, cancellation and partial answers.');
+ assert.deepEqual(models(),[primary,zenmux]);
+ console.log('OSS model routing passed: ZenMux second, image preservation, text-only final fallback, tools, timeouts, auth and partial answers.');
 }finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}

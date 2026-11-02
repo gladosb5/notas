@@ -662,6 +662,10 @@ input:focus-visible,textarea:focus-visible{outline:none}
 #scroller::-webkit-scrollbar-thumb:hover{background:var(--ink-2)}
 #scroller::-webkit-scrollbar-track{background:transparent}
 #scroller::-webkit-scrollbar-corner{background:transparent}
+/* in text mode the canvas takes no pointer, so the paper's touch gestures are
+   driven from #doc (the pinch below): the browser scrolls and pinch-zooms
+   nothing of the paper natively while the tool is text */
+body[data-tool="text"] #scroller{touch-action:none}
 #doc{position:relative;width:100%}
 #col{position:relative;margin:0;width:var(--col-w,940px);transform-origin:0 0;z-index:3;pointer-events:none}
 /* Zoom gives the column its own stacking context. Keep its controls above
@@ -2012,7 +2016,7 @@ function getActive(){
 let viewTimer = null, viewPending = null;
 function saveView(id,top,left,zoom){
   if(!id||id===S.id&&!S.savedRev&&isBlank())return;
-  viewPending = {id, view:{scrollTop:top||0, scrollLeft:left||0, zoom:zoom||M.zoom||1}};
+  viewPending = {id, view:{scrollTop:top||0, scrollLeft:left||0, zoom:zoom||M.zoom||1, columnLeft:M.colLeft||0, viewportW:M.vw||0, viewportH:M.vh||0}};
   if(viewTimer) return;
   viewTimer = setTimeout(flushView, 250);
 }
@@ -2174,7 +2178,7 @@ function serialize(){
     id:S.id, title:S.title, created:S.created, updated:Date.now(),
     rev:S.savedRev||0, settings:noteSettings(), docH:S.docH,
     ...(S.pdf?{pdf:{...S.pdf,pages:S.pdf.pages.map(p=>({...p}))}}:{}),
-    view:{scrollTop:sc?sc.scrollTop:0,scrollLeft:sc?sc.scrollLeft:0},
+    view:{scrollTop:sc?sc.scrollTop:0,scrollLeft:sc?sc.scrollLeft:0,zoom:M.zoom,columnLeft:M.colLeft,viewportW:M.vw,viewportH:M.vh},
     /* a stroke nota is still writing is saved whole: the reveal is not ink */
     strokes:S.strokes.map(({_show,...st})=>({...st,pts:st.pts.slice(),bbox:st.bbox?.slice(),...(st.times?{times:st.times.slice()}:{} )})),
     /* a reply line still waiting for its first word is saved as plain text */
@@ -2732,6 +2736,7 @@ function docExtent(){
   let x = M.colW;
   for(const st of S.strokes) if(st.bbox && st.bbox[2] > x) x = st.bbox[2];
   for(const im of S.images)x=Math.max(x,imageBounds(im)[2]);
+  for(const ln of S.lines)if(ln.text)x=Math.max(x,(ln.x||0)+M.contentW);
   return Math.ceil(x);
 }
 /* The paper only ever grows. It used to be set to whatever the caller
@@ -3014,7 +3019,7 @@ function drawSegments(ctx, st, from){
   /* a highlighter mark is one even band, multiplied into the page so the
      printed words under it stay black */
   if(st.author === 'mark'){
-    ctx.save(); ctx.globalCompositeOperation = 'multiply';
+    ctx.save(); ctx.globalCompositeOperation = ctx===xInk?'source-over':'multiply';
     ctx.strokeStyle = st.color || MARK_COLOR; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = st.w;
     ctx.beginPath(); const i0 = Math.max(0, (from-1)*3); ctx.moveTo(p[i0], p[i0+1]);
     for(let i=i0+3; i<end; i+=3) ctx.lineTo(p[i], p[i+1]);
@@ -3042,18 +3047,18 @@ function drawSegments(ctx, st, from){
   }
   if(open){ ctx.lineWidth = width; ctx.stroke(); }
 }
-function drawStroke(ctx, st){
+function drawStroke(ctx, st, pdf=S.pdf){
   const p = st.pts;
   if(st._show !== undefined && st._show < 2) return;
   /* on a PDF, ink belongs to the page it started on and stops at its edge */
-  const clipped = !!(S.pdf && N.pdf?.clip(ctx, st));
+  const clipped = !!(pdf && N.pdf?.clip(ctx, st, pdf));
   if(p.length < 6) dot(ctx, st); else drawSegments(ctx, st, 1);
   if(clipped) ctx.restore();
 }
 function dot(ctx, st){
   const p = st.pts; if(p.length < 3) return;
   if(st.author === 'mark'){
-    ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = st.color || MARK_COLOR;
+    ctx.save(); ctx.globalCompositeOperation = ctx===xInk?'source-over':'multiply'; ctx.fillStyle = st.color || MARK_COLOR;
     ctx.beginPath(); ctx.arc(p[0], p[1], st.w/2, 0, 6.284); ctx.fill(); ctx.restore(); return;
   }
   ctx.fillStyle = (N.nota?.isAskedStroke?.(st.id)?colors.blue:null) || st.color || inkColor(st.author);
@@ -3454,7 +3459,7 @@ function beginStroke(ev, tool){
           eraseR:(ERASE_R[kindOf(ev)] || 9)/M.zoom, drawn:0 };
   if(cur.erase && eraseMode === 'pixel') cur.pixel = true;
   if(pen.color) cur.color = pen.color;
-  if(!cur.erase && marking()){ cur.author = 'mark'; cur.w = MARK_W; cur.color = pen.markColor || MARK_COLOR; cInk.style.mixBlendMode = 'multiply'; }
+  if(!cur.erase && marking()){ cur.author = 'mark'; cur.w = MARK_W; cur.color = pen.markColor || MARK_COLOR; }
   lastRaw = null;
   clearLive(); liveFrame();
   pushPoint(ev, cur);
@@ -3481,6 +3486,10 @@ function drawLive(){
     return;
   }
   const n = cur.pts.length/3;
+  if(cur.author==='mark'){
+    // Draw the full translucent band afresh to avoid accumulating dark seams.
+    clearLive();liveFrame();cInk.style.mixBlendMode='multiply';cur.drawn=0;
+  }
   const clipped = !!(S.pdf && N.pdf?.clip(xInk, cur));
   if(n < 2) dot(xInk, cur);
   else { drawSegments(xInk, cur, Math.max(1, cur.drawn)); cur.drawn = n; }
@@ -3768,7 +3777,7 @@ let selectionFor=null,selectionSize=-1,selectionIds=new Set(),geometryRev=0,sele
 function selSet(){if(selectionFor!==S.selection||selectionSize!==S.selection.length){selectionFor=S.selection;selectionSize=S.selection.length;selectionIds=new Set(S.selection);}return selectionIds;}
 function selectedLineBox(ln){
   const node=(S.nodes||[]).find(n=>n.id===ln.id),extra=node?.result?node.result.length*11+48:24;
-  return [ln.x||0,ln.y,Math.min(M.contentW,(ln.x||0)+Math.max(80,ln.text.length*10+extra)),ln.y+Math.max(C.LINE_H,ln.h||0)];
+  return [ln.x||0,ln.y,(ln.x||0)+Math.min(M.contentW,Math.max(80,ln.text.length*10+extra)),ln.y+Math.max(C.LINE_H,ln.h||0)];
 }
 function selectionBox(){
   if(cropping && cropping.id === S.imageSelection){
@@ -4744,6 +4753,23 @@ function showSelBar(refresh=false){
   const position=positions.find(p=>handles.every(hd=>clear(p,hd)))||(knob&&positions.find(p=>clear(p,knob)))||positions[0];
   bar.style.left=Math.round(position.x)+'px';bar.style.top=Math.round(position.y)+'px';
 }
+function boxTouchesPoly(b,poly){
+  const inside=(x,y)=>pointInPoly(x,y,poly);
+  if([[b[0],b[1]],[b[2],b[1]],[b[2],b[3]],[b[0],b[3]]].some(p=>inside(...p)))return true;
+  for(let i=0;i<poly.length;i+=2)if(poly[i]>=b[0]&&poly[i]<=b[2]&&poly[i+1]>=b[1]&&poly[i+1]<=b[3])return true;
+  const orient=(a,c,d)=>(c[0]-a[0])*(d[1]-a[1])-(c[1]-a[1])*(d[0]-a[0]);
+  const crosses=(a,c,d,e)=>{
+    const o1=orient(a,c,d),o2=orient(a,c,e),o3=orient(d,e,a),o4=orient(d,e,c);
+    if(o1===0&&o2===0)return Math.max(Math.min(a[0],c[0]),Math.min(d[0],e[0]))<=Math.min(Math.max(a[0],c[0]),Math.max(d[0],e[0]))&&Math.max(Math.min(a[1],c[1]),Math.min(d[1],e[1]))<=Math.min(Math.max(a[1],c[1]),Math.max(d[1],e[1]));
+    return o1*o2<=0&&o3*o4<=0;
+  };
+  const edges=[[[b[0],b[1]],[b[2],b[1]]],[[b[2],b[1]],[b[2],b[3]]],[[b[2],b[3]],[b[0],b[3]]],[[b[0],b[3]],[b[0],b[1]]]];
+  for(let i=0;i<poly.length;i+=2){
+    const a=[poly[i],poly[i+1]],j=(i+2)%poly.length,c=[poly[j],poly[j+1]];
+    if(edges.some(([d,e])=>crosses(a,c,d,e)))return true;
+  }
+  return false;
+}
 function pointInPoly(x, y, poly){
   let inside = false;
   for(let i=0, j=poly.length-2; i<poly.length; j=i, i+=2){
@@ -5008,6 +5034,75 @@ for(const type of ['pointerup','pointercancel']) document.addEventListener(type,
   const dx=ev.clientX-n.x,dy=ev.clientY-n.y;
   if(type==='pointerup'&&dx>=80&&dx>Math.abs(dy)*2&&performance.now()-n.t<1400) N.library?.open();
 }, {capture:true,passive:false});
+
+/* ---- text-mode touch gestures ----
+   In text mode the canvas takes no pointer, so the paper's touch gestures had
+   nowhere to run: a pinch either scrolled a little or zoomed the viewport, and
+   the paper never grew. With the tool text the scroller's touch-action is none,
+   so the browser hands the paper's touches over to these handlers, which feed
+   the same machinery the ink handlers drive: one finger pans with the same
+   coast, two pinch the page about their midpoint, three pan. A quiet tap never
+   moves, so the text module's own tap on pointerup still starts a line, and a
+   touch that lands on a line is recorded but refused nothing: the caret keeps
+   the browser's placement. The raw pointer type is what is asked here, not
+   kindOf: nothing draws in text mode, so a stylus the browser mislabels as
+   touch still belongs to the gesture, as it does to the pen path's pinch.
+   Mouse stays out (a mouse click still places the caret); the canvas path
+   takes its pointers when an image is selected. */
+const doc = $('#doc');
+doc.addEventListener('pointerdown', ev=>{
+  if(S.tool !== 'text' || ev.pointerType !== 'touch') return;
+  if(document.body.dataset.imageSel || cropping || twin || cropDrag) return;
+  if(ev.target.closest && ev.target.closest('.chip,.plot,.tut,input,textarea,button,a,.sheet')) return;
+  sweepStale(); stopCoast();
+  pointers.set(ev.pointerId, {x:ev.clientX, y:ev.clientY, t:Date.now(), seen:Date.now(), moved:0, type:'touch', raw:'touch'});
+  const touches = touchesDown();
+  if(touches >= 2 && !penIsDown()){
+    /* a stroke's kept-or-discarded bookkeeping is the ink path's; the gesture
+       here starts from the fingers alone */
+    const a = avgPoint();
+    gesture = { n:touches, t:Date.now(), moved:0, lastX:a.x, lastY:a.y, d0:touchSpread(), z0:M.zoom };
+    if(panning){ panning = false; tapImage = null; }
+    activeId = null; panStart();
+    N.text && N.text.cancelTap && N.text.cancelTap();   /* a pinch is not where the caret goes */
+    trace('GESTURE', ev, 'text mode');
+    return;
+  }
+  activeId = ev.pointerId;
+  panning = true; panLast = {x:ev.clientX,y:ev.clientY}; panStart();
+  trace('scroll', ev, 'text mode: touch pans');
+}, true);
+doc.addEventListener('pointermove', ev=>{
+  if(S.tool !== 'text' || ev.pointerType !== 'touch') return;
+  const rec = pointers.get(ev.pointerId);
+  if(!rec) return;
+  rec.moved += Math.hypot(ev.clientX-rec.x, ev.clientY-rec.y);
+  rec.x = ev.clientX; rec.y = ev.clientY; rec.seen = Date.now();
+  if(twin || twinIgnore !== null) return;
+  if(gesture){
+    const a = avgPoint(), dx = a.x-gesture.lastX, dy = a.y-gesture.lastY;
+    gesture.moved += Math.hypot(dx,dy); gesture.lastX = a.x; gesture.lastY = a.y;
+    const pending = gesture.pending || (gesture.pending = {dx:0,dy:0}); pending.dx += dx; pending.dy += dy;
+    pending.x = a.x; pending.y = a.y; const spread = touchSpread();
+    if(gesture.n === 2 && gesture.d0 && spread) pending.z = gesture.z0*spread/gesture.d0;
+    if(!gesture.rect) gesture.rect = sc.getBoundingClientRect();
+    if(!gestureFrame) gestureFrame = requestAnimationFrame(flushGesture);
+    return;
+  }
+  if(panning && activeId === ev.pointerId){
+    panBy(ev.clientX - panLast.x, ev.clientY - panLast.y);
+    panLast = {x:ev.clientX, y:ev.clientY};
+  }
+});
+doc.addEventListener('pointercancel', ev=>{
+  if(S.tool !== 'text') return;
+  if(!pointers.has(ev.pointerId)) return;
+  pointers.delete(ev.pointerId);
+  /* the browser took the touch back (a system gesture, the keyboard): the
+     gesture stands down rather than coasting beside whatever replaces it */
+  cancelAnimationFrame(gestureFrame); gestureFrame = 0;
+  gesture = null; panning = false; activeId = null; pan.samples.length = 0;
+}, true);
 cInk.addEventListener('pointerdown', ev=>{
   if(ev.pointerType === 'mouse' && ev.button !== 0 && ev.button !== 1) return;
   if(cur && ev.pointerType === 'mouse') finishInput();
@@ -5345,7 +5440,7 @@ function endPointer(ev){
       S.imageSelection=null;
       S.selection = S.strokes.filter(s=>(s.author==='user' || s.author==='ai' || s.author==='mark')&&inBounds(s.bbox)&&
         strokeInPoly(s.pts,poly)).map(s=>s.id);
-      for(const ln of S.lines){const b=selectedLineBox(ln);if(ln.text&&inBounds(b)&&pointInPoly((b[0]+b[2])/2,(b[1]+b[3])/2,poly))S.selection.push(ln.id);}
+      for(const ln of S.lines){const b=selectedLineBox(ln);if(ln.text&&inBounds(b)&&boxTouchesPoly(b,poly))S.selection.push(ln.id);}
       /* a loop round a picture and no ink selects the picture (the topmost
          one whose centre it encloses), with its own bar: remove background,
          delete. Ink and a picture are never one selection. */
@@ -6102,7 +6197,7 @@ function render(){
       root.insertBefore(d, root.children[at] || null);
     }
     const i = d.firstChild;
-    const available=Math.max(80,M.contentW-(ln.x||0));
+    const available=Math.max(80,M.contentW);
     if(d.style.width !== available+'px'){ d.style.width=available+'px';i.style.width=available+'px'; }
     /* while typing, the input handler keeps ln.text equal to the value, so a
        difference on the focused line means the data changed underneath it
@@ -6188,7 +6283,7 @@ function relayout(){
   for(const ln of S.lines){
     const d = els.get(ln.id); if(!d) continue;
     const i = d.firstChild;
-    const available=Math.max(80,M.contentW-(ln.x||0));d.style.width = available+'px'; i.style.width = available+'px';
+    const available=Math.max(80,M.contentW);d.style.width = available+'px'; i.style.width = available+'px';
     d.style.setProperty('--tw', Math.round(Math.max(120, Math.min(M.contentW - 4, measure(i, ln.text) + 28)))+'px');
     fitLine(ln,i,false);
   }
@@ -6369,6 +6464,9 @@ doc.addEventListener('mousedown', e=>{
   if(e.target.closest && e.target.closest('.line,.chip,.plot,input,textarea,button,.sheet')) return;
   e.preventDefault();
 });
+/* the ink module drives the paper's pan and pinch in text mode; when two
+   fingers come down the tap this finger had begun is not where the caret goes */
+function cancelTap(){ tap = null; }
 doc.addEventListener('pointerdown', e=>{
   tap = null;
   if(S.tool !== 'text') return;
@@ -6404,7 +6502,8 @@ function focusLast(){
   if(S.tool !== 'text' || document.querySelector('.sheet:not(.leave)')) return;
   if(focusedLine()) return;
   const last = S.lines.slice().sort((a,b)=>a.y-b.y).pop();
-  if(last) focusLine(last.id, true, true); else add(120);
+  if(last) focusLine(last.id, true, true);
+  else if(!S.pdf) add(120); // A PDF without handwritten text must keep its restored page position.
 }
 function eraseCharacters(touched,radius,bounds){
   const edits=[];
@@ -6436,7 +6535,7 @@ function eraseCharacters(touched,radius,bounds){
   return edits;
 }
 N.text = { render, add, caretTo, lineChanges, focusLine, focusLast, snap, queue, reset, reflow, relayout, isFocused, setGhost, focusedLine, currentText, pasteText,
-           eraseCharacters, notaReply, refreshPlaceholder };
+           eraseCharacters, notaReply, refreshPlaceholder, cancelTap };
 })();
 </script>
 
@@ -8736,7 +8835,7 @@ function exportBounds(){
   const include=b=>{left=Math.min(left,b[0]);top=Math.min(top,b[1]);right=Math.max(right,b[2]);bottom=Math.max(bottom,b[3]);};
   for(const st of S.strokes)if(st.bbox)include([st.bbox[0]-st.w,st.bbox[1]-st.w,st.bbox[2]+st.w,st.bbox[3]+st.w]);
   for(const im of S.images)include(C.imageBounds(im));
-  for(const l of S.lines)include([l.x||0,l.y,(l.x||0)+Math.max(80,M.contentW-(l.x||0)),l.y+Math.max(C.LINE_H,l.h||C.LINE_H)]);
+  for(const l of S.lines)include([l.x||0,l.y,(l.x||0)+Math.max(80,M.contentW),l.y+Math.max(C.LINE_H,l.h||C.LINE_H)]);
   for(const el of document.querySelectorAll('#margin .chip, #margin .plot')){const x=parseFloat(el.style.left)||0,y=parseFloat(el.style.top)||0;include([x,y,x+el.offsetWidth,y+el.offsetHeight]);}
   left=Math.floor(left);top=Math.floor(top);return {left,top,width:Math.ceil(right-left),height:Math.ceil(bottom-top)};
 }
@@ -8779,7 +8878,7 @@ async function renderExport(opts={}){
   }
   if(!opts.noStrokes) for(const marks of [true,false]) for(const st of S.strokes) if((st.author === 'mark') === marks) N.ink.drawStroke(x, st);
   x.font = '400 16px '+((getComputedStyle(document.documentElement).getPropertyValue('--type')||'').trim()||'ui-monospace, monospace'); x.textBaseline = 'top';
-  for(const l of S.lines) if(l.text){ x.fillStyle = l.tutor ? N.ink.colors.red : S.pdf ? (S.settings.textColor||'#1D1D1F') : N.ink.colors.text; drawWrapped(x,l.text,(l.x||0)+2,l.y+3,Math.max(80,M.contentW-(l.x||0))-4,22.4); }
+  for(const l of S.lines) if(l.text){ x.fillStyle = l.tutor ? N.ink.colors.red : S.pdf ? (S.settings.textColor||'#1D1D1F') : N.ink.colors.text; drawWrapped(x,l.text,(l.x||0)+2,l.y+3,Math.max(80,M.contentW)-4,22.4); }
   x.fillStyle = cs.getPropertyValue('--blue').trim();
   x.font = '600 21px "Caveat","Segoe Script",system-ui,sans-serif';
   x.textBaseline='alphabetic';
@@ -9929,22 +10028,36 @@ function wrapText(x, text, left, top, maxW, lh, bottom){
     x.fillText(line.trimEnd(), left, y); y += lh; if(y > bottom) return;
   }
 }
+function thumbViewKey(v){
+  if(!v)return '';
+  return [v.scrollTop||0,v.scrollLeft||0,v.zoom||1,v.columnLeft||0,v.viewportW||0,v.viewportH||0].map(n=>Math.round(n*100)/100).join(':');
+}
 async function renderThumb(doc){
   const strokes = doc.strokes||[], lines = (doc.lines||[]).filter(l=>l.text&&l.text.trim()), images = doc.images||[];
-  if(!strokes.length && !lines.length && !images.length) return null;
-  /* the picture is as wide as the writing, not the whole column: a few words
-     in the corner of a wide page are still legible at 72px */
-  const full = M.contentW || C.CONTENT_MAX || 720;
-  let top = Infinity, right = 0;
-  for(const st of strokes) if(st.bbox){ top = Math.min(top, st.bbox[1]); right = Math.max(right, st.bbox[2]); }
-  for(const l of lines){ top = Math.min(top, l.y); right = Math.max(right, Math.min(full, 4 + 9.7*Math.max(...l.text.split(/\r?\n/).map(t=>t.length)))); }
-  for(const im of images){ top = Math.min(top, im.y); right = Math.max(right, im.x + im.w); }
-  const w = Math.max(360, Math.min(full, right + 24)), h = w*THUMB_H/THUMB_W;
-  top = Math.max(0, (Number.isFinite(top) ? top : 0) - 24);
-  const bottom = top + h, cv = document.createElement('canvas');
+  if(!doc.pdf&&!strokes.length&&!lines.length&&!images.length) return null;
+  // The preview follows the last visible viewport, even if no note content changed.
+  const full = N.pdf?.width || M.contentW || C.CONTENT_MAX || 720;
+  const v = doc.id===S.id ? doc.view : (C.getView(doc.id)||doc.view);
+  let top=0,left=0,w=Math.max(360,full);
+  if(v && Number.isFinite(v.scrollTop)){
+    const z=Math.max(.2,+v.zoom||1);
+    top=Math.max(0,v.scrollTop/z);
+    left=Math.max(0,((v.scrollLeft||0)-(v.columnLeft||0))/z);
+    w=Math.max(280,(v.viewportW||M.vw||full)/z);
+    w=Math.min(w,Math.max(full,left+full));
+  }else{
+    top=Infinity;
+    for(const st of strokes)if(st.bbox)top=Math.min(top,st.bbox[1]);
+    for(const l of lines)top=Math.min(top,l.y);
+    for(const im of images)top=Math.min(top,im.y);
+    top=Math.max(0,(Number.isFinite(top)?top:0)-24);
+  }
+  const h=w*THUMB_H/THUMB_W,bottom=top+h,cv=document.createElement('canvas');
   cv.width = THUMB_W; cv.height = THUMB_H;
   const x = cv.getContext('2d'), cs = getComputedStyle(document.documentElement);
-  x.scale(THUMB_W/w, THUMB_W/w); x.translate(0, -top);
+  x.fillStyle='#fff';x.fillRect(0,0,THUMB_W,THUMB_H);
+  x.scale(THUMB_W/w,THUMB_W/w);x.translate(-left,-top);
+  if(doc.pdf)try{await N.pdf?.paintThumbBackground(x,doc.pdf,top,h);}catch(e){}
   for(const im of images){
     if(im.y > bottom || im.y + im.h < top) continue;
     const img = await loadImage(im.src); if(!img) continue;
@@ -9955,16 +10068,16 @@ async function renderThumb(doc){
   }
   for(const st of strokes){
     if(st.bbox && (st.bbox[1] > bottom || st.bbox[3] < top)) continue;
-    try{ N.ink.drawStroke(x, st); }catch(e){}
+    try{ N.ink.drawStroke(x, st, doc.pdf||null); }catch(e){}
   }
   x.fillStyle = cs.getPropertyValue('--graphite').trim();
   x.font = '400 16px '+(cs.getPropertyValue('--type').trim()||'ui-monospace, monospace'); x.textBaseline = 'top';
-  for(const l of lines) if(l.y < bottom && l.y + 400 > top) wrapText(x, l.text, 2, l.y+3, w-4, 22.4, bottom);
+  for(const l of lines) if(l.y < bottom && l.y + 400 > top) wrapText(x, l.text, l.x||0, l.y+3, Math.max(80,full), 22.4, bottom);
   let src = '';
   try{ src = cv.toDataURL('image/webp', 0.72); }catch(e){ return null; }
   /* Safari before 17 cannot encode WebP and hands back a PNG; that is kept,
      only larger */
-  return {src, dark:darkNow(), at:Date.now()};
+  return {src, dark:darkNow(), at:Date.now(), viewKey:thumbViewKey(v)};
 }
 async function thumbOf(id){
   if(thumbs.has(id)) return thumbs.get(id);
@@ -9982,14 +10095,15 @@ let lastThumb = new Map();
 async function pictureCurrent(){
   if(!S.id || !S.savedRev) return;
   try{
-    const t = await renderThumb(C.serialize());
-    await storeThumb(S.id, t); lastThumb.set(S.id, Date.now());
-    showThumb(S.id);
+    const id=S.id, snapshot=C.serialize();
+    const t = await renderThumb(snapshot);
+    await storeThumb(id, t); lastThumb.set(id, Date.now());
+    showThumb(id);
   }catch(e){}
 }
 /* a picture is a nicety: switching notes never waits more than a moment for one */
 async function leaving(){
-  if(!S.id || (lastThumb.get(S.id)||0) >= (L.lastEdit||0)) return;
+  if(!S.id || ((lastThumb.get(S.id)||0) >= (L.lastEdit||0) && thumbs.get(S.id)?.viewKey===thumbViewKey(C.serialize().view))) return;
   await Promise.race([pictureCurrent(), new Promise(r=>setTimeout(r, 600))]);
 }
 /* rows scrolled into view are pictured if they have none, or theirs is older
@@ -10003,7 +10117,7 @@ async function drainBacklog(){
       const id = backlog.shift(), row = L.ix.find(r=>r.id===id); if(!row) continue;
       const have = await thumbOf(id);
       if(have&&id===S.id&&Date.now()-(lastThumb.get(id)||0)<THUMB_EVERY){showThumb(id);continue;}
-      if(have ? (have.at >= (row.updated||0) - 1000) : false){ showThumb(id); continue; }
+      if(have && have.at >= (row.updated||0) - 1000 && have.viewKey===thumbViewKey(C.getView(id)||row.view)){showThumb(id);continue;}
       await settled();
       const doc = id === S.id ? C.serialize() : await C.Store.get('notas.note.'+id);
       if(!doc) continue;
@@ -10105,7 +10219,7 @@ async function updateCurrentPreview(){
   /* Opening the overview asks for this picture more than once, the last time
      while the view transition holds the screen still. An unchanged page is
      not drawn and encoded again. */
-  const key=[id,C.revision,S.savedRev,M.contentW].join(':');
+  const key=[id,C.revision,S.savedRev,M.contentW,thumbViewKey(C.serialize().view)].join(':');
   if(key===currentPreviewKey){const img=preview.querySelector('img'),t=thumbs.get(id);if(img&&t)img.classList.toggle('flip',t.dark!==darkNow());return;}
   const thumb=await renderThumb(C.serialize()).catch(()=>null);
   if(seq!==currentPreviewSeq||id!==S.id)return;

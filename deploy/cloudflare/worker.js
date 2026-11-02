@@ -2,7 +2,7 @@
 // assets and never reach this script; only what assets cannot serve arrives
 // here: the room's websocket and the "hey nota" forward.
 export { NoteRoom } from './room.js';
-import { textBudgetExceeded,notaBody, bodyTokens, MAX_BODY, CLOUDFLARE_MODEL } from '../../server/nota-body.mjs';
+import { textBudgetExceeded,notaBody, bodyTokens, MAX_BODY, CLOUDFLARE_MODEL, ZENMUX_MODEL } from '../../server/nota-body.mjs';
 const UPSTREAM='https://api.cerebras.ai/v1/chat/completions';
 // /collab/<note id>: the websocket of the note's room. Ids are what the page
 // makes with uid(): lowercase base 36.
@@ -87,14 +87,15 @@ export default {
       if(textBudgetExceeded(json))return new Response('the question and notes are too long.',{status:413,headers:{'Content-Type':'text/plain','X-Notas-Error':'text-budget'}});
       const clean=notaBody(json);
       if(!clean)return new Response('invalid request',{status:400,headers:{'Content-Type':'text/plain'}});
-      const cloudflare=clean.model===CLOUDFLARE_MODEL;
+      const cloudflare=clean.model===CLOUDFLARE_MODEL,zenmux=clean.model===ZENMUX_MODEL;
       const own=(request.headers.get('authorization')||'').replace(/^Bearer\s+/i,'');
-      const siteKey=origin===url.origin&&!!(cloudflare?env.CLOUDFLARE_API_TOKEN:env.CEREBRAS_API_KEY);
+      const siteKey=origin===url.origin&&!!(zenmux?env.ZENMUX_API_KEY:cloudflare?env.CLOUDFLARE_API_TOKEN:env.CEREBRAS_API_KEY);
       // The browser's Authorization header is a Cerebras key, never a Cloudflare token.
-      const key=cloudflare?(siteKey?env.CLOUDFLARE_API_TOKEN:null):(siteKey?env.CEREBRAS_API_KEY:own);
+      const key=zenmux?(siteKey?env.ZENMUX_API_KEY:null):cloudflare?(siteKey?env.CLOUDFLARE_API_TOKEN:null):(siteKey?env.CEREBRAS_API_KEY:own);
+      if(zenmux&&!key)return new Response('nota ZenMux fallback is not configured.',{status:503,headers:{'Content-Type':'text/plain'}});
       if(cloudflare&&(!key||!env.CLOUDFLARE_ACCOUNT_ID))return new Response('nota Cloudflare fallback is not configured.',{status:503,headers:{'Content-Type':'text/plain'}});
       if(!key)return new Response('nota has no key here.',{status:501,headers:{'Content-Type':'text/plain'}});
-      const target=cloudflare?`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(env.CLOUDFLARE_ACCOUNT_ID)}/ai/v1/chat/completions`:UPSTREAM;
+      const target=zenmux?'https://zenmux.ai/api/v1/chat/completions':cloudflare?`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(env.CLOUDFLARE_ACCOUNT_ID)}/ai/v1/chat/completions`:UPSTREAM;
       const body=JSON.stringify(clean);
       if(siteKey){
         // Each provider attempt reserves its maximum spend in the same site budget.

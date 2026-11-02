@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { textBudgetExceeded,notaBody, MAX_BODY, CLOUDFLARE_MODEL } from '../server/nota-body.mjs';
+import { textBudgetExceeded,notaBody, MAX_BODY, CLOUDFLARE_MODEL, ZENMUX_MODEL } from '../server/nota-body.mjs';
 import { cspFor, ASSET_CSP } from '../server/csp.mjs';
 const root=path.resolve(import.meta.dirname,'..');
 const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css','.json':'application/json','.webmanifest':'application/manifest+json','.svg':'image/svg+xml','.woff2':'font/woff2','.woff':'font/woff','.ttf':'font/ttf','.f32':'application/octet-stream','.mjs':'text/javascript; charset=utf-8','.wasm':'application/wasm','.onnx':'application/octet-stream','.md':'text/markdown; charset=utf-8'};
@@ -25,11 +25,12 @@ async function notaProxy(req,res){
   if(textBudgetExceeded(json)){res.writeHead(413,{'Content-Type':'text/plain','X-Notas-Error':'text-budget'});res.end('the question and notes are too long.');return;}
   const clean=notaBody(json);
   if(!clean){res.writeHead(400,{'Content-Type':'text/plain'});res.end('invalid request');return;}
-  const cloudflare=clean.model===CLOUDFLARE_MODEL;
-  const key=cloudflare?process.env.CLOUDFLARE_API_TOKEN:(process.env.CEREBRAS_API_KEY||(req.headers.authorization||'').replace(/^Bearer\s+/i,''));
+  const cloudflare=clean.model===CLOUDFLARE_MODEL,zenmux=clean.model===ZENMUX_MODEL;
+  const key=zenmux?process.env.ZENMUX_API_KEY:cloudflare?process.env.CLOUDFLARE_API_TOKEN:(process.env.CEREBRAS_API_KEY||(req.headers.authorization||'').replace(/^Bearer\s+/i,''));
+  if(zenmux&&!key){res.writeHead(503,{'Content-Type':'text/plain'});res.end('nota ZenMux fallback is not configured.');return;}
   if(cloudflare&&(!key||!process.env.CLOUDFLARE_ACCOUNT_ID)){res.writeHead(503,{'Content-Type':'text/plain'});res.end('nota Cloudflare fallback is not configured.');return;}
   if(!key){res.writeHead(501,{'Content-Type':'text/plain'});res.end('nota has no key here.');return;}
-  const target=cloudflare?`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(process.env.CLOUDFLARE_ACCOUNT_ID)}/ai/v1/chat/completions`:NOTA_UPSTREAM;
+  const target=zenmux?'https://zenmux.ai/api/v1/chat/completions':cloudflare?`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(process.env.CLOUDFLARE_ACCOUNT_ID)}/ai/v1/chat/completions`:NOTA_UPSTREAM;
   const body=JSON.stringify(clean),control=new AbortController();
   const cancel=()=>control.abort();
   res.once('close',cancel);
