@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v183">
+<meta name="notas-version" content="v184">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -1246,6 +1246,9 @@ body:has(.sheet:not(.leave)) #toast{top:calc(var(--safe-t) + 12px)}
 .intro-fade{opacity:0;transform:translateY(6px);transition:opacity .45s ease,transform .45s cubic-bezier(.22,1,.36,1)}
 .intro-fade.on{opacity:1;transform:none}
 /* the first screen: the heading turns through the languages above them */
+/* the language screen stands in the middle of the page */
+.intro-stage.is-picker{align-items:center;text-align:center}
+.intro-stage.is-picker .intro-demo{display:flex;justify-content:center;width:100%}
 .intro-choose{display:block;min-height:1.25em;font:500 clamp(26px,6.4vw,34px)/1.25 var(--ui);letter-spacing:-.01em;transition:opacity .35s ease,transform .35s ease}
 .intro-choose.swap{opacity:0;transform:translateY(-5px)}
 .i-langs{display:flex;flex-direction:column;gap:12px;width:min(360px,100%)}
@@ -11512,7 +11515,7 @@ function render(i,instant){
   at=i;settled=false;const sc=list[i];acted=!sc.interactive;
   const mine=++generation,ctx={done(){if(mine!==generation||acted)return;acted=true;if(settled)holdTimer=setTimeout(onward,HOLD);}};
   if(sc.end)root.dataset.last='';else delete root.dataset.last;
-  stage.replaceChildren();
+  stage.replaceChildren();stage.classList.toggle('is-picker',!!sc.picker);
   [...dots.children].forEach((d,k)=>{if(k===i)d.dataset.on='';else delete d.dataset.on;});
   const head=el('h1','intro-say');head.id='intro-say';stage.append(head);
   let eyebrow=null,sub=null;
