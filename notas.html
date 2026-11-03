@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v188">
+<meta name="notas-version" content="v189">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -2109,7 +2109,7 @@ const S = {
   strokes:[], lines:[], images:[], annos:[], pdf:null,
   clusters:[], nodes:[], textTranscripts:[],
   tool:'text', lastTool:'pen',
-  settings:{ angle:'deg', fractions:false, aiOn:true, language:(window.N&&N.i18n&&N.i18n.lang)||'en', theme:'auto', voice:false, recognizer:'ink', touchDraw:true, animations:true, textColor:'', notaColor:'', notaFont:'', notaOn:true, textRecognitionOn:true, backgroundRemovalOn:true, handwritingRecognitionOn:true },
+  settings:{ angle:'deg', fractions:false, aiOn:true, language:(window.N&&N.i18n&&N.i18n.lang)||'en', theme:'auto', voice:false, recognizer:'ink', touchDraw:true, refineInk:true, animations:true, textColor:'', notaColor:'', notaFont:'', notaOn:true, textRecognitionOn:true, backgroundRemovalOn:true, handwritingRecognitionOn:true },
   docH:1600, dirty:false, selection:[], imageSelection:null, savedRev:0, remoteRev:0
 };
 
@@ -2135,7 +2135,7 @@ function strokeById(id){
 }
 const reducedMotion = () => { if(S.settings.animations===false) return true; try{ return matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; } };
 
-const APP_PREF_KEYS = ['language','theme','touchDraw','voice','recognizer','animations','textColor','notaColor','notaFont','notaOn','textRecognitionOn','backgroundRemovalOn','handwritingRecognitionOn'];
+const APP_PREF_KEYS = ['language','theme','touchDraw','refineInk','voice','recognizer','animations','textColor','notaColor','notaFont','notaOn','textRecognitionOn','backgroundRemovalOn','handwritingRecognitionOn'];
 function appPrefs(){
   try{ return JSON.parse(localStorage.getItem('notas.prefs')||'{}')||{}; }catch(e){ return {}; }
 }
@@ -3078,6 +3078,7 @@ N.core = { imageBounds, flowPictures, pictureRoom, pictureChanges,S, M, Store, u
 })();
 </script>
 
+<script src="./ink-refine.js"></script>
 <script>
 /* =========================================================================
    INK - pointer capture, two-layer canvas, eraser, selection, tool access
@@ -3650,6 +3651,7 @@ function holdShape(ev){
 }
 
 function beginStroke(ev, tool){
+  if(refineAnim)refineAnim.finish();
   if(cur)commitStroke();
   resetShapeHold();
   /* the eraser's reach is a size on the glass, not on the paper: zoomed in it
@@ -3706,6 +3708,7 @@ function drawLive(){
   if(clipped) xInk.restore();
 }
 function commitStroke(){
+  const shaped=!!shapeOriginal;
   resetShapeHold();
   if(!cur){ TRACE && trace('commit', {pointerType:'-',pointerId:'-',button:'-',buttons:'-'}, 'NO STROKE to commit'); return; }
   const st = cur; cur = null;
@@ -3723,6 +3726,7 @@ function commitStroke(){
   C.growDoc(st.bbox[3]);
   N.nota?.localStroke(st);
   C.act('draw', ()=>{ if(!S.strokes.some(s=>s.id===st.id))S.strokes.push(st); }, ()=>{ S.strokes = S.strokes.filter(s=>s.id!==st.id); }, {stroke:st});
+  if(!shaped&&st.author==='user')rememberInk(st);
   const stamped=stampStroke(st);
   if(st.author !== 'mark') N.mathcore && N.mathcore.inkLanded(st.id);
   after(true,stamped);
@@ -4206,6 +4210,86 @@ function carryReadings(change){
     if(carried) N.recog.rebuild();
   }
 }
+/* Only ink written here waits for a reading. Reopened and shared ink stays put. */
+const freshInk=new Map();let refineTimer=0,refineNote=null,refineLast=0,refineAnim=null;
+function queueRefine(){
+  if(!refineTimer&&freshInk.size)refineTimer=setTimeout(pollRefine,450);
+}
+function rememberInk(st){
+  if(S.settings.refineInk===false)return;
+  if(refineNote!==S.id){freshInk.clear();refineNote=S.id;}
+  refineLast=Date.now();freshInk.set(st.id,refineLast);queueRefine();
+}
+function pollRefine(){
+  refineTimer=0;
+  if(refineNote!==S.id||S.settings.refineInk===false||Date.now()-refineLast>20000){freshInk.clear();return;}
+  for(const id of freshInk.keys())if(!C.strokeById(id))freshInk.delete(id);
+  if(!freshInk.size)return;
+  if(cur||pointers.size||N.ink.busy()||peerShift.size||document.hidden){queueRefine();return;}
+  const recog=N.recog;
+  if(recog&&window.NOTAS_INK_REFINE)for(const group of recog.textGroups()){
+    const ids=group.strokeIds.filter(id=>freshInk.has(id));if(!ids.length)continue;
+    if(group.strokeIds.some(id=>S.selection.includes(id)))continue;
+    const reading=S.textTranscripts.find(t=>t.hash===group.hash&&t.modelVersion===recog.textVersion);
+    if(!reading)continue;
+    // A reading gets one chance, so undo keeps the writer's original ink.
+    for(const id of ids)freshInk.delete(id);
+    const strokes=group.strokeIds.map(C.strokeById);
+    if(recog.classifyHandwriting(reading)==='text'&&!strokes.some(st=>!st||st.notaAsked||N.nota?.isCallStroke?.(st.id))){
+      const fresh=new Set(ids.filter(id=>{const st=C.strokeById(id);return st?.author==='user'&&!st._peer;}));
+      const pts=window.NOTAS_INK_REFINE.refineLine(strokes,fresh);
+      if(pts)refineStrokes(pts);
+    }
+    break;
+  }
+  queueRefine();
+}
+function textReadings(){
+  const saved=new Map();
+  for(const group of N.recog.textGroups()){
+    const reading=S.textTranscripts.find(t=>t.hash===group.hash);
+    if(reading)saved.set(group.strokeIds.slice().sort().join(','),{...reading});
+  }
+  return saved;
+}
+function putRefined(snap,saved){
+  const readings=new Map([...saved,...textReadings()]);
+  putStrokes(snap);
+  // Moving a line changes its hash, but not the words already read from it.
+  for(const group of N.recog.textGroups()){
+    const reading=readings.get(group.strokeIds.slice().sort().join(','));
+    if(reading&&!S.textTranscripts.some(t=>t.hash===group.hash))S.textTranscripts.push({...reading,hash:group.hash,bbox:group.bbox.slice()});
+  }
+}
+function refineStrokes(pts){
+  const orig=grabStrokes([...pts.keys()]),now=new Map(),saved=textReadings(),refs=new Map();
+  for(const [id,p] of pts){const st=C.strokeById(id);refs.set(id,{st,rev:st.rev,preview:st.pts});now.set(id,{pts:p,bbox:bboxOf(p),w:st.w});}
+  const note=S.id,start=performance.now();
+  const valid=()=>S.id===note&&[...refs].every(([id,o])=>C.strokeById(id)===o.st&&o.st.rev===o.rev&&o.st.pts===o.preview);
+  const restore=()=>{for(const [id,o] of orig){const ref=refs.get(id);if(ref.st.pts===ref.preview&&ref.st.rev===ref.rev){ref.st.pts=o.pts.slice();ref.st.bbox=o.bbox.slice();}}};
+  const finish=()=>{
+    if(!refineAnim)return;
+    cancelAnimationFrame(refineAnim.raf);refineAnim=null;
+    const ok=valid();restore();
+    if(!ok){render();return;}
+    C.act('neaten handwriting',()=>putRefined(now,saved),()=>putRefined(orig,saved));
+    let low=0;for(const o of now.values())low=Math.max(low,o.bbox[3]);C.growDoc(low);after();
+  };
+  const tick=time=>{
+    if(!valid()){finish();return;}
+    const t=Math.min(1,(time-start)/240),ease=1-(1-t)**3;
+    geometryRev++;
+    for(const [id,o] of orig){
+      const ref=refs.get(id),end=now.get(id),p=o.pts.map((v,i)=>v+(end.pts[i]-v)*ease);
+      ref.st.pts=p;ref.st.bbox=bboxOf(p);ref.preview=p;
+    }
+    render();
+    if(t===1)finish();else refineAnim.raf=requestAnimationFrame(tick);
+  };
+  refineAnim={finish,raf:0};
+  if(C.reducedMotion())finish();else refineAnim.raf=requestAnimationFrame(tick);
+}
+
 function commitMove(dx, dy){
   if(!dx && !dy){ render(); showSelBar(); return; }
   if(S.imageSelection){
@@ -5381,6 +5465,7 @@ doc.addEventListener('pointercancel', ev=>{
   gesture = null; panning = false; activeId = null; pan.samples.length = 0;
 }, true);
 cInk.addEventListener('pointerdown', ev=>{
+  if(refineAnim)refineAnim.finish();
   if(ev.pointerType === 'mouse' && ev.button !== 0 && ev.button !== 1) return;
   if(cur && ev.pointerType === 'mouse') finishInput();
   sweepStale();
@@ -5901,7 +5986,7 @@ pill.addEventListener('wheel', ev=>{
 }, { passive:false });
 pill.addEventListener('keydown', ev=>{ if(ev.key === 'Escape' && pillOpen()){ setPillOpen(false); moreBtn.focus(); } });
 
-N.ink = { busy:()=>!!(cur||lasso||moving||scaling||turning||resizing||twin||cropDrag||panning||gesture),render, renderAI, pasteCut, resize, finishInput, setTool, setPen, pen, setPillOpen, setPenPop, setTextPop, setTextColor, toWorld, viewOrigin, bboxOf, hitStroke, drawStroke, strokeMarks,
+N.ink = { busy:()=>!!(refineAnim||cur||lasso||moving||scaling||turning||resizing||twin||cropDrag||panning||gesture),render, renderAI, pasteCut, resize, finishInput, setTool, setPen, pen, setPillOpen, setPenPop, setTextPop, setTextColor, toWorld, viewOrigin, bboxOf, hitStroke, drawStroke, strokeMarks,
           clearSelection, showSelBar, inkColor, colors, refreshColors, isTyping, after, flush, selectImage, nudgeImage, resizeImage, deleteImage, removeBackground, undoBackground, prefetchCutout, toggleBackgroundRemoval, startCrop, applyCrop, cancelCrop, cropping:()=>cropping&&{...cropping}, frameOf, frameHandles,
           copySelection, duplicateSelection, deleteSelection, pasteInk, readClip, clipMarker, selectAll, imageAt, pickImage,
           now:inkNow, drawing:()=>!!cur, peerShift, drag:()=>moving?{dx:moving.dx,dy:moving.dy}:null,
@@ -8854,11 +8939,15 @@ function menuSheet(){
     '<div class="mi"><span>draw with</span><span style="margin-left:auto"><span class="seg" id="seg-touch" role="group" aria-label="draw with">' +
       '<button data-v="1" aria-pressed="'+(S.settings.touchDraw!==false)+'">finger and pen</button>' +
       '<button data-v="0" aria-pressed="'+(S.settings.touchDraw===false)+'">pen only</button></span></span></div>' +
+    '<div class="mi"><span>neaten handwriting</span><span style="margin-left:auto"><span class="seg" id="seg-refine" role="group" aria-label="neaten handwriting">' +
+      '<button data-v="1" aria-pressed="'+(S.settings.refineInk!==false)+'">on</button>' +
+      '<button data-v="0" aria-pressed="'+(S.settings.refineInk===false)+'">off</button></span></span></div>' +
     '<button class="mi" id="refresh-reading"><i class="ph ph-arrows-clockwise"></i>refresh handwriting models<span class="k">re-read the page</span></button>' +
     '<button class="mi" id="refresh-site"><i class="ph ph-arrow-circle-up"></i>update<span class="k">fetch the latest app</span></button>' +
     '<div class="sheet-notes"><p>auto follows your device\'s theme. the text tool, tapped twice, picks the colour of typed text; nota writes its answers in its own colour.</p><p>draw with decides what a single finger does. with pen only, a finger scrolls and a resting hand cannot mark the page. it only takes effect once a pen has been used on this device, so it can never leave you unable to draw.</p>' +
       '<p>handwriting is read on this device. check the recognised equation, then tap solve for an answer written beside it. the model downloads once and works offline after that.</p>' +
-      '<p>a local text recogniser powers handwriting search and helps keep variable names. it never changes your ink.</p>' +
+      '<p>a local text recogniser powers handwriting search and helps keep variable names. neaten handwriting uses its readings to tidy new words.</p>' +
+      '<p>neaten handwriting levels a line you write and evens out its size once it is read as words, keeping your own hand. maths and drawings stay as drawn, and undo puts the line back as you wrote it.</p>' +
       '<p>maths hints use local rules for arithmetic and linear equations.</p></div>' +
     '<hr>' +
     '<button class="mi" id="mi-app"><i class="ph ph-device-mobile"></i>download as an app</button>' +
@@ -8938,6 +9027,7 @@ function menuSheet(){
   /* the choice is its own confirmation: the pressed segment says what is
      on, and the sheet's notes say what it means, so no toast repeats it */
   seg('seg-touch', v=>{ S.settings.touchDraw = v==='1'; C.savePrefs(); });
+  seg('seg-refine',v=>{ S.settings.refineInk=v==='1'; C.savePrefs(); });
   box.querySelector('#refresh-reading').onclick=async()=>{
     closeSheet();C.toast('refreshing handwriting models.',90000);
     try{
