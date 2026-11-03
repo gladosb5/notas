@@ -82,6 +82,29 @@ try{
   await page.waitForTimeout(1500);assert.deepEqual(await points(page),before,'undo is not refined again');
   await page.evaluate(()=>N.core.redo());assert.deepEqual(await points(page),after,'redo reapplies exactly');
   assert.ok(await page.evaluate(()=>N.core.S.textTranscripts.some(t=>t.hash===N.recog.textGroups()[0].hash)),'redo retains searchable text');
+  await page.evaluate(()=>{
+    const move=dy=>{
+      for(const st of N.core.S.strokes){
+        st.pts=st.pts.map((value,index)=>index%3===1?value+dy:value);
+        st.bbox=N.ink.bboxOf(st.pts);st.rev=(st.rev||0)+1;
+      }
+      N.recog.rebuild();N.ink.render();
+    };
+    N.core.act('test move',()=>move(10),()=>move(-10));N.core.undo();N.core.undo();
+  });
+  assert.deepEqual(await points(page),before,'refinement can still undo after a later move is undone');
+  await page.evaluate(()=>N.core.redo());assert.deepEqual(await points(page),after);
+  await page.evaluate(()=>{
+    N.core.S.strokes=N.core.S.strokes.map((st,index)=>{
+      if(index)return st;
+      const pts=st.pts.map((value,index)=>index%3===1?value+20:value);
+      return {...st,pts,bbox:N.ink.bboxOf(pts),rev:(st.rev||0)+1,_peer:true};
+    });
+    N.recog.rebuild();N.ink.render();
+  });
+  const peerPoints=await points(page);
+  await page.evaluate(()=>N.core.undo());assert.deepEqual(await points(page),peerPoints,'undo does not overwrite a collaborator move');
+  await page.evaluate(()=>N.core.redo());assert.deepEqual(await points(page),peerPoints,'redo does not overwrite a collaborator move');
   await page.locator('#btn-menu').click();
   for(const width of [1100,390]){
     await page.setViewportSize({width,height:850});
@@ -94,6 +117,37 @@ try{
   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('notas.prefs')).refineInk),false,'setting saves as a device preference');
   await page.context().close();
 
+  const switchingPage=await open();await draw(switchingPage);
+  const original=await points(switchingPage);
+  await switchingPage.evaluate(()=>{
+    const refine=window.NOTAS_INK_REFINE.refineLine;
+    window.NOTAS_INK_REFINE.refineLine=(...args)=>{
+      const planned=refine(...args);
+      if(planned){
+        window.NOTAS_INK_REFINE.refineLine=refine;
+        requestAnimationFrame(()=>requestAnimationFrame(()=>{
+          const id=N.core.S.id,mid=N.core.serialize().strokes.map(st=>({id:st.id,pts:st.pts}));
+          N.core.markDirty();
+          const switching=N.ui.newNote(),label=N.core.Undo.back.at(-1)?.label;
+          window.refineTransition=switching.then(async()=>{
+            const saved=await N.core.Store.read('notas.note.'+id);
+            return {mid,label,switched:N.core.S.id!==id,saved:saved.strokes.map(st=>({id:st.id,pts:st.pts})),planned:[...planned].map(([id,pts])=>({id,pts}))};
+          });
+        }));
+      }
+      return planned;
+    };
+  });
+  await transcript(switchingPage);
+  await switchingPage.waitForFunction(()=>!!window.refineTransition,{},{timeout:6000});
+  const transition=await switchingPage.evaluate(()=>window.refineTransition);
+  assert.deepEqual(transition.mid,original,'serialization during animation never captures preview points');
+  assert.equal(transition.label,'neaten handwriting','switching notes finishes refinement as an undo action');
+  assert.equal(transition.switched,true);
+  const planned=new Map(transition.planned.map(st=>[st.id,st.pts]));
+  assert.deepEqual(transition.saved,original.map(st=>({id:st.id,pts:planned.get(st.id)||st.pts})),'the old note saves only final geometry');
+  await switchingPage.context().close();
+
   for(const [enabled,text] of [[false,'the quick fox'],[true,'2+3=']]){
     const page=await open(enabled);await draw(page);const before=await points(page);
     await transcript(page,text);await page.waitForTimeout(1500);
@@ -101,5 +155,5 @@ try{
     await page.context().close();
   }
   assert.deepEqual(errors,[]);
-  console.log('Ink refine: level word baselines, real mouse ink, unrelated infinite animation, transcript carryover, one-step undo/redo, no repeat after undo, disabled preference and maths exclusion pass; no page errors.');
+  console.log('Ink refine: level word baselines, real mouse ink, transcript carryover, guarded undo/redo, animation-safe saving and note switching, disabled preference and maths exclusion pass; no page errors.');
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}

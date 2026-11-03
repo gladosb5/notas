@@ -138,6 +138,37 @@ test('word slants converge toward the writer median within the eight-degree clam
   for(const st of words.slice(1).flat())assert.ok(!partial?.has(st.id),'settled slants stay untouched');
 });
 
+test('settled words anchor the lean even when fresh words outnumber them',()=>{
+  const words=writing(['llll','llll','llll'],{shears:[14,-8,-8]});
+  const fresh=new Set(words.slice(1).flat().map(st=>st.id)),before=stemSlants(words);
+  const map=refineLine(words,fresh),after=stemSlants(apply(words,map));
+  assert.ok(map,'new words move toward the settled lean');
+  for(const st of words[0])assert.ok(!map.has(st.id),'settled strokes stay untouched');
+  for(let index=1;index<words.length;index++){
+    assert.ok(Math.abs(after[index]-before[0])<Math.abs(before[index]-before[0])-6,'the existing lean guides new ink');
+    assert.ok(Math.abs(after[index]-before[index])<8.5,'the shear remains bounded');
+  }
+});
+
+test('dense strokes can be measured without spreading samples into function arguments',()=>{
+  const pts=[];
+  for(let index=0;index<150000;index++)pts.push(index/1000,180+Math.sin(index/1000)*10,.5);
+  const before=pts.slice(),metrics=wordMetrics([{id:'dense',pts,w:2}]);
+  assert.ok(Number.isFinite(metrics.baseline));
+  assert.ok(Number.isFinite(metrics.core));
+  assert.deepEqual(pts,before,'measuring does not change the ink');
+});
+
+test('long handwriting lines remain level and deterministic',()=>{
+  const texts=Array.from({length:160},()=> 'the');
+  const words=writing(texts,{tilt:6,wobble:texts.map((_,index)=>index%3*3-3),jitter:.5});
+  const fresh=ids(words),map=refineLine(words.flat(),fresh);
+  assert.ok(map);
+  assert.ok(Math.abs(tilt(apply(words,map)))<1,'the whole line stays level');
+  assert.deepEqual(refineLine(words.flat(),fresh),map,'sampling is deterministic');
+  assert.deepEqual(refineLine(words.flat().reverse(),fresh),map,'sample selection does not depend on stroke order');
+});
+
 test('uniform lean survives on horizontal and deliberately tilted lines',()=>{
   for(const angle of [0,20]){
     const words=writing(['llll','llll','llll'],{shears:[14,14,14],wobble:[-2,3,-2]}),c=Math.cos(angle*Math.PI/180),s=Math.sin(angle*Math.PI/180);
@@ -173,6 +204,21 @@ test('a loop may return to an interior point after a lead-in',()=>{
   assert.ok(Math.hypot(out.pts[3]-out.pts.at(-3),out.pts[4]-out.pts.at(-2))<.2);
   assert.ok(endpointGap(out)>5,'the lead-in is not pulled into the loop');
   assert.equal(out.pts.length,st.pts.length);
+});
+
+test('densely sampled loops close without changing sample count or pen pressure',()=>{
+  const pts=[];
+  for(let index=0;index<12000;index++){
+    const angle=index/12000*(Math.PI*2-.05);pts.push(100+10*Math.cos(angle),100+10*Math.sin(angle),.5);
+  }
+  const words=[[{id:'dense-loop',pts,w:2}]],before=pts.slice();
+  const map=refineLine(words,ids(words),{strength:0,minDisplacement:.1}),out=apply(words,map)[0][0];
+  assert.ok(map);
+  assert.ok(endpointGap(out)<.1,'the tiny opening closes');
+  assert.equal(out.pts.length,pts.length);
+  assert.equal(out.w,2);
+  for(let index=2;index<out.pts.length;index+=3)assert.equal(out.pts[index],.5);
+  assert.deepEqual(pts,before,'the source loop stays untouched');
 });
 
 function curvatureVariance(pts){

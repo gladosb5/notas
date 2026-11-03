@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v189">
+<meta name="notas-version" content="v190">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -3318,6 +3318,8 @@ function render(onPaint){
     /* the student's graphite and nota's red both live here, over any
        highlighter marks; nothing else does */
     const paintInk=st=>{
+      const preview=refineAnim?.refs.get(st.id);
+      if(preview&&preview.st===st&&preview.rev===st.rev&&preview.pts===st.pts)st=preview.frame;
       const sh=peerShift.size?peerShift.get(st.id):null;
       if((picked && picked.has(st.id))||sh){
         xCommit.save(); xCommit.translate((picked&&picked.has(st.id)?moving.dx:0)+(sh?sh.dx:0), (picked&&picked.has(st.id)?moving.dy:0)+(sh?sh.dy:0));
@@ -4252,7 +4254,11 @@ function textReadings(){
   }
   return saved;
 }
-function putRefined(snap,saved){
+function putRefined(snap,saved,expected){
+  for(const [id,was] of expected){
+    const st=C.strokeById(id);
+    if(!st||!(Math.abs(st.w-was.w)<=1e-7)||st.pts.length!==was.pts.length||st.pts.some((value,index)=>!(Math.abs(value-was.pts[index])<=1e-7)))return;
+  }
   const readings=new Map([...saved,...textReadings()]);
   putStrokes(snap);
   // Moving a line changes its hash, but not the words already read from it.
@@ -4263,30 +4269,27 @@ function putRefined(snap,saved){
 }
 function refineStrokes(pts){
   const orig=grabStrokes([...pts.keys()]),now=new Map(),saved=textReadings(),refs=new Map();
-  for(const [id,p] of pts){const st=C.strokeById(id);refs.set(id,{st,rev:st.rev,preview:st.pts});now.set(id,{pts:p,bbox:bboxOf(p),w:st.w});}
+  for(const [id,p] of pts){const st=C.strokeById(id);refs.set(id,{st,rev:st.rev,pts:st.pts,frame:st});now.set(id,{pts:p,bbox:bboxOf(p),w:st.w});}
   const note=S.id,start=performance.now();
-  const valid=()=>S.id===note&&[...refs].every(([id,o])=>C.strokeById(id)===o.st&&o.st.rev===o.rev&&o.st.pts===o.preview);
-  const restore=()=>{for(const [id,o] of orig){const ref=refs.get(id);if(ref.st.pts===ref.preview&&ref.st.rev===ref.rev){ref.st.pts=o.pts.slice();ref.st.bbox=o.bbox.slice();}}};
+  const valid=()=>S.id===note&&[...refs].every(([id,o])=>C.strokeById(id)===o.st&&o.st.rev===o.rev&&o.st.pts===o.pts);
   const finish=()=>{
     if(!refineAnim)return;
     cancelAnimationFrame(refineAnim.raf);refineAnim=null;
-    const ok=valid();restore();
-    if(!ok){render();return;}
-    C.act('neaten handwriting',()=>putRefined(now,saved),()=>putRefined(orig,saved));
+    if(!valid()){render();return;}
+    C.act('neaten handwriting',()=>putRefined(now,saved,orig),()=>putRefined(orig,saved,now));
     let low=0;for(const o of now.values())low=Math.max(low,o.bbox[3]);C.growDoc(low);after();
   };
   const tick=time=>{
     if(!valid()){finish();return;}
     const t=Math.min(1,(time-start)/240),ease=1-(1-t)**3;
-    geometryRev++;
     for(const [id,o] of orig){
       const ref=refs.get(id),end=now.get(id),p=o.pts.map((v,i)=>v+(end.pts[i]-v)*ease);
-      ref.st.pts=p;ref.st.bbox=bboxOf(p);ref.preview=p;
+      ref.frame={...ref.st,pts:p,bbox:bboxOf(p)};
     }
     render();
     if(t===1)finish();else refineAnim.raf=requestAnimationFrame(tick);
   };
-  refineAnim={finish,raf:0};
+  refineAnim={finish,refs,raf:0};
   if(C.reducedMotion())finish();else refineAnim.raf=requestAnimationFrame(tick);
 }
 
@@ -5840,6 +5843,7 @@ cInk.addEventListener('lostpointercapture', ev=>{ if(pointers.has(ev.pointerId))
 window.addEventListener('pointerup', ev=>{ if(pointers.has(ev.pointerId)) endPointer(ev); });
 window.addEventListener('pointercancel', ev=>{ if(pointers.has(ev.pointerId)) endPointer(ev); });
 function finishInput(){
+  if(refineAnim)refineAnim.finish();
   commitStroke();abandonGesture();flush();pointers.clear();activeId=null;notesSwipe=null;
   tapImage=null;tapChip=null;stopCoast();clearLive();
 }

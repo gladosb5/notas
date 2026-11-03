@@ -23,6 +23,7 @@ Keep the same address and browser profile to return to your notes. Export import
 - A short first-visit intro, written in nota's hand, that can be replayed from the menu.
 - English, Malay (Bahasa Melayu) and Chinese (简体中文): chosen on the intro's first screen or in settings, for the whole app and nota's answers. The words are in `i18n/catalogue.json`; `node scripts/build-i18n.mjs` builds them.
 - Local handwriting recognition, maths calculations, and Quick Maths insertion.
+- Optional handwriting neatening that keeps your strokes and writing style, with one-step undo.
 - Offline use after the app and required models have been cached.
 - Optional on-device image background removal; its larger model loads when needed.
 
@@ -42,6 +43,8 @@ Follow **[the deployment guide](deploy/cloudflare/README.md)** for setup, local 
 ## Development
 
 The text reader checks each handwriting line before background maths recognition. Plain text skips the formula decoder, and uncertain ink stays quiet. Handwritten maths shows the recognised equation and a **Solve** button for review, including expressions ending with an equals sign. It only calculates after **Solve** is pressed, and keeps the equation beside the answer. Text stays searchable.
+
+**Neaten handwriting** in settings gently levels newly written prose after the local reader recognises it. It evens letter size and lean, smooths curves, and closes only small returning loop gaps. Maths, existing notes, and ink received from collaborators are left alone. The setting is saved on this device; undo restores your original samples. Run `npm run test:ink-refine` for the pointer-input, saving, note-switching, and undo regressions. Geometry tests use synthetic handwriting and do not establish quality on real pen input.
 
 Run `npm run test:handwriting` for the routing and browser regressions. Set `NOTAS_IAM_CORPUS` to a local IAM image directory with `labels.json` to test the text gate on genuine handwriting. See [handwriting intent checks](HANDWRITING-INTENT.md) for results and limitations.
 
