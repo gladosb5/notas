@@ -27,18 +27,31 @@ function smoothPts(pts,strength=.65){
       out[k+2]=p[k+2]+.2*((p[k-1]+2*p[k+2]+p[k+5])/4-p[k+2]);
     }
   }
+  out=smoothCurves(out,strength);
   return out.map((v,i)=>round(v,i%3===2?100:10));
 }
 
-function wordMetrics(strokes,slope=0){
-  let l=Infinity,t=Infinity,r=-Infinity,b=-Infinity;
-  for(const st of strokes)for(let i=0;i<st.pts.length;i+=3){const x=st.pts[i],y=st.pts[i+1];l=Math.min(l,x);r=Math.max(r,x);t=Math.min(t,y);b=Math.max(b,y);}
-  if(!Number.isFinite(l))return null;
-  const cx=(l+r)/2,paths=strokes.map(st=>{
-    const p=[];for(let i=0;i<st.pts.length;i+=3)p.push([st.pts[i],st.pts[i+1]-slope*(st.pts[i]-cx)]);return p;
-  });
-  const ys=paths.flat().map(p=>p[1]),top=Math.min(...ys),bottom=Math.max(...ys),height=Math.max(1,bottom-top);
-  const hysteresis=Math.max(2,height*.14),tops=[],bottoms=[];
+// Give sustained gentle bends a little more smoothing, leaving corners alone.
+function smoothCurves(pts,strength){
+  let out=pts;const n=pts.length/3;
+  const bend=(p,i)=>{
+    const a=(i-3)*3,k=i*3,b=(i+3)*3,ux=p[k]-p[a],uy=p[k+1]-p[a+1],vx=p[b]-p[k],vy=p[b+1]-p[k+1];
+    return Math.atan2(ux*vy-uy*vx,ux*vx+uy*vy);
+  };
+  for(let pass=0;pass<2;pass++){
+    const p=out;out=p.slice();
+    for(let i=5;i<n-5;i++){
+      const turns=[-2,-1,0,1,2].map(j=>bend(p,i+j)),sign=Math.sign(turns[2]);
+      if(!sign||turns.some(t=>t*sign<.02||Math.abs(t)>.65))continue;
+      const k=i*3,alpha=strength*.5;
+      for(let j=0;j<2;j++)out[k+j]+=alpha*((p[k-3+j]+2*p[k+j]+p[k+3+j])/4-p[k+j]);
+    }
+  }
+  return out;
+}
+
+function turningPoints(paths,hysteresis){
+  const tops=[],bottoms=[];
   for(const p of paths){
     if(p.length<2)continue;
     let hi=p[0],lo=p[0],direction=0;
@@ -49,6 +62,18 @@ function wordMetrics(strokes,slope=0){
     }
     if(direction>0)bottoms.push(lo);else if(direction<0)tops.push(hi);
   }
+  return {tops,bottoms};
+}
+
+function wordMetrics(strokes,slope=0){
+  let l=Infinity,t=Infinity,r=-Infinity,b=-Infinity;
+  for(const st of strokes)for(let i=0;i<st.pts.length;i+=3){const x=st.pts[i],y=st.pts[i+1];l=Math.min(l,x);r=Math.max(r,x);t=Math.min(t,y);b=Math.max(b,y);}
+  if(!Number.isFinite(l))return null;
+  const cx=(l+r)/2,paths=strokes.map(st=>{
+    const p=[];for(let i=0;i<st.pts.length;i+=3)p.push([st.pts[i],st.pts[i+1]-slope*(st.pts[i]-cx)]);return p;
+  });
+  const ys=paths.flat().map(p=>p[1]),top=Math.min(...ys),bottom=Math.max(...ys),height=Math.max(1,bottom-top);
+  const {tops,bottoms}=turningPoints(paths,Math.max(2,height*.14));
   const reliable=tops.length>=2&&bottoms.length>=2;
   const baseline=reliable?median(bottoms.map(p=>p[1])):bottom;
   const midline=reliable?quantile(tops.map(p=>p[1]),.65):top;
@@ -73,9 +98,8 @@ function fitLine(points,core){
   return {slope,intercept};
 }
 
-function splitWords(strokes){
-  const m=wordMetrics(strokes);if(!m)return [];
-  const {slope}=fitLine(m.bottoms,m.core),core=wordMetrics(strokes,slope).core,c=1/Math.hypot(1,slope);
+function strokeBlobs(strokes,slope,core){
+  const c=1/Math.hypot(1,slope);
   const intervals=strokes.map((st,index)=>{
     let l=Infinity,r=-Infinity;
     for(let i=0;i<st.pts.length;i+=3){const x=(st.pts[i]+slope*st.pts[i+1])*c;l=Math.min(l,x);r=Math.max(r,x);}
@@ -88,6 +112,12 @@ function splitWords(strokes){
     if(last&&p.l-last.r<=core*.12){last.r=Math.max(last.r,p.r);last.items.push(p);}
     else blobs.push({l:p.l,r:p.r,items:[p]});
   }
+  return blobs;
+}
+
+function splitWords(strokes){
+  const m=wordMetrics(strokes);if(!m)return [];
+  const {slope}=fitLine(m.bottoms,m.core),core=wordMetrics(strokes,slope).core,blobs=strokeBlobs(strokes,slope,core);
   const letterGaps=[];
   for(let i=1;i<blobs.length;i++){
     const a=blobs[i-1],b=blobs[i],gap=b.l-a.r;
@@ -101,6 +131,113 @@ function splitWords(strokes){
     items.push(...blobs[i].items);
   }
   flush();return words;
+}
+
+// Trust body turns near the word's writing band, not dots or tall stems alone.
+function letterMetrics(strokes,m,slope){
+  const paths=strokes.map(st=>{
+    const p=[];for(let i=0;i<st.pts.length;i+=3)p.push([st.pts[i],st.pts[i+1]-slope*(st.pts[i]-m.cx)]);return p;
+  }).filter(p=>{
+    const ys=p.map(q=>q[1]),top=Math.min(...ys),bottom=Math.max(...ys);
+    return bottom-top>=m.core*.5&&top<m.baseline-m.core*.3&&bottom>m.midline+m.core*.3;
+  });
+  const {tops,bottoms}=turningPoints(paths,Math.max(2,m.core*.14));
+  const closed=paths.some(p=>p.length>8&&Math.hypot(p[0][0]-p.at(-1)[0],p[0][1]-p.at(-1)[1])<m.core*.2);
+  if(!tops.length||!bottoms.length||(!closed&&tops.length<2&&bottoms.length<2))return null;
+  const support=p=>bottoms.filter(q=>Math.abs(q[1]-p[1])<m.core*.18).length;
+  const foot=bottoms.slice().sort((a,b)=>support(b)-support(a)||Math.abs(a[1]-m.baseline)-Math.abs(b[1]-m.baseline))[0];
+  const base=median(bottoms.filter(p=>Math.abs(p[1]-foot[1])<m.core*.18).map(p=>p[1]));
+  const top=tops.slice().sort((a,b)=>Math.abs(a[1]-(base-m.core))-Math.abs(b[1]-(base-m.core)))[0][1],core=base-top;
+  if(Math.abs(base-m.baseline)>m.core*.7||core<m.core*.6||core>m.core*1.6)return null;
+  return {baseline:base,core};
+}
+
+// Settle separate letter bodies; detached marks follow their nearest body.
+function evenLetters(strokes,slope){
+  const m=wordMetrics(strokes,slope);if(!m?.reliable)return;
+  m.core=m.baseline-m.midline;
+  if(m.core<2)return;
+  const blobs=strokeBlobs(strokes,slope,m.core).map(b=>({...b,m:letterMetrics(b.items.map(p=>p.st),m,slope)}));
+  const bodies=blobs.filter(b=>b.m&&b.r-b.l<=m.core*3);
+  if(bodies.length<2)return;
+  for(const b of blobs)if(!b.m&&b.items.every(({st})=>{
+    const ys=[];for(let i=0;i<st.pts.length;i+=3)ys.push(st.pts[i+1]-slope*(st.pts[i]-m.cx));
+    const top=Math.min(...ys),bottom=Math.max(...ys);
+    return bottom-top<m.core*.45||bottom<m.midline+m.core*.15||top>m.baseline-m.core*.15;
+  })){
+    const nearest=bodies.slice().sort((a,c)=>Math.max(0,a.l-b.r,b.l-a.r)-Math.max(0,c.l-b.r,b.l-c.r))[0];
+    if(nearest&&Math.max(0,nearest.l-b.r,b.l-nearest.r)<m.core*.75)nearest.items.push(...b.items);
+  }
+  for(const b of bodies){
+    const scale=clamp(1+.65*(m.core/b.m.core-1),.88,1.12),dy=clamp((m.baseline-b.m.baseline)*.65,-m.core*.35,m.core*.35);
+    for(const {st} of b.items)for(let i=0;i<st.pts.length;i+=3){
+      const y=st.pts[i+1]-slope*(st.pts[i]-m.cx);
+      st.pts[i+1]+=dy+(y-b.m.baseline)*(scale-1);
+    }
+  }
+}
+
+// Long, straight, near-vertical runs tell us the writer's lean along the line.
+function wordSlant(strokes,slope,core){
+  const samples=[],c=1/Math.hypot(1,slope);let weight=0;
+  for(const st of strokes){
+    const p=st.pts;let start=0,length=0;
+    for(let i=3;i<p.length;i+=3){
+      length+=Math.hypot(p[i]-p[i-3],p[i+1]-p[i-2]);
+      if(length<core*.6)continue;
+      const dx=(p[i]-p[start]+slope*(p[i+1]-p[start+1]))*c,dy=(p[i+1]-p[start+1]-slope*(p[i]-p[start]))*c;
+      if(Math.abs(dy)>core*.5&&Math.abs(dx)<Math.abs(dy)*.6&&Math.hypot(dx,dy)>length*.985){
+        samples.push({angle:Math.atan(dx/dy),weight:Math.abs(dy)});weight+=Math.abs(dy);
+      }
+      start=i;length=0;
+    }
+  }
+  if(weight<core*1.2)return null;
+  samples.sort((a,b)=>a.angle-b.angle);let sum=0;
+  for(const sample of samples){sum+=sample.weight;if(sum>=weight/2)return sample.angle;}
+  return null;
+}
+
+// Shear around the baseline toward the line's own lean, never toward upright.
+function matchSlant(strokes,slope,baseline,cx,slant,target){
+  if(slant===null||target===null)return;
+  const angle=slant+clamp((target-slant)*.65,-Math.PI/22.5,Math.PI/22.5),shear=Math.tan(angle)-Math.tan(slant),c=1/Math.hypot(1,slope);
+  for(const st of strokes)for(let i=0;i<st.pts.length;i+=3){
+    const y=(st.pts[i+1]-baseline-slope*(st.pts[i]-cx))*c,dx=shear*y*c;
+    st.pts[i]+=dx;st.pts[i+1]+=slope*dx;
+  }
+}
+
+// Ease a tiny returning loop gap shut, only after a full letter-sized turn.
+function closeLoop(pts,core){
+  const n=pts.length/3;if(n<10)return;
+  const end=(n-1)*3;let length=0,best=null;
+  for(let i=n-2;i>=0;i--){
+    const k=i*3;length+=Math.hypot(pts[k+3]-pts[k],pts[k+4]-pts[k+1]);
+    const gap=Math.hypot(pts[end]-pts[k],pts[end+1]-pts[k+1]);
+    if(length<core*2||length>core*9||gap>core*.18||best&&gap>=best.gap)continue;
+    let l=Infinity,r=-Infinity,t=Infinity,b=-Infinity,area=0,turn=0;
+    for(let j=k;j<=end;j+=3){
+      l=Math.min(l,pts[j]);r=Math.max(r,pts[j]);t=Math.min(t,pts[j+1]);b=Math.max(b,pts[j+1]);
+      if(j<end)area+=pts[j]*pts[j+4]-pts[j+3]*pts[j+1];
+      if(j>k&&j<end){
+        const ux=pts[j]-pts[j-3],uy=pts[j+1]-pts[j-2],vx=pts[j+3]-pts[j],vy=pts[j+4]-pts[j+1];
+        turn+=Math.atan2(ux*vy-uy*vx,ux*vx+uy*vy);
+      }
+    }
+    area+=pts[end]*pts[k+1]-pts[k]*pts[end+1];
+    const w=r-l,h=b-t;
+    if(Math.min(w,h)<core*.45||Math.max(w,h)>core*2.5||gap>Math.min(w,h)*.16||Math.abs(area)/2<w*h*.45||Math.abs(turn)<Math.PI*1.65)continue;
+    best={k,gap};
+  }
+  if(!best||best.gap<.05)return;
+  const dx=pts[best.k]-pts[end],dy=pts[best.k+1]-pts[end+1],reach=core*.6;let distance=0,nextX=pts[end],nextY=pts[end+1];
+  for(let i=end;i>best.k;i-=3){
+    if(i<end)distance+=Math.hypot(nextX-pts[i],nextY-pts[i+1]);
+    nextX=pts[i];nextY=pts[i+1];
+    if(distance>=reach)break;
+    const t=1-distance/reach,ease=t*t*(3-2*t);pts[i]+=dx*ease;pts[i+1]+=dy*ease;
+  }
 }
 
 // Flat strokes are split at spaces; nested arrays already name the words.
@@ -124,6 +261,8 @@ function refineLine(line,freshIds,opts={}){
     target={slope,intercept:fitted.intercept+(fitted.slope-slope)*centre};
   }
   const targetCore=median(anchors.map(e=>e.m.core)),plans=new Map();
+  for(const e of entries)e.slant=wordSlant(e.strokes,fitted.slope,e.m.core);
+  const slants=entries.map(e=>e.slant).filter(v=>v!==null),targetSlant=slants.length?median(slants):null;
   for(const e of fresh){
     const m=e.m,dy=target.slope*m.cx+target.intercept-m.baseline;
     // A long sloping line can move far when levelled; only stray words stay put.
@@ -143,13 +282,23 @@ function refineLine(line,freshIds,opts={}){
   const result=new Map();let largest=0;
   for(const [e,plan] of plans){
     const m=e.m,c=Math.cos(plan.rotate),s=Math.sin(plan.rotate);
-    for(const st of e.strokes){
+    const strokes=e.strokes.map(st=>{
       const pts=smoothPts(st.pts,opts.strength??.65);
       for(let i=0;i<pts.length;i+=3){
         const x=(pts[i]-m.cx)*plan.scale,y=(pts[i+1]-m.baseline)*plan.scale;
-        pts[i]=round(m.cx+x*c-y*s,10);pts[i+1]=round(m.baseline+plan.dy+x*s+y*c,10);
-        largest=Math.max(largest,Math.hypot(pts[i]-st.pts[i],pts[i+1]-st.pts[i+1]));
+        pts[i]=m.cx+x*c-y*s;pts[i+1]=m.baseline+plan.dy+x*s+y*c;
       }
+      return {...st,pts};
+    });
+    const slope=Math.tan(angle+plan.rotate),baseline=m.baseline+plan.dy;
+    evenLetters(strokes,slope);
+    matchSlant(strokes,slope,baseline,m.cx,e.slant,targetSlant);
+    for(let j=0;j<strokes.length;j++){
+      const st=e.strokes[j],pts=strokes[j].pts;closeLoop(pts,m.core*plan.scale);
+      for(let i=0;i<pts.length;i++){
+        pts[i]=round(pts[i],i%3===2?100:10);
+      }
+      for(let i=0;i<pts.length;i+=3)largest=Math.max(largest,Math.hypot(pts[i]-st.pts[i],pts[i+1]-st.pts[i+1]));
       if(pts.some((v,i)=>v!==st.pts[i]))result.set(st.id,pts);
     }
   }

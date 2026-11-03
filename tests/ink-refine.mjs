@@ -7,7 +7,7 @@ import fixtures from './fixtures/ink-refine.cjs';
 import refine from '../ink-refine.js';
 
 const server=await startServer(0),browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
-const errors=[],words=fixtures.writing(['the','quick','fox'],{x:45,y:230,tilt:6,wobble:[-3,5,-3],scales:[.9,1.12,.95],jitter:1});
+const errors=[],words=fixtures.writing(['the','quick','fox'],{x:45,y:230,tilt:6,wobble:[-3,5,-3],scales:[.9,1.12,.95],jitter:1,letterWobble:[[-1,1,0],[1,-1,1,-1,0],[-1,1,-1]],letterScales:[[.96,1.04,1],[1.04,.96,1.03,.97,1],[.96,1.04,1]]});
 const points=page=>page.evaluate(()=>N.core.S.strokes.map(st=>({id:st.id,pts:st.pts})));
 function baselineStats(strokes,wordIds){
   const byId=new Map(strokes.map(st=>[st.id,st]));

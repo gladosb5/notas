@@ -100,3 +100,121 @@ test('smoothing quiets jitter while keeping endpoints and v/z corners',()=>{
     for(const i of corners)assert.ok(Math.hypot(out[i*3]-pts[i*3],out[i*3+1]-pts[i*3+1])<.2,'sharp '+text+' corner');
   }
 });
+
+// Boundaries and straight stem endpoints come from the fixture's glyph paths.
+const {letterGroups}=require('./fixtures/ink-refine.cjs');
+const bodyStats=(word,text)=>letterGroups(word,text).map(letter=>{
+  const ys=letter.flatMap(st=>st.pts.filter((_,i)=>i%3===1));
+  return {baseline:Math.max(...ys),core:Math.max(...ys)-Math.min(...ys)};
+});
+const stemSlants=(words,angle=0)=>words.map(word=>{
+  const slope=Math.tan(angle*Math.PI/180);
+  return word.reduce((sum,st)=>{
+    const dx=st.pts.at(-3)-st.pts[0],dy=st.pts.at(-2)-st.pts[1];
+    return sum+Math.atan((dx+slope*dy)/(dy-slope*dx))*180/Math.PI;
+  },0)/word.length;
+});
+const endpointGap=st=>Math.hypot(st.pts[0]-st.pts.at(-3),st.pts[1]-st.pts.at(-2));
+
+test('letter bodies settle their baselines and heights within a word',()=>{
+  const text='nnnnnn',words=writing([text],{letterWobble:[[-3,3,-2,2,-3,3]],letterScales:[[.85,1.15,.94,1.06,.9,1.1]]});
+  const before=bodyStats(words[0],text),map=refineLine(words,ids(words)),after=bodyStats(apply(words,map)[0],text);
+  const baselineBefore=spread(before.map(m=>m.baseline)),baselineAfter=spread(after.map(m=>m.baseline));
+  const coreBefore=spread(before.map(m=>m.core)),coreAfter=spread(after.map(m=>m.core));
+  console.log('Letter spreads:',JSON.stringify({baselineBefore,baselineAfter,coreBefore,coreAfter}));
+  assert.ok(baselineAfter<baselineBefore*.6,'letter baselines improve by more than 40%');
+  assert.ok(coreAfter<coreBefore,'letter core heights converge');
+  assert.deepEqual(refineLine(words,ids(words)),map);
+  for(const st of words.flat())assert.equal(map.get(st.id).length,st.pts.length);
+});
+
+test('word slants converge toward the writer median within the eight-degree clamp',()=>{
+  const words=writing(['llll','llll','llll','llll'],{shears:[-14,4,18,8]});
+  const before=stemSlants(words),map=refineLine(words,ids(words)),after=stemSlants(apply(words,map));
+  console.log('Word slants:',JSON.stringify({before,after,spreadBefore:spread(before),spreadAfter:spread(after)}));
+  assert.ok(spread(after)<spread(before)*.6);
+  for(let i=0;i<before.length;i++)assert.ok(Math.abs(after[i]-before[i])<8.5,'bounded shear change');
+  const fresh=new Set(words[0].map(st=>st.id)),partial=refineLine(words,fresh);
+  for(const st of words.slice(1).flat())assert.ok(!partial?.has(st.id),'settled slants stay untouched');
+});
+
+test('uniform lean survives on horizontal and deliberately tilted lines',()=>{
+  for(const angle of [0,20]){
+    const words=writing(['llll','llll','llll'],{shears:[14,14,14],wobble:[-2,3,-2]}),c=Math.cos(angle*Math.PI/180),s=Math.sin(angle*Math.PI/180);
+    for(const st of words.flat())for(let i=0;i<st.pts.length;i+=3){
+      const x=st.pts[i],y=st.pts[i+1]-180;st.pts[i]=x*c-y*s;st.pts[i+1]=180+x*s+y*c;
+    }
+    const map=refineLine(words,ids(words));assert.ok(map,'alignment runs while the lean stays intact');
+    const before=stemSlants(words,angle),after=stemSlants(apply(words,map),angle);
+    console.log('Uniform lean:',JSON.stringify({lineAngle:angle,before,after}));
+    for(let i=0;i<before.length;i++)assert.ok(Math.abs(after[i]-before[i])<1,'uniform lean stays within one degree');
+  }
+});
+
+test('tiny returning loop gaps close while open letters and larger gaps stay open',()=>{
+  const words=writing(['o']);words[0][0].pts.splice(-3);
+  const before=endpointGap(words[0][0]),map=refineLine(words,ids(words)),after=endpointGap(apply(words,map)[0][0]);
+  console.log('Loop gap:',JSON.stringify({before,after}));
+  assert.ok(after<before*.3,'tiny gap closes by more than 70%');
+  for(const text of ['c','u','n']){
+    const open=writing([text]),out=apply(open,refineLine(open,ids(open)));
+    for(let i=0;i<open[0].length;i++)assert.ok(Math.abs(endpointGap(open[0][i])-endpointGap(out[0][i]))<.15,text+' stays open');
+  }
+  const open=writing(['o']);open[0][0].pts.splice(-18);
+  assert.ok(endpointGap(open[0][0])>4);
+  assert.ok(Math.abs(endpointGap(apply(open,refineLine(open,ids(open)))[0][0])-endpointGap(open[0][0]))<.15,'a larger opening stays open');
+  const closed=writing(['o']);assert.equal(endpointGap(apply(closed,refineLine(closed,ids(closed)))[0][0]),0,'closed loops stay closed');
+});
+
+test('a loop may return to an interior point after a lead-in',()=>{
+  const words=writing(['o']),st=words[0][0];st.pts.splice(-3);
+  st.pts.unshift(st.pts[0]-5,st.pts[1]-4,.5);
+  const map=refineLine(words,ids(words),{strength:0}),out=apply(words,map)[0][0];
+  assert.ok(Math.hypot(out.pts[3]-out.pts.at(-3),out.pts[4]-out.pts.at(-2))<.2);
+  assert.ok(endpointGap(out)>5,'the lead-in is not pulled into the loop');
+  assert.equal(out.pts.length,st.pts.length);
+});
+
+function curvatureVariance(pts){
+  const values=[];
+  for(let i=3;i<pts.length-3;i+=3){
+    const ux=pts[i]-pts[i-3],uy=pts[i+1]-pts[i-2],vx=pts[i+3]-pts[i],vy=pts[i+4]-pts[i+1];
+    values.push(Math.atan2(ux*vy-uy*vx,ux*vx+uy*vy)/((Math.hypot(ux,uy)+Math.hypot(vx,vy))/2||1));
+  }
+  const mean=values.reduce((sum,v)=>sum+v,0)/values.length;
+  return values.reduce((sum,v)=>sum+(v-mean)**2,0)/values.length;
+}
+
+test('curved handwriting loses curvature noise without losing its outline',()=>{
+  const pts=writing(['o'],{jitter:.7})[0][0].pts,out=smoothPts(pts),before=curvatureVariance(pts),after=curvatureVariance(out);
+  console.log('Curve variance:',JSON.stringify({before,after}));
+  assert.ok(after<before*.5,'curvature noise falls by more than half');
+  for(let i=0;i<pts.length;i+=3)assert.ok(Math.hypot(out[i]-pts[i],out[i+1]-pts[i+1])<.7,'subtle point movement');
+  assert.deepEqual(out.slice(0,3),pts.slice(0,3));assert.deepEqual(out.slice(-3),pts.slice(-3));
+});
+
+function affinePoint(source,target,triangle,point){
+  const [a,b,c]=triangle,ux=source[b]-source[a],uy=source[b+1]-source[a+1],vx=source[c]-source[a],vy=source[c+1]-source[a+1];
+  const x=source[point]-source[a],y=source[point+1]-source[a+1],det=ux*vy-uy*vx,u=(x*vy-y*vx)/det,v=(ux*y-uy*x)/det;
+  return [target[a]+u*(target[b]-target[a])+v*(target[c]-target[a]),target[a+1]+u*(target[b+1]-target[a+1])+v*(target[c+1]-target[a+1])];
+}
+
+test('joined cursive blobs keep one word transform instead of stretching individual letters',()=>{
+  const word=writing(['nnnnnn'],{letterWobble:[[-3,3,-2,2,-3,3]],letterScales:[[.85,1.15,.94,1.06,.9,1.1]]})[0];
+  const pts=word.flatMap(st=>st.pts),words=[[{id:'joined',pts,w:2}]],out=apply(words,refineLine(words,ids(words),{strength:0}))[0][0].pts;
+  const triangle=[0,word[0].pts.length-3,pts.length-3];
+  for(let i=0;i<pts.length;i+=3){
+    const [x,y]=affinePoint(pts,out,triangle,i);
+    assert.ok(Math.hypot(out[i]-x,out[i+1]-y)<.25,'one affine transform across the joined word');
+  }
+});
+
+test('detached dots follow their letter body instead of becoming short letters',()=>{
+  const words=writing(['nnnnnn'],{letterWobble:[[-3,3,-2,2,-3,3]],letterScales:[[.85,1.15,.94,1.06,.9,1.1]]});
+  const letter=letterGroups(words[0],'nnnnnn')[0],body=letter.flatMap(st=>st.pts),dot=[body[0]+4,Math.min(...body.filter((_,i)=>i%3===1))-5,.5];
+  words[0].push({id:'dot',w:2,pts:dot});
+  const map=refineLine(words,ids(words),{strength:0}),out=apply(words,map)[0],target=out.slice(0,2).flatMap(st=>st.pts);
+  const [x,y]=affinePoint([...body,...dot],[...target,...out.at(-1).pts],[0,letter[0].pts.length-3,body.length-3],body.length);
+  assert.ok(Math.hypot(out.at(-1).pts[0]-x,out.at(-1).pts[1]-y)<.25,'dot shares the body transform');
+  assert.ok(Math.abs(out.at(-1).pts[1]-dot[1])>.6,'the perturbed letter and dot actually move');
+});
