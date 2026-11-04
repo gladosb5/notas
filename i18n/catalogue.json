@@ -1536,9 +1536,9 @@
    "zh": "手写内容在此设备上识别。检查识别出的方程式，再点按“求解”，答案就会写在旁边。模型只需下载一次，之后可以离线使用。"
   },
   {
-   "en": "a local text recogniser powers handwriting search and helps keep variable names. it never changes your ink.",
-   "ms": "pengecam teks setempat membolehkan carian tulisan tangan dan membantu mengekalkan nama pemboleh ubah. ia tidak mengubah dakwat kamu.",
-   "zh": "本地文字识别器支持搜索手写内容，并帮助保留变量名称。它不会改动你的笔迹。"
+   "en": "a local text recogniser powers handwriting search and helps keep variable names. neaten handwriting uses its readings to tidy new words.",
+   "ms": "pengecam teks setempat membolehkan carian tulisan tangan dan membantu mengekalkan nama pemboleh ubah. kemaskan tulisan tangan menggunakan bacaannya untuk mengemas perkataan baharu.",
+   "zh": "本地文字识别器支持手写搜索，并帮助保留变量名。整理手写会根据识别结果整理新写的文字。"
   },
   {
    "en": "maths hints use local rules for arithmetic and linear equations.",
@@ -4454,6 +4454,16 @@
    "en": "the font could not be saved.",
    "ms": "fon gagal disimpan.",
    "zh": "无法保存字体。"
+  },
+  {
+   "en": "neaten handwriting",
+   "ms": "kemaskan tulisan tangan",
+   "zh": "整理手写"
+  },
+  {
+   "en": "neaten handwriting levels a line you write and evens out its size once it is read as words, keeping your own hand. maths and drawings stay as drawn, and undo puts the line back as you wrote it.",
+   "ms": "kemaskan tulisan tangan meluruskan baris yang kamu tulis dan menyeragamkan sedikit saiznya setelah dibaca sebagai perkataan, sambil mengekalkan gaya tulisan kamu. matematik dan lukisan kekal seperti dilukis, dan buat asal mengembalikan baris seperti yang kamu tulis.",
+   "zh": "整理手写会在识别出文字后，将你写的一行文字调平并稍微统一大小，同时保留你的笔迹。数学和绘图保持原样，撤销可将这一行恢复为你原来写的样子。"
   }
  ],
  "extra": {

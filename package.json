@@ -4,7 +4,7 @@
   "scripts": {
     "pretest": "node scripts/model-contract.mjs --check",
     "start": "node scripts/serve.mjs",
-    "test": "node --test tests/audit-report.test.cjs tests/local.test.cjs tests/math-notes.test.cjs tests/handwriting-intent.test.cjs tests/ink-timing.test.cjs tests/ink-decode.test.cjs tests/ink-offline.test.cjs tests/no-fast-production.test.mjs tests/slide-surface.test.cjs tests/math-edge-cases.test.cjs tests/workers-edge.test.mjs tests/background-runtime.test.mjs tests/memory-recovery.test.mjs tests/collab-usage.test.mjs tests/diagram.test.cjs tests/nota-body.test.mjs tests/nota-proxy.test.mjs",
+    "test": "node --test tests/audit-report.test.cjs tests/local.test.cjs tests/math-notes.test.cjs tests/handwriting-intent.test.cjs tests/ink-timing.test.cjs tests/ink-decode.test.cjs tests/ink-offline.test.cjs tests/no-fast-production.test.mjs tests/slide-surface.test.cjs tests/ink-refine.test.cjs tests/math-edge-cases.test.cjs tests/workers-edge.test.mjs tests/background-runtime.test.mjs tests/memory-recovery.test.mjs tests/collab-usage.test.mjs tests/diagram.test.cjs tests/nota-body.test.mjs tests/nota-proxy.test.mjs",
     "test:nota-replay": "node tests/nota-replay.mjs",
     "test:app-install": "node tests/app-install.mjs && node tests/shared-launch.mjs",
     "test:app-update": "node tests/hold-update.mjs && node tests/update-screen.mjs && node tests/app-update.mjs",
@@ -26,7 +26,7 @@
     "build:collab": "node scripts/build-collab.mjs",
     "test:autocrop": "node tests/cutout-autocrop.mjs",
     "deploy": "npm --prefix deploy/cloudflare run deploy",
-    "test:edges": "node tests/storage-edges.mjs && node tests/tutor-edges.mjs && node tests/nota-writing.mjs && node tests/nota-model-routing.mjs && node tests/nota-tools.mjs && node tests/nota-format.mjs && node tests/ink-tools.mjs",
+    "test:edges": "node tests/storage-edges.mjs && node tests/tutor-edges.mjs && node tests/nota-writing.mjs && node tests/nota-model-routing.mjs && node tests/nota-tools.mjs && node tests/nota-format.mjs && node tests/ink-tools.mjs && node tests/ink-refine.mjs",
     "test:handwriting": "node scripts/model-contract.mjs --check && node --test tests/handwriting-intent.test.cjs && node tests/handwriting-intent.mjs",
     "test:audit-report": "node scripts/model-contract.mjs --check && node --test tests/audit-report.test.cjs tests/collab-usage.test.mjs tests/ink-offline.test.cjs tests/memory-recovery.test.mjs tests/nota-proxy.test.mjs && node tests/audit-report-browser.mjs",
     "assets:pdf": "node scripts/prepare-pdf-assets.mjs",
@@ -34,6 +34,7 @@
     "test:tutorial": "node tests/tutorial.mjs",
     "test:image-paste": "node tests/image-paste.mjs",
     "test:share-qr": "node tests/share-qr.mjs",
+    "test:ink-refine": "node tests/ink-refine.mjs",
     "test:eraser-trail": "node tests/eraser-trail.mjs"
   },
   "devDependencies": {
