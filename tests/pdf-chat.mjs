@@ -1,0 +1,96 @@
+import {chromium} from 'playwright';
+import {PDFDocument,StandardFonts} from 'pdf-lib';
+import assert from 'node:assert/strict';
+import {mkdir} from 'node:fs/promises';
+import {startServer} from '../scripts/serve.mjs';
+
+const doc=await PDFDocument.create(),font=await doc.embedFont(StandardFonts.Helvetica),page1=doc.addPage([595,842]);
+page1.drawText('Photosynthesis',{x:45,y:770,size:30,font});
+page1.drawText('Plants turn light energy into chemical energy.',{x:45,y:715,size:17,font});
+page1.drawText('Water and carbon dioxide are used to make glucose.',{x:45,y:670,size:17,font});
+page1.drawText('Chlorophyll absorbs sunlight inside the leaf.',{x:45,y:625,size:17,font});
+doc.addPage([595,842]).drawText('Oxygen is released through the stomata.',{x:45,y:720,size:17,font});
+const bytes=[...await doc.save()],server=await startServer(0),browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL||'msedge',headless:true});
+await mkdir('test-results/pdf-chat',{recursive:true});
+try{
+  const context=await browser.newContext({viewport:{width:1366,height:768},serviceWorkers:'block'}),page=await context.newPage(),errors=[];
+  page.on('pageerror',e=>errors.push(e.message));
+  await page.goto(`http://127.0.0.1:${server.address().port}/notas.html`);
+  await page.waitForFunction(()=>window.N?.core?.S.id&&N.pdf&&N.ui);
+  await page.evaluate(()=>{N.tutorial.finish(false);document.getElementById('preparing').classList.add('done');N.core.S.settings.aiOn=false;N.ai.toggle();});
+  assert.equal(await page.evaluate(async b=>{const ok=await N.pdf.importFile(new File([new Uint8Array(b)],'Biology.pdf',{type:'application/pdf'}));N.ink.setTool('text');return ok;},bytes),true);
+  await page.evaluate(()=>{
+    window.chatCalls=[];
+    N.nota.askText=async(q,context,on)=>{chatCalls.push({q,context});const answer=chatCalls.length===1?'Light supplies the energy; glucose stores it.':'The earlier explanation is about stored chemical energy.';on(answer);return answer;};
+  });
+  const select=async text=>{
+    const span=page.locator('#pdf-tl .textLayer span',{hasText:text});await span.waitFor();const r=await span.boundingBox();
+    await page.mouse.move(r.x+1,r.y+r.height/2);await page.mouse.down();await page.mouse.move(r.x+r.width-1,r.y+r.height/2,{steps:10});await page.mouse.up();
+    await page.locator('#pdf-ask-chip').waitFor({state:'visible'});
+  };
+  await select('Plants turn');await page.locator('#pdf-ask-chip').click();await page.waitForTimeout(500);
+  assert.equal(await page.locator('#pdf-ask-quote').count(),0,'no selection summary inside chat');
+  assert.equal(await page.locator('#pdf-ask .ph-sparkle,#pdf-ask-chip .ph-sparkle').count(),0,'no sparkle icons');
+  const bounds=await page.locator('#pdf-ask').boundingBox();assert.ok(bounds.width>=470&&bounds.height>600,'roomy stable panel');
+  await page.locator('#pdf-ask-input').fill('Explain this simply.');await page.keyboard.press('Enter');
+  await page.waitForFunction(()=>document.getElementById('pdf-ask').getAttribute('aria-busy')==='false');
+  assert.equal(await page.locator('#pdf-ask-reply').textContent(),'Light supplies the energy; glucose stores it.');
+  await page.locator('#pdf-ask-input').fill('Why is that?');await page.keyboard.press('Enter');
+  await page.waitForFunction(()=>window.chatCalls.length===2&&document.getElementById('pdf-ask').getAttribute('aria-busy')==='false');
+  assert.match(await page.evaluate(()=>chatCalls[1].q),/Explain this simply[\s\S]*Light supplies the energy[\s\S]*Why is that/,'follow-up includes the earlier exchange');
+  assert.equal(await page.locator('.pdf-message').count(),4,'messages accumulate');
+
+  await page.locator('#pdf-ask-input').fill('My draft\nwith another line.');
+  const pinned=await page.locator('#pdf-context-highlight').innerHTML();
+  await page.locator('#pdf-tl .textLayer span',{hasText:'Photosynthesis'}).click();
+  assert.equal(await page.locator('#pdf-context-highlight').innerHTML(),pinned,'confirmed highlight survives paper clicks');
+  await select('Water and');
+  assert.equal(await page.locator('#pdf-context-highlight').innerHTML(),pinned,'new selection does not replace confirmed highlight');
+  await page.locator('#pdf-ask-chip').click();await page.waitForTimeout(400);
+  assert.notEqual(await page.locator('#pdf-context-highlight').innerHTML(),pinned,'confirmation changes the highlight');
+  assert.equal(await page.locator('#pdf-ask-input').inputValue(),'My draft\nwith another line.');
+  assert.equal(await page.locator('.pdf-message').count(),4);
+  await page.locator('#pdf-ask-input').fill('How are these connected?');await page.keyboard.press('Enter');
+  await page.waitForFunction(()=>chatCalls.length===3&&document.getElementById('pdf-ask').getAttribute('aria-busy')==='false');
+  assert.match(await page.evaluate(()=>chatCalls[2].q),/Plants turn[\s\S]*Water and carbon dioxide/,'confirmed passages are both model context');
+  await page.locator('#pdf-ask-input').fill('Keep this draft.');
+  await page.screenshot({path:'test-results/pdf-chat/desktop.png'});
+  await page.locator('#pdf-ask-close').click();await page.waitForTimeout(100);
+  const fading=await page.evaluate(()=>({panel:Number(getComputedStyle(document.getElementById('pdf-ask')).opacity),highlight:Number(document.getElementById('scroller').style.getPropertyValue('--pdf-context-opacity'))}));
+  assert.ok(fading.panel>0&&fading.panel<1&&Math.abs(fading.panel-fading.highlight)<.12,'highlight fades with the panel');
+  await page.locator('#pdf-ask').waitFor({state:'hidden'});assert.equal(await page.locator('#pdf-context-highlight span').count(),0);
+  await select('Water and');await page.locator('#pdf-ask-chip').click();await page.waitForTimeout(500);
+  assert.equal(await page.locator('#pdf-ask-input').inputValue(),'Keep this draft.');assert.equal(await page.locator('.pdf-message').count(),6);
+  await page.locator('#pdf-ask-expand').click();assert.equal(await page.locator('#pdf-ask-expand').getAttribute('aria-pressed'),'true');
+  await page.locator('#pdf-ask-expand').click();
+  await page.evaluate(()=>{document.documentElement.dataset.theme='dark';});
+  await page.waitForTimeout(350);await page.screenshot({path:'test-results/pdf-chat/dark.png'});
+  assert.equal(await page.locator('#pdf-ask').evaluate(el=>getComputedStyle(el).backdropFilter),'none','opaque readable panel');
+  await page.setViewportSize({width:390,height:844});await page.waitForTimeout(400);
+  const input=await page.locator('#pdf-ask-input').boundingBox();assert.ok(input.y+input.height<844);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  await page.screenshot({path:'test-results/pdf-chat/mobile.png'});
+
+  await page.evaluate(()=>{N.nota.askText=async(q,c,on)=>{on('A long answer for reading. '.repeat(700));await new Promise(resolve=>window.continueChat=resolve);on(' Final sentence.');};});
+  await page.locator('#pdf-ask-input').fill('A longer answer');await page.locator('#pdf-ask-send').click();
+  await page.waitForFunction(()=>typeof window.continueChat==='function'&&document.getElementById('pdf-ask-reply')?.textContent.length>1000);
+  await page.locator('#pdf-ask-messages').evaluate(el=>el.scrollTop=0);await page.waitForTimeout(80);
+  await page.evaluate(()=>window.continueChat());await page.waitForFunction(()=>document.getElementById('pdf-ask').getAttribute('aria-busy')==='false');
+  assert.ok(await page.locator('#pdf-ask-messages').evaluate(el=>el.scrollTop)<20,'streaming does not pull a reader back to the bottom');
+  assert.equal(await page.locator('#pdf-ask-latest').isVisible(),true);await page.locator('#pdf-ask-latest').click();
+  await page.evaluate(()=>{N.nota.askText=async()=>{throw Error('Connection failed. <img src=x onerror=alert(1)>');};});
+  await page.locator('#pdf-ask-input').fill('Try again');await page.locator('#pdf-ask-send').click();
+  await page.waitForFunction(()=>document.getElementById('pdf-ask').getAttribute('aria-busy')==='false');
+  assert.match(await page.locator('#pdf-ask-reply').textContent(),/Connection failed/);assert.equal(await page.locator('#pdf-ask-messages img').count(),0,'reply and error text cannot inject markup');
+
+  await page.evaluate(()=>{N.nota.askText=async(q,c,on,signal)=>{on('A partial answer.');await new Promise(resolve=>signal.addEventListener('abort',resolve,{once:true}));};});
+  await page.locator('#pdf-ask-input').fill('A slow request');await page.locator('#pdf-ask-send').click();
+  await page.waitForFunction(()=>document.getElementById('pdf-ask-reply')?.textContent==='A partial answer.');
+  await page.locator('#pdf-ask-send').click();await page.waitForFunction(()=>document.getElementById('pdf-ask').getAttribute('aria-busy')==='false');
+  assert.equal(await page.locator('#pdf-ask-reply').textContent(),'A partial answer.','stopping retains the partial reply');
+  await page.emulateMedia({reducedMotion:'reduce'});await page.locator('#pdf-ask-close').click();await page.locator('#pdf-ask').waitFor({state:'hidden'});
+  assert.equal(await page.locator('#pdf-context-highlight span').count(),0);
+  await page.evaluate(()=>N.ui.newNote());assert.equal(await page.locator('#pdf-ask').isVisible(),false);
+  assert.deepEqual(errors,[]);
+  console.log('PDF chat passed: real selection, confirmation, pinned line boxes, accumulated context, follow-ups, drafts, stop, themes, responsive layout and synchronized motion.');
+  await context.close();
+}finally{await browser.close();await new Promise(resolve=>server.close(resolve));}

@@ -137,7 +137,7 @@ try{
   assert.match(await page.evaluate(()=>window.asked.q),/Chapter 1[\s\S]*what is this\?/);
   assert.match(await page.evaluate(()=>window.asked.context),/Chapter 1/,'nota gets the page text as context');
   assert.equal(await page.evaluate(()=>N.core.S.lines.length+N.core.S.strokes.length),0,'nothing is written on the PDF');
-  await page.keyboard.press('Escape');assert.equal(await page.locator('#pdf-ask').isVisible(),false);
+  await page.keyboard.press('Escape');await page.locator('#pdf-ask').waitFor({state:'hidden'});assert.equal(await page.locator('#pdf-ask').isVisible(),false);
 
   // A PDF shared from Android: the service worker parks it, the page imports it.
   await page.evaluate(async data=>{const c=await caches.open('notas-shared');await c.put(new URL('./shared-pdf',location.href).href,new Response(new Blob([new Uint8Array(data)]),{headers:{'Content-Type':'application/pdf','X-File-Name':encodeURIComponent('shared notes.pdf')}}));},[...plain]);

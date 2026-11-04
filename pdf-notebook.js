@@ -52,26 +52,61 @@
     #pdf-outline{gap:2px;padding:4px 8px 12px}
     #pdf-pages #pdf-outline button{display:block;width:100%;height:auto;min-height:34px;padding:8px 8px 8px calc(8px + var(--depth,0) * 12px);text-align:left;font:400 13px/1.35 var(--ui);color:var(--graphite);border-radius:10px;overflow-wrap:anywhere}
     #pdf-pages #pdf-outline button[data-depth="0"]{font-weight:500}
-    #pdf-ask-chip{position:fixed;z-index:32;display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px 0 12px;border-radius:var(--r-pill);background:var(--graphite);color:var(--paper);font:500 13px var(--ui);box-shadow:var(--shadow)}
-    #pdf-ask-chip i{color:var(--nota,var(--red));font-size:15px}
-    #pdf-ask{position:fixed;z-index:33;left:50%;transform:translateX(-50%);bottom:calc(var(--edge) + var(--safe-b) + 122px);width:min(460px,calc(100vw - 16px));max-height:min(560px,calc(100vh - var(--bar) - 160px));box-sizing:border-box;display:flex;flex-direction:column;border-radius:var(--r-card);color:var(--graphite)}
-    #pdf-ask header{display:flex;align-items:center;gap:6px;padding:8px 6px 4px 16px;flex:none;font:600 13px var(--ui)}
-    #pdf-ask header strong{flex:1}
-    #pdf-ask header i.mark{color:var(--nota,var(--red))}
-    #pdf-ask blockquote{margin:0 12px 8px;padding:8px 12px;background:var(--tint);border-radius:12px;font:400 13px/1.45 var(--ui);color:var(--ink-2);max-height:96px;overflow:auto;flex:none;white-space:pre-wrap;overflow-wrap:anywhere}
-    #pdf-ask-reply{margin:0 16px;padding:2px 0 10px;overflow:auto;min-height:0;font:400 15px/1.55 var(--ui);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--graphite)}
-    #pdf-ask-reply:empty{display:none}
-    #pdf-ask-reply.wait{color:var(--ink-2)}
-    #pdf-ask form{display:flex;align-items:center;gap:4px;margin:0 8px 8px;padding:4px 4px 4px 12px;border-radius:var(--r-pill);background:var(--tint);flex:none}
-    #pdf-ask input{flex:1;min-width:0;height:36px;border:0;background:transparent;color:var(--graphite);font:400 15px var(--ui);outline:none}
-    #pdf-ask input:focus-visible{outline:none}
-    #pdf-ask form:focus-within{box-shadow:0 0 0 2px var(--graphite)}
+    #pdf-ask-chip{position:fixed;z-index:34;display:inline-flex;align-items:center;height:36px;padding:0 15px;border-radius:var(--r-pill);background:var(--graphite);color:var(--paper);font:500 13px var(--ui);box-shadow:var(--shadow);animation:pdf-chip-in .18s ease-out both}
+    @keyframes pdf-chip-in{from{opacity:0;translate:0 4px}to{opacity:1;translate:0 0}}
+    :root{--pdf-chat-width:480px;--pdf-chat-ease:cubic-bezier(.22,1,.36,1)}
+    #pdf-ask{position:fixed;z-index:33;left:auto;right:calc(var(--edge) + var(--safe-r));top:calc(var(--bar) + 12px);bottom:calc(var(--edge) + var(--safe-b));width:var(--pdf-chat-width);box-sizing:border-box;display:flex;flex-direction:column;border-radius:20px;border:1px solid var(--rule);background:var(--panel);color:var(--graphite);font:400 14px/1.8 var(--ui);overflow:hidden;animation:pdf-chat-in .4s var(--pdf-chat-ease) both}
+    #pdf-ask.leaving{pointer-events:none;animation:pdf-chat-out .36s cubic-bezier(.4,0,.2,1) both}
+    @keyframes pdf-chat-in{from{opacity:0;translate:20px 0}to{opacity:1;translate:0 0}}
+    @keyframes pdf-chat-out{to{opacity:0;translate:24px 0;scale:.985}}
+    #pdf-ask header{display:flex;align-items:center;gap:4px;min-height:65px;padding:10px 15px 8px 23px;flex:none}
+    #pdf-ask header strong{flex:1;font:600 17px var(--ui);letter-spacing:-.4px}
+    #pdf-ask header button{min-width:32px;width:32px;height:32px;font-size:17px}
+    #pdf-ask-messages{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:20px 23px 8px;scrollbar-width:thin;scrollbar-color:var(--ink-3) transparent;-webkit-user-select:text;user-select:text}
+    #pdf-ask .pdf-message{margin:0 0 25px;overflow-wrap:anywhere;animation:pdf-message-in .25s var(--pdf-chat-ease) both;-webkit-user-select:text;user-select:text}
+    #pdf-ask .pdf-message.user{margin-left:28px;padding:12px 16px;background:var(--tint);border-radius:15px 15px 4px 15px;line-height:1.65;white-space:pre-wrap}
+    #pdf-ask .pdf-message p{margin:0 0 13px}#pdf-ask .pdf-message p:last-child{margin-bottom:0}
+    #pdf-ask .pdf-message ol,#pdf-ask .pdf-message ul{padding-left:22px;margin:15px 0}
+    #pdf-ask .pdf-message li{padding:0 0 8px 4px}#pdf-ask .pdf-message li::marker{color:var(--nota);font-size:12px}
+    #pdf-ask .pdf-message strong{font-weight:600}#pdf-ask .pdf-message code{font:13px var(--mono);white-space:pre-wrap}
+    #pdf-ask .pdf-message pre{white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;background:var(--tint);border-radius:10px}
+    #pdf-ask .pdf-message .katex-display{max-width:100%;overflow:auto;font-size:1em}
+    #pdf-ask .pdf-message.wait{color:var(--ink-2)}#pdf-ask .pdf-message.error{color:var(--nota)}
+    @keyframes pdf-message-in{from{opacity:0;translate:0 6px}to{opacity:1;translate:0 0}}
+    #pdf-ask .pdf-message-actions{display:flex;margin-top:12px}
+    #pdf-ask .pdf-message-actions button{min-width:28px;width:28px;height:28px;font-size:14px}
+    #pdf-ask-compose{flex:none;padding:13px 14px 14px;background:var(--panel);position:relative}
+    #pdf-ask form{margin:0;padding:13px 13px 10px;border-radius:15px;border:1px solid var(--rule);background:var(--panel)}
+    #pdf-ask form:focus-within{border-color:var(--ink-2);box-shadow:0 0 0 3px var(--tint)}
+    #pdf-ask textarea{display:block;box-sizing:border-box;width:100%;resize:none;border:0;background:transparent;color:var(--graphite);font:400 16px/1.6 var(--ui);outline:none;min-height:55px;max-height:170px;overflow-y:auto;padding:0 2px;caret-color:var(--graphite);scrollbar-width:thin;-webkit-user-select:text;user-select:text}
+    #pdf-ask textarea:focus-visible{outline:none}
+    #pdf-ask textarea::placeholder{color:var(--ink-2);opacity:1}
+    #pdf-ask .pdf-compose-bottom{display:flex;justify-content:space-between;align-items:center;min-height:34px;padding-top:5px}
+    #pdf-ask .pdf-compose-hint{font:400 11px var(--ui);color:var(--ink-2)}
+    #pdf-ask form button.go{background:var(--graphite);color:var(--paper);min-width:34px;width:34px;height:34px;font-size:18px;padding:0}
+    #pdf-ask form button.go:disabled{background:var(--tint);color:var(--ink-2);opacity:1}
+    #pdf-ask #pdf-ask-latest{position:absolute;right:22px;top:-32px;min-width:0;height:28px;padding:0 10px;border:1px solid var(--rule);background:var(--panel);font:400 11px var(--ui);box-shadow:var(--shadow)}
+    #pdf-context-highlight,.pdf-context-retired{position:absolute;inset:0;pointer-events:none;z-index:4;mix-blend-mode:multiply}
+    #pdf-context-highlight > span,.pdf-context-retired > span{position:absolute;background:rgba(219,230,205,var(--pdf-context-opacity,1));pointer-events:none}
     body:has(#pdf-ask:not([hidden])) #app-recommendation,body:has(#pdf-find:not([hidden])) #app-recommendation{display:none}
-    #pdf-ask form button.go{background:var(--graphite);color:var(--paper);min-width:36px;height:36px}
-    #pdf-ask form button.go:hover:not(:disabled){background:var(--graphite);color:var(--paper);opacity:.88}
+    @media(min-width:1100px) and (pointer:fine){
+      body.pdf-chat-open #scroller{right:calc(var(--pdf-chat-width) + var(--edge) * 2 + var(--safe-r))}
+      body.pdf-chat-open #pdf-nav{right:calc(var(--pdf-chat-width) + var(--edge) * 2 + var(--safe-r))}
+      body.pdf-chat-wide{--pdf-chat-width:min(560px,45vw)}
+    }
+    @media(max-width:1099px),(pointer:coarse){
+      #pdf-ask{left:12px;right:12px;top:24%;bottom:calc(12px + var(--safe-b));width:auto;max-width:600px;margin-left:auto;margin-right:auto;animation-name:pdf-chat-sheet-in}
+      #pdf-ask.wide{top:calc(var(--bar) + 8px)}#pdf-ask.leaving{animation-name:pdf-chat-sheet-out}
+      #pdf-ask header{min-height:55px}#pdf-ask textarea{max-height:120px}
+      #pdf-ask-compose{padding-bottom:max(12px,var(--safe-b))}
+      body.pdf-chat-open #pdf-nav{visibility:hidden}
+      @keyframes pdf-chat-sheet-in{from{opacity:0;translate:0 25px}to{opacity:1;translate:0 0}}
+      @keyframes pdf-chat-sheet-out{to{opacity:0;translate:0 42px}}
+    }
+    @media(prefers-reduced-motion:reduce){#pdf-ask,#pdf-ask-chip,#pdf-ask .pdf-message{animation-duration:.01ms!important}}
     @media (min-width:840px) and (pointer:fine){
       #pdf-nav{left:auto;right:calc(var(--edge) + var(--safe-r));transform:none;bottom:calc(var(--edge) + var(--safe-b))}
-      #pdf-find,#pdf-ask{left:auto;right:calc(var(--edge) + var(--safe-r));transform:none;bottom:calc(var(--edge) + var(--safe-b) + 58px)}
+      #pdf-find{left:auto;right:calc(var(--edge) + var(--safe-r));transform:none;bottom:calc(var(--edge) + var(--safe-b) + 58px)}
       #pdf-pages{bottom:calc(var(--edge) + var(--safe-b) + 112px)}
     }
     @media not ((min-width:840px) and (pointer:fine)){
@@ -97,7 +132,7 @@
     #pdf-tl .textLayer > :not(.markedContent),#pdf-tl .textLayer .markedContent span:not(.markedContent){z-index:1;--font-height:0;font-size:calc(var(--text-scale-factor) * var(--font-height));--scale-x:1;--rotate:0deg;transform:rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv))}
     #pdf-tl .textLayer .markedContent{display:contents}
     #pdf-tl .textLayer span[role=img]{-webkit-user-select:none;user-select:none;cursor:default}
-    #pdf-tl .textLayer ::selection{background:rgba(47,111,179,.28);color:transparent}
+    #pdf-tl .textLayer ::selection{background:rgb(219,230,205);color:transparent}
     #pdf-tl .textLayer br::selection{background:transparent}
     #pdf-tl .textLayer .endOfContent{display:block;position:absolute;inset:100% 0 0;z-index:0;cursor:default;-webkit-user-select:none;user-select:none}
     #pdf-tl .pdf-link{position:absolute;z-index:2;border-radius:2px}
@@ -125,11 +160,12 @@
   document.body.appendChild(side);
   const acts=document.createElement('div');acts.className='pdf-acts';acts.setAttribute('role','group');
   acts.innerHTML='<button id="pdf-up" type="button" title="move page up" aria-label="move page up"><i class="ph ph-arrow-up" aria-hidden="true"></i></button><button id="pdf-down" type="button" title="move page down" aria-label="move page down"><i class="ph ph-arrow-down" aria-hidden="true"></i></button><button id="pdf-rotate" type="button" title="rotate page" aria-label="rotate page clockwise"><i class="ph ph-arrow-clockwise" aria-hidden="true"></i></button><button id="pdf-delete" class="danger" type="button" title="delete page" aria-label="delete page"><i class="ph ph-trash" aria-hidden="true"></i></button>';
-  const chip=document.createElement('button');chip.id='pdf-ask-chip';chip.type='button';chip.hidden=true;chip.innerHTML='<i class="ph ph-sparkle" aria-hidden="true"></i>ask nota';
+  const chip=document.createElement('button');chip.id='pdf-ask-chip';chip.type='button';chip.hidden=true;chip.textContent='ask nota';
   document.body.appendChild(chip);
-  const askBox=document.createElement('section');askBox.id='pdf-ask';askBox.className='glass';askBox.hidden=true;askBox.setAttribute('aria-label','ask nota about this passage');
-  askBox.innerHTML='<header><i class="ph ph-sparkle mark" aria-hidden="true"></i><strong>ask nota</strong><button id="pdf-ask-close" type="button" title="close (Esc)" aria-label="close"><i class="ph ph-x" aria-hidden="true"></i></button></header><blockquote id="pdf-ask-quote"></blockquote><div id="pdf-ask-reply" aria-live="polite"></div>'+
-    '<form id="pdf-ask-form"><input id="pdf-ask-input" placeholder="ask about it, or press enter to explain" aria-label="your question about this passage" autocomplete="off" enterkeyhint="send"><button class="go" type="submit" title="ask" aria-label="ask"><i class="ph ph-arrow-up" aria-hidden="true"></i></button></form>';
+  const askBox=document.createElement('section');askBox.id='pdf-ask';askBox.hidden=true;askBox.setAttribute('aria-label','ask nota');
+  askBox.innerHTML='<header><strong>nota</strong><button id="pdf-ask-expand" type="button" title="expand chat" aria-label="expand chat" aria-pressed="false"><i class="ph ph-arrows-out-simple" aria-hidden="true"></i></button><button id="pdf-ask-close" type="button" title="close (Esc)" aria-label="close"><i class="ph ph-x" aria-hidden="true"></i></button></header>'+
+    '<div id="pdf-ask-messages" role="log" aria-label="conversation with nota" aria-live="off"></div><div id="pdf-ask-compose"><button id="pdf-ask-latest" type="button" hidden>latest reply <i class="ph ph-arrow-down" aria-hidden="true"></i></button>'+
+    '<form id="pdf-ask-form"><textarea id="pdf-ask-input" rows="2" placeholder="ask about this passage…" aria-label="your question about this passage" autocomplete="off" enterkeyhint="send"></textarea><div class="pdf-compose-bottom"><span class="pdf-compose-hint">Shift + Enter for a new line</span><button class="go" id="pdf-ask-send" type="submit" title="ask" aria-label="ask" disabled><i class="ph ph-arrow-up" aria-hidden="true"></i></button></div></form></div><span id="pdf-ask-status" role="status" aria-live="polite" style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)"></span>';
   document.body.appendChild(askBox);
   const layerRoot=document.createElement('div');layerRoot.id='pdf-tl';
   const $=id=>document.getElementById(id),act=id=>acts.querySelector('#'+id);
@@ -307,7 +343,7 @@
   function reset(){
     epoch++;active?.loadingTask.destroy();active=null;loading=null;
     for(const b of bitmaps.values())b.cv.width=b.cv.height=0;
-    bitmaps.clear();pending.clear();failed.clear();thumbs.clear();texts.clear();annots.clear();clearLayers();closeFind();closeAsk();outlineFor=null;
+    bitmaps.clear();pending.clear();failed.clear();thumbs.clear();texts.clear();annots.clear();clearLayers();closeFind();closeAsk(true);chatSession=null;passage=null;outlineFor=null;
   }
   /* a page as the reader sees it: the PDF's own turn plus the one given here */
   function view(page,p,k){
@@ -370,7 +406,7 @@
       request(p);
       ctx.strokeStyle='rgba(60,60,67,.22)';ctx.lineWidth=1/M.zoom;ctx.strokeRect(0,p.y,W,p.h);
     }
-    drawHits(ctx);queueVisible();
+    drawHits(ctx);queueVisible();paintChatHighlight();
   }
   async function paintBackground(ctx,top,height){
     if(!S.pdf)return;const pdf=S.pdf;
@@ -735,46 +771,165 @@
     }catch(e){if(layers.get(k)===entry){el.remove();layers.delete(k);}}
   }
 
-  /* ---- ask nota about a passage of the PDF ---- */
-  let asking=null,passage=null;
+  /* ---- passage chat: draft selections never replace confirmed context ---- */
+  let asking=null,passage=null,chatSession=null,closeTimer,fadeFrame,nearBottom=true;
+  const chatSessions=new Map(),readerAnimations=[],highlight=document.createElement('div');
+  highlight.id='pdf-context-highlight';highlight.setAttribute('aria-hidden','true');
+  const reducedMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function saveChat(){
+    if(!chatSession)return;
+    chatSession.draft=$('pdf-ask-input').value;
+    try{sessionStorage.setItem('notas.pdf-chat.'+chatSession.note,JSON.stringify(chatSession));}catch(e){}
+  }
+  function sessionForNote(){
+    if(chatSession?.note===S.id)return chatSession;
+    if(!chatSessions.has(S.id)){
+      let saved;try{saved=JSON.parse(sessionStorage.getItem('notas.pdf-chat.'+S.id));}catch(e){}
+      const valid=saved?.note===S.id&&Array.isArray(saved.messages)&&saved.messages.every(m=>['user','assistant'].includes(m.role)&&typeof m.text==='string')&&Array.isArray(saved.contexts)&&saved.contexts.every(p=>typeof p.text==='string'&&Array.isArray(p.pages)&&Array.isArray(p.boxes)&&p.boxes.every(b=>b&&typeof b.page==='string'&&[b.x,b.y,b.w,b.h].every(Number.isFinite)));
+      chatSessions.set(S.id,valid?saved:{note:S.id,contexts:[],messages:[],draft:''});
+    }
+    return chatSession=chatSessions.get(S.id);
+  }
   function selected(){
     const sel=getSelection();if(!S.pdf||!sel||sel.isCollapsed||!sel.rangeCount)return null;
-    const range=sel.getRangeAt(0),node=range.commonAncestorContainer,el=node.nodeType===1?node:node.parentElement;
-    const page=el?.closest?.('.pdf-tl-page');if(!page||!layerRoot.contains(page))return null;
+    const range=sel.getRangeAt(0);if(!layerRoot.contains(range.commonAncestorContainer))return null;
     const text=sel.toString().replace(/\s+/g,' ').trim();if(text.length<2)return null;
-    return {text:text.slice(0,4000),page:page.dataset.page,rect:range.getBoundingClientRect()};
+    const origin=layerRoot.getBoundingClientRect(),boxes=[],pages=new Set(),walk=document.createTreeWalker(layerRoot,NodeFilter.SHOW_TEXT);
+    let node;
+    while(node=walk.nextNode()){
+      const page=node.parentElement.closest('.pdf-tl-page');if(!page||!node.textContent.trim()||!range.intersectsNode(node))continue;
+      const p=S.pdf.pages.find(p=>p.id===page.dataset.page);if(!p)continue;
+      const part=new Range();part.setStart(node,node===range.startContainer?range.startOffset:0);part.setEnd(node,node===range.endContainer?range.endOffset:node.length);
+      for(const r of part.getClientRects())if(r.width>.1&&r.height>.1){pages.add(p.id);boxes.push({page:p.id,rot:p.rot||0,x:(r.left-origin.left)/M.zoom,y:(r.top-origin.top)/M.zoom-p.y,w:r.width/M.zoom,h:r.height/M.zoom});}
+    }
+    if(!boxes.length)return null;
+    return {text:text.slice(0,4000),pages:[...pages],boxes,rect:range.getBoundingClientRect()};
   }
   function placeChip(){
-    const s=selected();
-    if(!s||!askBox.hidden&&passage?.text===s.text){chip.hidden=true;return;}
-    passage=s;chip.hidden=false;
-    const w=chip.offsetWidth||110,x=Math.max(8,Math.min(innerWidth-w-8,s.rect.left+s.rect.width/2-w/2)),above=s.rect.top-44;
-    chip.style.left=x+'px';chip.style.top=(above>60?above:s.rect.bottom+10)+'px';
+    const draft=selected();if(!draft){chip.hidden=true;return;}
+    passage=draft;chip.hidden=false;
+    const w=chip.offsetWidth||100,x=Math.max(8,Math.min(innerWidth-w-8,draft.rect.left+draft.rect.width/2-w/2));
+    chip.style.left=x+'px';chip.style.top=Math.max(8,Math.min(innerHeight-44,draft.rect.top>70?draft.rect.top-46:draft.rect.bottom+10))+'px';
+  }
+  function paintChatHighlight(){
+    highlight.replaceChildren();
+    if(askBox.hidden||!chatSession?.contexts.length)return;
+    const host=document.getElementById('canvaswrap');if(highlight.parentNode!==host)host.append(highlight);
+    const origin=layerRoot.getBoundingClientRect(),viewport=host.getBoundingClientRect();
+    const confirmed=chatSession.contexts.at(-1);
+    for(const b of confirmed.boxes){
+      const p=S.pdf?.pages.find(p=>p.id===b.page);if(!p||(p.rot||0)!==b.rot||![b.x,b.y,b.w,b.h].every(Number.isFinite))continue;
+      const span=document.createElement('span');Object.assign(span.style,{left:(origin.left-viewport.left+b.x*M.zoom)+'px',top:(origin.top-viewport.top+(p.y+b.y)*M.zoom)+'px',width:(b.w*M.zoom)+'px',height:(b.h*M.zoom)+'px'});highlight.append(span);
+    }
+  }
+  function retireChatHighlight(){
+    if(!highlight.childElementCount)return;
+    const old=highlight.cloneNode(true);old.removeAttribute('id');old.className='pdf-context-retired';document.getElementById('canvaswrap').append(old);
+    const motion=old.animate({opacity:[1,0]},{duration:reducedMotion()?0:360,easing:'cubic-bezier(.4,0,.2,1)',fill:'forwards'});
+    motion.finished.then(()=>old.remove()).catch(()=>old.remove());
+  }
+  function chatLayout(before){
+    readerAnimations.splice(0).forEach(a=>a.cancel());C.layout();N.ink.render();paintChatHighlight();
+    const col=document.getElementById('col'),dx=before-col.getBoundingClientRect().left;
+    if(reducedMotion()||!matchMedia('(min-width:1100px) and (pointer:fine)').matches||Math.abs(dx)<1)return;
+    for(const el of [col,document.getElementById('canvaswrap')])readerAnimations.push(el.animate({translate:[dx+'px 0','0px 0px']},{duration:460,easing:'cubic-bezier(.22,1,.36,1)'}));
+  }
+  function updateChatInput(){
+    const input=$('pdf-ask-input'),send=$('pdf-ask-send');askBox.setAttribute('aria-busy',String(!!asking));input.style.height='auto';input.style.height=Math.min(input.scrollHeight,innerWidth<1100?120:170)+'px';
+    send.disabled=!asking&&!input.value.trim();send.title=asking?'stop response':'ask';send.setAttribute('aria-label',send.title);send.innerHTML='<i class="ph '+(asking?'ph-stop':'ph-arrow-up')+'" aria-hidden="true"></i>';
+  }
+  function inlineChat(text){
+    const frag=document.createDocumentFragment();
+    for(const piece of text.split(/(\$\$[\s\S]+?\$\$|\$[^$\n]+\$|\*\*[^*]+\*\*|`[^`]+`)/g)){
+      if(piece.startsWith('**')&&piece.endsWith('**')){const b=document.createElement('strong');b.textContent=piece.slice(2,-2);frag.append(b);}
+      else if(piece.startsWith('`')&&piece.endsWith('`')){const code=document.createElement('code');code.textContent=piece.slice(1,-1);frag.append(code);}
+      else if(piece.startsWith('$')&&piece.endsWith('$')&&window.katex){const span=document.createElement('span'),display=piece.startsWith('$$');try{katex.render(piece.slice(display?2:1,display?-2:-1),span,{throwOnError:false,trust:false,maxExpand:1000,maxSize:10,displayMode:display});}catch(e){span.textContent=piece;}frag.append(span);}
+      else frag.append(document.createTextNode(piece));
+    }
+    return frag;
+  }
+  function formatChat(el,text){
+    el.replaceChildren();
+    for(const block of text.replace(/^#{1,6}\s+/gm,'').split(/\n\s*\n/)){
+      const lines=block.split('\n'),ordered=lines.every(l=>/^\d+[.)]\s/.test(l)),bullet=lines.every(l=>/^[-*]\s/.test(l));
+      if(ordered||bullet){const list=document.createElement(ordered?'ol':'ul');for(const line of lines){const li=document.createElement('li');li.append(inlineChat(line.replace(/^(?:\d+[.)]|[-*])\s+/,'')));list.append(li);}el.append(list);}
+      else{const p=document.createElement('p');p.style.whiteSpace='pre-wrap';p.append(inlineChat(block));el.append(p);}
+    }
+  }
+  function appendChatMessage(message){
+    const el=document.createElement('div');el.className='pdf-message '+message.role+(message.error?' error':'');el.setAttribute('aria-label',message.role==='user'?'you':'nota');
+    if(message.role==='user')el.textContent=message.text;else formatChat(el,message.text);
+    $('pdf-ask-messages').append(el);return el;
+  }
+  function copyChatAction(el,message){
+    const row=document.createElement('div');row.className='pdf-message-actions';const button=document.createElement('button');button.type='button';button.title='copy answer';button.setAttribute('aria-label','copy answer');button.innerHTML='<i class="ph ph-copy" aria-hidden="true"></i>';
+    button.onclick=async()=>{try{await navigator.clipboard.writeText(message.text);button.innerHTML='<i class="ph ph-check" aria-hidden="true"></i>';setTimeout(()=>button.innerHTML='<i class="ph ph-copy" aria-hidden="true"></i>',1500);}catch(e){C.toast('select the answer to copy it.');}};row.append(button);el.append(row);
+  }
+  function renderChat(){
+    const log=$('pdf-ask-messages');log.replaceChildren();
+    for(const m of chatSession.messages){const el=appendChatMessage(m);if(m.role==='assistant'&&!m.error)copyChatAction(el,m);}
+    $('pdf-ask-input').value=chatSession.draft||'';updateChatInput();
+    log.scrollTop=log.scrollHeight;nearBottom=true;$('pdf-ask-latest').hidden=true;
   }
   function openAsk(){
-    if(!passage)return;chip.hidden=true;closeFind();askBox.hidden=false;
-    $('pdf-ask-quote').textContent=passage.text.length>600?passage.text.slice(0,600)+'…':passage.text;
-    $('pdf-ask-reply').textContent='';$('pdf-ask-reply').className='';
-    const input=$('pdf-ask-input');input.value='';input.focus();
+    if(!S.pdf)return;
+    const opening=askBox.hidden||askBox.classList.contains('leaving'),session=sessionForNote(),draft=passage;
+    if(draft){
+      if(!opening&&session.contexts.at(-1)?.text!==draft.text)retireChatHighlight();
+      session.contexts=session.contexts.filter(p=>!(p.text===draft.text&&p.pages.join()===draft.pages.join()));
+      const {rect,...context}=draft;session.contexts.push(context);session.contexts=session.contexts.slice(-12);
+    }
+    if(!session.contexts.length)return;
+    passage=null;chip.hidden=true;closeFind();clearTimeout(closeTimer);cancelAnimationFrame(fadeFrame);sc.style.setProperty('--pdf-context-opacity','1');
+    const before=document.getElementById('col').getBoundingClientRect().left;
+    askBox.classList.remove('leaving');askBox.inert=false;askBox.hidden=false;document.body.classList.add('pdf-chat-open');document.body.classList.toggle('pdf-chat-wide',askBox.classList.contains('wide'));
+    if(opening)renderChat();paintChatHighlight();chatLayout(before);saveChat();
+    if(opening)$('pdf-ask-input').focus({preventScroll:true});
+    $('pdf-ask-status').textContent='passage added to the conversation.';
   }
-  function closeAsk(){
-    asking?.abort();asking=null;
-    if(askBox.hidden)return;askBox.hidden=true;if(askBox.contains(document.activeElement))document.activeElement.blur();
+  function closeAsk(immediate=false){
+    saveChat();asking?.abort();asking=null;chip.hidden=true;passage=null;
+    clearTimeout(closeTimer);cancelAnimationFrame(fadeFrame);
+    const wasOpen=!askBox.hidden,before=document.getElementById('col').getBoundingClientRect().left;
+    document.body.classList.remove('pdf-chat-open','pdf-chat-wide');
+    if(askBox.hidden||immediate||reducedMotion()){
+      askBox.hidden=true;askBox.classList.remove('leaving');highlight.replaceChildren();sc.querySelectorAll('.pdf-context-retired').forEach(e=>e.remove());if(wasOpen&&!immediate)chatLayout(before);return;
+    }
+    askBox.classList.add('leaving');askBox.inert=true;
+    const selection=getSelection();if(layerRoot.contains(selection?.anchorNode))selection.removeAllRanges();
+    if(askBox.contains(document.activeElement)){if(!sc.hasAttribute('tabindex'))sc.tabIndex=-1;sc.focus({preventScroll:true});}
+    chatLayout(before);
+    function fade(){if(askBox.hidden||!askBox.classList.contains('leaving'))return;sc.style.setProperty('--pdf-context-opacity',getComputedStyle(askBox).opacity);fadeFrame=requestAnimationFrame(fade);}
+    fadeFrame=requestAnimationFrame(fade);
+    closeTimer=setTimeout(()=>{cancelAnimationFrame(fadeFrame);askBox.hidden=true;askBox.classList.remove('leaving');highlight.replaceChildren();sc.querySelectorAll('.pdf-context-retired').forEach(e=>e.remove());},380);
   }
   async function ask(question){
-    if(!passage||!S.pdf)return;
-    const out=$('pdf-ask-reply'),pdf=S.pdf,p=pdf.pages.find(x=>x.id===passage.page),send=$('pdf-ask-form').querySelector('button');
-    if(!N.nota?.askText){out.textContent='nota is not available in this build.';return;}
-    asking?.abort();const control=new AbortController();asking=control;
-    out.className='wait';out.textContent='nota is reading…';send.disabled=true;
+    if(asking){asking.abort();return;}
+    const session=sessionForNote(),pdf=S.pdf;
+    if(!session.contexts.length||!pdf)return;
+    question=question.trim()||'Explain this passage simply and briefly.';
+    const contexts=session.contexts.map(p=>({...p})),previous=session.messages.filter(m=>!m.error).slice(-16).map(m=>(m.role==='user'?'User: ':'Nota: ')+m.text).join('\n\n').slice(-20000);
+    const q='The person selected these passages in a PDF they are reading:\n'+contexts.map((p,i)=>(i+1)+'. """\n'+p.text+'\n"""').join('\n\n').slice(-12000)+'\n\n'+(previous?'Earlier conversation (use this for follow-up questions):\n'+previous+'\n\n':'')+'They ask: '+question+'\nReply directly in readable paragraphs. Do not add an introductory heading or subtitle.';
+    const control=new AbortController();let chatRenderFrame=null;asking=control;
+    session.messages.push({role:'user',text:question});appendChatMessage(session.messages.at(-1));
+    const answer={role:'assistant',text:''};session.messages.push(answer);const out=appendChatMessage(answer);out.classList.add('wait');out.textContent='nota is reading…';out.id='pdf-ask-reply';
+    document.querySelectorAll('#pdf-ask-messages [id="pdf-ask-reply"]').forEach(el=>{if(el!==out)el.removeAttribute('id');});
+    $('pdf-ask-input').value='';session.draft='';updateChatInput();paintChatHighlight();saveChat();nearBottom=true;$('pdf-ask-messages').scrollTop=$('pdf-ask-messages').scrollHeight;
+    function paint(){chatRenderFrame=null;if(!out.isConnected||chatSession!==session)return;out.classList.remove('wait');formatChat(out,answer.text);if(nearBottom)$('pdf-ask-messages').scrollTop=$('pdf-ask-messages').scrollHeight;else $('pdf-ask-latest').hidden=false;}
     try{
-      let context='';
-      try{if(p?.source!=null){const tc=await textOf(await open(),p);context=tc.items.map(i=>typeof i.str==='string'?i.str+(i.hasEOL?'\n':''):'').join('');}}catch(e){}
-      const q='The person selected this passage in a PDF they are reading:\n"""\n'+passage.text+'\n"""\n'+(question.trim()?'They ask: '+question.trim():'Explain it simply and briefly. If it is a question or a task, help them with it.');
-      let first=true;
-      await N.nota.askText(q,context,piece=>{if(control.signal.aborted||S.pdf!==pdf)return;if(first){out.textContent='';out.className='';first=false;}out.textContent+=piece;out.scrollTop=out.scrollHeight;},control.signal);
-    }catch(e){if(!control.signal.aborted){out.className='';out.textContent=e?.message||'nota could not answer just now. try again.';}}
-    finally{if(asking===control)asking=null;send.disabled=false;}
+      if(!N.nota?.askText)throw Error('nota is not available in this build.');
+      let context='';const pages=[...new Set(contexts.flatMap(c=>c.pages))].slice(-6);
+      for(const id of pages){if(control.signal.aborted)break;try{const p=pdf.pages.find(p=>p.id===id);if(p?.source!=null){const tc=await textOf(await open(),p);context+=tc.items.map(i=>typeof i.str==='string'?i.str+(i.hasEOL?'\n':''):'').join('')+'\n\n';}}catch(e){}}
+      if(control.signal.aborted)return;
+      const result=await N.nota.askText(q.slice(0,45000),context.slice(0,12000),piece=>{if(control.signal.aborted||S.pdf!==pdf||chatSession!==session)return;answer.text+=piece;if(!chatRenderFrame)chatRenderFrame=requestAnimationFrame(paint);},control.signal);
+      if(!answer.text&&typeof result==='string')answer.text=result;
+      if(!answer.text&&!control.signal.aborted)throw Error('nota returned an empty answer. try again.');
+    }catch(e){if(!control.signal.aborted){answer.error=true;answer.text=(answer.text?answer.text+'\n\n':'')+(e?.message||'nota could not answer. try again.');out.classList.add('error');}}
+    finally{
+      if(chatRenderFrame){cancelAnimationFrame(chatRenderFrame);chatRenderFrame=null;}
+      if(chatSession===session){if(answer.text){paint();if(!answer.error)copyChatAction(out,answer);}else{out.remove();session.messages=session.messages.filter(m=>m!==answer);}session.messages=session.messages.slice(-40);saveChat();$('pdf-ask-status').textContent=control.signal.aborted?'response stopped.':'nota has replied.';}
+      if(asking===control){asking=null;updateChatInput();}
+    }
   }
 
   /* ---- import ---- */
@@ -999,12 +1154,26 @@
     else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeFind();}
   });
   chip.addEventListener('pointerdown',e=>e.preventDefault());chip.onclick=openAsk;
-  $('pdf-ask-close').onclick=closeAsk;
+  $('pdf-ask-close').onclick=()=>closeAsk();
   $('pdf-ask-form').onsubmit=e=>{e.preventDefault();ask($('pdf-ask-input').value);};
+  $('pdf-ask-input').maxLength=4000;
+  $('pdf-ask-input').addEventListener('input',()=>{updateChatInput();saveChat();});
+  $('pdf-ask-input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();if(!asking&&e.target.value.trim())ask(e.target.value);}});
   askBox.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeAsk();}});
+  $('pdf-ask-expand').onclick=()=>{const before=document.getElementById('col').getBoundingClientRect().left,wide=askBox.classList.toggle('wide');document.body.classList.toggle('pdf-chat-wide',wide);$('pdf-ask-expand').setAttribute('aria-pressed',String(wide));$('pdf-ask-expand').setAttribute('aria-label',wide?'reduce chat':'expand chat');chatLayout(before);};
+  $('pdf-ask-messages').addEventListener('scroll',()=>{const log=$('pdf-ask-messages');nearBottom=log.scrollHeight-log.scrollTop-log.clientHeight<65;if(nearBottom)$('pdf-ask-latest').hidden=true;},{passive:true});
+  $('pdf-ask-latest').onclick=()=>{const log=$('pdf-ask-messages');log.scrollTop=log.scrollHeight;nearBottom=true;$('pdf-ask-latest').hidden=true;};
   let chipFrame=0;
   document.addEventListener('selectionchange',()=>{if(chipFrame)return;chipFrame=requestAnimationFrame(()=>{chipFrame=0;placeChip();});});
   sc.addEventListener('scroll',()=>{if(!chip.hidden)placeChip();},{passive:true});
+  addEventListener('resize',()=>{if(!askBox.hidden){C.layout();N.ink.render();updateChatInput();paintChatHighlight();}chip.hidden=true;});
+  function fitChatKeyboard(){
+    const v=visualViewport;if(!v)return;
+    if(!askBox.hidden&&innerWidth<1100&&v.height<innerHeight-100){askBox.style.top=(v.offsetTop+8)+'px';askBox.style.bottom='auto';askBox.style.height=Math.max(150,v.height-20)+'px';}
+    else{askBox.style.top='';askBox.style.bottom='';askBox.style.height='';}
+  }
+  window.visualViewport?.addEventListener('resize',fitChatKeyboard);window.visualViewport?.addEventListener('scroll',fitChatKeyboard);
+  addEventListener('pagehide',saveChat);
   sc.addEventListener('scroll',()=>{updateCounter();queueVisible();},{passive:true});
   document.addEventListener('keydown',e=>{
     if(!S.pdf||document.querySelector('.sheet:not(.leave)'))return;
