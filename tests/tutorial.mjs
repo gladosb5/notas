@@ -4,10 +4,10 @@ import {mkdir} from 'node:fs/promises';
 import {startServer} from '../scripts/serve.mjs';
 
 /* The intro: a white page before the notebook that plays on its own, one
-   idea per screen fading into the next, then the notebook. Nothing to press.
+   idea per screen fading into the next, after a typed beta notice and next.
    It never asks nota anything and never touches the note. */
 const PICK='Choose your language. Pilih bahasa kamu. 选择你的语言。';
-const SAYS=[PICK,'hey, student.','this is your paper.',
+const SAYS=[PICK,'notas is in beta. bugs may occur.','hey, student.','this is your paper.',
   'don\'t think about calculating maths. think about what you are going to create with maths.',
   'also your handwriting too.','let me introduce myself.','tap the eraser again.','tap the pen again.',
   'swipe the tools left.','double-tap a picture.','search reads your handwriting.','good luck.'];
@@ -52,17 +52,24 @@ try{
     await page.waitForFunction(()=>N.tutorial.screen===1,null,{timeout:6000});
     assert.equal(await page.evaluate(()=>N.i18n.lang),'en');
     i=1;await page.waitForFunction(()=>N.tutorial.settled,null,{timeout:12000});
-    assert.equal(await page.locator('#intro h1 .sr-only').textContent(),expected[1]);
-    assert.equal(await page.locator('#intro button:not(.intro-skipall)').count(),0,'nothing to press but skip all: no next');
-    await page.screenshot({path:`test-results/intro-01-${label}.png`});
-    /* taps and keys do not move it on; it goes with its own flow */
+    assert.equal(await page.locator('#intro .intro-beta-copy').textContent(),expected[1]);
+    assert.equal(await page.locator('#intro h1 canvas,#intro .intro-hand').count(),0,'the beta notice uses regular text');
+    assert.equal(await page.locator('#intro-next').textContent(),'next');
+    await page.waitForTimeout(1600);await page.keyboard.press('ArrowRight');
+    assert.equal(await page.evaluate(()=>N.tutorial.screen),1,'the notice waits for next');
+    await page.screenshot({path:`test-results/intro-beta-${label}.png`});
+    if(touch)await page.locator('#intro-next').tap();else{await page.locator('#intro-next').focus();await page.keyboard.press('Enter');}
+    await page.waitForFunction(()=>N.tutorial.screen===2,null,{timeout:6000});
+    i=2;await page.waitForFunction(()=>N.tutorial.settled,null,{timeout:12000});
+    assert.equal(await page.locator('#intro h1 .sr-only').textContent(),expected[2]);
+    assert.equal(await page.locator('#intro button:not(.intro-skipall)').count(),0,'the handwritten intro keeps its automatic flow');
+    await page.screenshot({path:`test-results/intro-02-${label}.png`});
     await page.mouse.click(width/2,height/2);await page.keyboard.press('Enter');await page.keyboard.press('ArrowRight');
-    assert.equal(await page.evaluate(()=>N.tutorial.screen),1,'a tap or a key never skips ahead');
-    /* the greeting moves on by itself, fading into the next */
-    await page.waitForFunction(()=>N.tutorial.screen===2,null,{timeout:12000});
+    assert.equal(await page.evaluate(()=>N.tutorial.screen),2,'a tap or a key never skips the greeting');
+    await page.waitForFunction(()=>N.tutorial.screen===3,null,{timeout:12000});
     if(motion!=='reduce')assert.equal(await page.locator('.intro-stage').evaluate(el=>el.classList.contains('out')),false);
     await page.waitForFunction(()=>N.tutorial.settled,null,{timeout:12000});
-    i=2;assert.equal(await page.locator('#intro h1 .sr-only').textContent(),expected[2]);
+    i=3;assert.equal(await page.locator('#intro h1 .sr-only').textContent(),expected[3]);
    }
    await page.waitForFunction(()=>N.tutorial.settled,null,{timeout:12000});
    const fit=await page.evaluate(()=>{
@@ -73,19 +80,19 @@ try{
    assert.deepEqual(fit,{wide:0,overflow:false},`screen ${i} fits ${label}`);
    await page.screenshot({path:`test-results/intro-${String(i).padStart(2,'0')}-${label}.png`});
    if(i===expected.length-1)break;
-   const tip={6:'button.i-tool',7:'button.i-tool',8:'.i-slide',9:'button.i-pic'}[i];
+   const tip={7:'button.i-tool',8:'button.i-tool',9:'.i-slide',10:'button.i-pic'}[i];
    if(tip&&(width===1280||width===390)){
     /* a tip waits for the student to try it, then moves on a second later */
     await page.waitForTimeout(1600);
     assert.equal(await page.evaluate(()=>N.tutorial.screen),i,`screen ${i} waits to be tried`);
     const target=page.locator('#intro '+tip);
     assert.equal(await target.evaluate(el=>el.classList.contains(el.classList.contains('i-slide')?'i-hint':'i-want')),true,'what to do is shown');
-    if(i===8){
+    if(i===9){
      /* a swipe from right to left on a mouse; the › on a phone */
      if(touch)await page.locator('#intro button.i-more').tap();
      else{const b=await target.boundingBox();await page.mouse.move(b.x+b.width-50,b.y+b.height/2);await page.mouse.down();for(let k=1;k<=8;k++)await page.mouse.move(b.x+b.width-50-k*12,b.y+b.height/2);await page.mouse.up();}
     }
-    else if(i===9){if(touch){await target.tap();await target.tap();}else await target.dblclick();}
+    else if(i===10){if(touch){await target.tap();await target.tap();}else await target.dblclick();}
     else for(let k=0;k<2;k++){if(touch)await target.tap();else await target.click();}
     const tried=Date.now();
     await page.waitForFunction(n=>N.tutorial.screen===n,i+1,{timeout:6000});

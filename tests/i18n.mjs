@@ -8,7 +8,7 @@ import {startServer} from '../scripts/serve.mjs';
 const server=await startServer(0),browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true});
 const base=`http://127.0.0.1:${server.address().port}`;
 await mkdir('test-results',{recursive:true});
-const WANT={ms:{name:'Bahasa Melayu',hello:'hai, pelajar.',html:'ms',rule:/Malay/},zh:{name:'中文',hello:'嘿，同学。',html:'zh-Hans',rule:/Chinese/}};
+const WANT={ms:{name:'Bahasa Melayu',hello:'hai, pelajar.',html:'ms',notice:'notas masih dalam beta. pepijat mungkin berlaku.',next:'seterusnya',rule:/Malay/},zh:{name:'中文',hello:'嘿，同学。',html:'zh-Hans',notice:'notas 目前处于测试阶段，可能会出现问题。',next:'下一步',rule:/Chinese/}};
 try{
  for(const [code,width,height,theme] of [['ms',390,844,'dark'],['zh',1280,900,'light'],['zh',390,844,'light']]){
   const want=WANT[code],touch=width<900,label=`${code}-${width}`;
@@ -30,10 +30,16 @@ try{
   await page.waitForFunction(()=>N.tutorial.settled,null,{timeout:12000});
   assert.equal(await page.evaluate(()=>N.i18n.lang),code);
   assert.equal(await page.evaluate(()=>document.documentElement.lang),want.html);
+  assert.equal(await page.locator('#intro .intro-beta-copy').textContent(),want.notice);
+  assert.equal(await page.locator('#intro-next').textContent(),want.next);
+  assert.equal(await page.locator('#intro h1 canvas').count(),0);
+  await page.waitForTimeout(1400);assert.equal(await page.evaluate(()=>N.tutorial.screen),1,'translated notice waits for next');
+  if(touch)await page.locator('#intro-next').tap();else await page.locator('#intro-next').click();
+  await page.waitForFunction(()=>N.tutorial.screen===2&&N.tutorial.settled,null,{timeout:12000});
   assert.equal(await page.locator('#intro h1 .sr-only').textContent(),want.hello);
   assert.notEqual(await page.locator('.intro-skipall').textContent(),'skip all','skip all speaks the language');
   const total=await page.evaluate(()=>N.tutorial.screens);
-  for(let i=1;i<total;i++){
+  for(let i=2;i<total;i++){
    await page.waitForFunction(n=>N.tutorial.screen===n&&N.tutorial.settled,i,{timeout:12000});
    const fit=await page.evaluate(()=>{
     const stage=document.querySelector('.intro-stage').getBoundingClientRect(),root=document.getElementById('intro');

@@ -20,7 +20,7 @@ Keep the same address and browser profile to return to your notes. Export import
 ## Features
 
 - Pen and typed notes, pictures, selection, undo/redo, and note import/export.
-- A short first-visit intro, written in nota's hand, that can be replayed from the menu.
+- After language selection, a typed beta notice waits for **next** before the handwritten intro starts. Replay the intro from the menu.
 - English, Malay (Bahasa Melayu) and Chinese (简体中文): chosen on the intro's first screen or in settings, for the whole app and nota's answers. The words are in `i18n/catalogue.json`; `node scripts/build-i18n.mjs` builds them.
 - Local handwriting recognition, maths calculations, and Quick Maths insertion.
 - Optional handwriting neatening that keeps your strokes and writing style, with one-step undo.

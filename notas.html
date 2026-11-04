@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="notas-version" content="v192">
+<meta name="notas-version" content="v193">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>notas</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -1273,6 +1273,11 @@ body:has(.sheet:not(.leave)) #toast{top:calc(var(--safe-t) + 12px)}
 .intro-stage>*{flex:none}
 .intro-eyebrow{margin:0 0 12px;color:var(--i-mute);font-size:13px}
 .intro-say{margin:0;font:inherit}
+.intro-beta-copy{display:block;max-width:22em;font:400 clamp(20px,4.8vw,26px)/1.55 var(--ui);letter-spacing:-.015em}
+.intro-stage.is-notice .intro-demo{margin-top:28px}
+.intro-next{min-height:44px;padding:11px 24px;border:1px solid var(--i-ink);border-radius:var(--r-pill);background:var(--i-ink);color:var(--i-bg);font:500 15px/1.3 var(--ui);cursor:pointer;touch-action:manipulation}
+.intro-next:hover{opacity:.85}.intro-next:focus-visible{outline:2px solid var(--i-bg);outline-offset:-5px}
+
 .intro-say canvas,.intro-demo canvas{display:block}
 .intro-sub{margin:16px 0 0;max-width:30em;color:var(--i-mute);font-size:16px;line-height:1.5}
 .intro-demo{margin-top:32px}
@@ -11320,6 +11325,7 @@ const T=s=>N.i18n?N.i18n.t(s):s;
 const MIGHT_MISS='things you might miss.';
 const SCREENS=[
   {picker:true,interactive:true,say:'Choose your language.',demo:pickerDemo},
+  {notice:true,interactive:true,say:'notas is in beta. bugs may occur.',demo:betaDemo},
   {say:'hey, student.',big:true},
   {say:'this is your paper.',demo:paperDemo,alt:'a typed line, the water cycle, and a handwritten line under it.'},
   {say:'don\'t think about calculating maths. think about what you are going to create with maths.',demo:mathsDemo,
@@ -11510,6 +11516,12 @@ function pickerDemo(d,t,ctx){
     box.append(b);
   }
   d.append(box);fadeIn(t,box,300);
+}
+/* The beta notice is typed, and waits for an explicit next before any ink. */
+function betaDemo(d,t,ctx){
+  const button=el('button','intro-next intro-fade',T('next'));button.id='intro-next';button.type='button';
+  button.onclick=()=>ctx.next();d.append(button);fadeIn(t,button,0);
+  t.do(()=>button.focus({preventScroll:true}));
 }
 /* without the pen face (nota.js missing) the line is set in the hand font */
 function Lettering(text,o){
@@ -11718,9 +11730,9 @@ const HOLD=1000;
 function render(i,instant){
   clearTimeout(holdTimer);clearTimeout(endTimer);tl&&tl.stop();
   at=i;settled=false;const sc=list[i];acted=!sc.interactive;
-  const mine=++generation,ctx={done(){if(mine!==generation||acted)return;acted=true;if(settled)holdTimer=setTimeout(onward,HOLD);}};
+  const mine=++generation,ctx={done(){if(mine!==generation||acted)return;acted=true;if(settled)holdTimer=setTimeout(onward,HOLD);},next(){if(mine!==generation||acted||closing)return;acted=true;go(at+1);}};
   if(sc.end)root.dataset.last='';else delete root.dataset.last;
-  stage.replaceChildren();stage.classList.toggle('is-picker',!!sc.picker);
+  stage.replaceChildren();stage.classList.toggle('is-picker',!!sc.picker);stage.classList.toggle('is-notice',!!sc.notice);
   [...dots.children].forEach((d,k)=>{if(k===i)d.dataset.on='';else delete d.dataset.on;});
   const head=el('h1','intro-say');head.id='intro-say';stage.append(head);
   let eyebrow=null,sub=null;
@@ -11729,12 +11741,12 @@ function render(i,instant){
   const demo=sc.demo?el('div','intro-demo'):null;if(demo)stage.append(demo);
   live.textContent=sc.picker?'Choose your language. Pilih bahasa kamu. 选择你的语言。':[sc.eyebrow,sc.say,sc.sub,sc.alt].filter(Boolean).map(T).join(' ')+(sc.reply?T(REPLY):'');
   head.append(el('span','sr-only',sc.picker?'Choose your language. Pilih bahasa kamu. 选择你的语言。':T(sc.say)));
-  const pen=sc.picker?Rotator():Ink(T(sc.say),{scale:sc.big?bigScale():headScale(),maxW:stage.clientWidth,color:color('--i-ink'),rowH:sc.big?36:38,maxMs:sc.big?1500:3200});
-  head.prepend(pen.el);
+  const pen=sc.picker?Rotator():sc.notice?null:Ink(T(sc.say),{scale:sc.big?bigScale():headScale(),maxW:stage.clientWidth,color:color('--i-ink'),rowH:sc.big?36:38,maxMs:sc.big?1500:3200});
+  if(pen)head.prepend(pen.el);else{const copy=el('span','intro-beta-copy',T(sc.say));copy.setAttribute('aria-hidden','true');head.prepend(copy);}
   tl=Timeline();
   tl.wait(instant?0:220);
   if(eyebrow)fadeIn(tl,eyebrow,150);
-  tl.write(pen,sc.big?200:150);
+  if(pen)tl.write(pen,sc.big?200:150);
   if(sub)fadeIn(tl,sub,250);
   if(demo)sc.demo(demo,tl,ctx);
   /* the screen rises in from just below, quietly */
