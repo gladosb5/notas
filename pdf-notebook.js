@@ -134,6 +134,7 @@
     #pdf-tl .textLayer span[role=img]{-webkit-user-select:none;user-select:none;cursor:default}
     #pdf-tl .textLayer ::selection{background:rgba(0,0,0,.16);color:transparent}
     #pdf-tl .textLayer br::selection{background:transparent}
+    #pdf-tl .textLayer.selecting .endOfContent{top:0}
     #pdf-tl .textLayer .endOfContent{display:block;position:absolute;inset:100% 0 0;z-index:0;cursor:default;-webkit-user-select:none;user-select:none}
     #pdf-tl .pdf-link{position:absolute;z-index:2;border-radius:2px}
     body[data-tool="text"] #pdf-tl .pdf-link:hover{background:rgba(47,111,179,.12);box-shadow:inset 0 -1.5px 0 rgba(47,111,179,.6)}
@@ -736,7 +737,10 @@
   /* ---- the PDF's text, links and fields, laid over the visible pages ---- */
   let layerKey='';
   const layers=new Map();
-  function clearLayers(){for(const l of layers.values())l.task?.cancel?.();layers.clear();layerRoot.replaceChildren();layerKey='';}
+  let pdfSelectionPointer=null,previousPDFRange=null;
+  const chromiumSelectionVersion=Number(navigator.userAgentData?.brands?.find(b=>b.brand==='Chromium')?.version||/\b(?:Chrome|Chromium)\/(\d+)/.exec(navigator.userAgent)?.[1]||0);
+  const modernPDFSelection=CSS.supports('-moz-user-select','none')||chromiumSelectionVersion>=148;
+  function clearLayers(){pdfSelectionPointer=null;previousPDFRange=null;for(const l of layers.values())l.task?.cancel?.();layers.clear();layerRoot.replaceChildren();layerKey='';}
   function syncLayers(){
     if(!S.pdf){if(layerRoot.isConnected)layerRoot.remove();return;}
     const host=document.getElementById('textlayer');
@@ -746,12 +750,20 @@
     if(key===layerKey&&layers.size===want.length)return;layerKey=key;
     const keep=new Set(want.map(p=>p.id+':'+(p.rot||0)+':'+p.y));
     /* a field being typed in keeps its page until it is left */
-    for(const [k,l] of layers)if(!keep.has(k)){if(document.activeElement?.matches?.('.pdf-field')&&l.el.contains(document.activeElement))continue;l.task?.cancel?.();l.el.remove();layers.delete(k);}
+    for(const [k,l] of layers)if(!keep.has(k)){
+      if(document.activeElement?.matches?.('.pdf-field')&&l.el.contains(document.activeElement))continue;
+      const selection=getSelection();let selected=false;
+      for(let i=0;selection&&i<selection.rangeCount;i++)if(selection.getRangeAt(i).intersectsNode(l.el)){selected=true;break;}
+      const page=S.pdf.pages.find(p=>p.id===l.el.dataset.page);
+      if(selected&&page&&k===page.id+':'+(page.rot||0)+':'+page.y)continue;
+      l.task?.cancel?.();l.el.remove();layers.delete(k);
+    }
     for(const p of want){const k=p.id+':'+(p.rot||0)+':'+p.y;if(!layers.has(k))buildLayer(p,k);}
   }
   async function buildLayer(p,k){
     const token=epoch,el=document.createElement('div');el.className='pdf-tl-page';el.style.top=p.y+'px';el.style.width=W+'px';el.style.height=p.h+'px';el.dataset.page=p.id;
-    const entry={el,task:null};layers.set(k,entry);layerRoot.append(el);
+    const entry={el,task:null,end:null};layers.set(k,entry);
+    const next=[...layerRoot.children].find(other=>Number.parseFloat(other.style.top)>p.y);layerRoot.insertBefore(el,next||null);
     try{
       const [lib]=await libs(),doc=await open();if(!doc||token!==epoch||layers.get(k)!==entry)return;
       const [page,tc,list]=await Promise.all([doc.getPage(p.source+1),textOf(doc,p),annotationsOf(doc,p)]);if(token!==epoch||layers.get(k)!==entry)return;
@@ -768,7 +780,52 @@
         }else if(formFields(a)){const c=fieldControl(a,vp);if(c)el.append(c);}
       }
       entry.task=new lib.TextLayer({textContentSource:tc,container:layer,viewport:vp});await entry.task.render();
+      if(token!==epoch||layers.get(k)!==entry)return;
+      entry.end=document.createElement('div');entry.end.className='endOfContent';layer.append(entry.end);
     }catch(e){if(layers.get(k)===entry){el.remove();layers.delete(k);}}
+  }
+
+  /* Selection-backdrop behavior adapted from PDF.js TextLayerBuilder.
+     Copyright 2024 Mozilla Foundation. Licensed under the Apache License,
+     Version 2.0; see assets/pdf/LICENSE and https://www.apache.org/licenses/LICENSE-2.0.
+     Provided AS IS, without warranties or conditions of any kind.
+
+     PDF.js's viewer keeps a selection backdrop in the text flow while dragging.
+     Without it, a blank gap can make the native caret fall back to the layer's
+     first DOM position. Keep native selection rather than replacing its range. */
+  function resetPDFSelectionEnd(entry){
+    const end=entry.end,layer=end?.closest('.textLayer');if(!layer)return;
+    layer.append(end);end.style.width='';end.style.height='';layer.classList.remove('selecting');
+  }
+  function stabilizePDFSelection(){
+    const selection=getSelection();
+    if(!selection?.rangeCount){for(const entry of layers.values())resetPDFSelectionEnd(entry);previousPDFRange=null;return;}
+    for(const entry of layers.values()){
+      const layer=entry.end?.closest('.textLayer');if(!layer)continue;
+      let active=false;for(let i=0;i<selection.rangeCount;i++)if(selection.getRangeAt(i).intersectsNode(layer)){active=true;break;}
+      if(active)layer.classList.add('selecting');else resetPDFSelectionEnd(entry);
+    }
+    if(modernPDFSelection||pdfSelectionPointer===null)return;
+    const range=selection.getRangeAt(0);
+    if(!layerRoot.contains(range.startContainer)&&!layerRoot.contains(range.endContainer))return;
+    const start=previousPDFRange&&(range.compareBoundaryPoints(Range.END_TO_END,previousPDFRange)===0||range.compareBoundaryPoints(Range.START_TO_END,previousPDFRange)===0);
+    let anchor=start?range.startContainer:range.endContainer;if(anchor.nodeType===Node.TEXT_NODE)anchor=anchor.parentElement;
+    if(!start&&range.endOffset===0){
+      while(anchor&&layerRoot.contains(anchor)){
+        while(anchor&&!anchor.previousSibling&&anchor!==layerRoot)anchor=anchor.parentElement;
+        if(!anchor||anchor===layerRoot)break;
+        anchor=anchor.previousSibling;if(anchor.childNodes.length)break;
+      }
+    }
+    const layer=anchor?.parentElement?.closest('.textLayer'),entry=[...layers.values()].find(entry=>entry.end?.closest('.textLayer')===layer);
+    if(entry?.end&&anchor.parentElement){entry.end.style.width=layer.style.width;entry.end.style.height=layer.style.height;entry.end.style.userSelect='text';anchor.parentElement.insertBefore(entry.end,start?anchor:anchor.nextSibling);}
+    previousPDFRange=range.cloneRange();
+  }
+  function finishPDFSelection(){
+    if(pdfSelectionPointer===null)return;
+    pdfSelectionPointer=null;previousPDFRange=null;
+    for(const entry of layers.values())resetPDFSelectionEnd(entry);
+    requestAnimationFrame(placeChip);
   }
 
   /* ---- passage chat: draft selections never replace confirmed context ---- */
@@ -806,6 +863,7 @@
     return {text:text.slice(0,4000),pages:[...pages],boxes,rect:range.getBoundingClientRect()};
   }
   function placeChip(){
+    if(pdfSelectionPointer!==null){chip.hidden=true;return;}
     const draft=selected();if(!draft){chip.hidden=true;return;}
     passage=draft;chip.hidden=false;
     const w=chip.offsetWidth||100,x=Math.max(8,Math.min(innerWidth-w-8,draft.rect.left+draft.rect.width/2-w/2));
@@ -1164,7 +1222,11 @@
   $('pdf-ask-messages').addEventListener('scroll',()=>{const log=$('pdf-ask-messages');nearBottom=log.scrollHeight-log.scrollTop-log.clientHeight<65;if(nearBottom)$('pdf-ask-latest').hidden=true;},{passive:true});
   $('pdf-ask-latest').onclick=()=>{const log=$('pdf-ask-messages');log.scrollTop=log.scrollHeight;nearBottom=true;$('pdf-ask-latest').hidden=true;};
   let chipFrame=0;
-  document.addEventListener('selectionchange',()=>{if(chipFrame)return;chipFrame=requestAnimationFrame(()=>{chipFrame=0;placeChip();});});
+  document.addEventListener('selectionchange',()=>{stabilizePDFSelection();if(chipFrame)return;chipFrame=requestAnimationFrame(()=>{chipFrame=0;placeChip();});});
+  document.addEventListener('pointerdown',e=>{const layer=e.target.closest?.('#pdf-tl .textLayer');if(!S.pdf||S.tool!=='text'||!layer||e.button!==0||e.pointerType==='touch')return;pdfSelectionPointer=e.pointerId;previousPDFRange=null;layer.classList.add('selecting');chip.hidden=true;},true);
+  for(const type of ['pointerup','pointercancel'])document.addEventListener(type,e=>{if(e.pointerId===pdfSelectionPointer)finishPDFSelection();},true);
+  addEventListener('blur',finishPDFSelection);
+  document.addEventListener('keyup',()=>{if(pdfSelectionPointer===null)for(const entry of layers.values())resetPDFSelectionEnd(entry);});
   sc.addEventListener('scroll',()=>{if(!chip.hidden)placeChip();},{passive:true});
   addEventListener('resize',()=>{if(!askBox.hidden){C.layout();N.ink.render();updateChatInput();paintChatHighlight();}chip.hidden=true;});
   function fitChatKeyboard(){
