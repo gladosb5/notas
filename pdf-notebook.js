@@ -62,6 +62,7 @@
     #pdf-ask header{display:flex;align-items:center;gap:4px;min-height:65px;padding:10px 15px 8px 23px;flex:none}
     #pdf-ask header strong{flex:1;font:600 17px var(--ui);letter-spacing:-.4px}
     #pdf-ask header button{min-width:32px;width:32px;height:32px;font-size:17px}
+    #pdf-ask header #pdf-ask-new{width:auto;min-width:0;padding:0 10px;font:400 13px var(--ui);white-space:nowrap}
     #pdf-ask-messages{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:20px 23px 8px;scrollbar-width:thin;scrollbar-color:var(--ink-3) transparent;-webkit-user-select:text;user-select:text}
     #pdf-ask .pdf-message{margin:0 0 25px;overflow-wrap:anywhere;animation:pdf-message-in .25s var(--pdf-chat-ease) both;-webkit-user-select:text;user-select:text}
     #pdf-ask .pdf-message.user{margin-left:28px;padding:12px 16px;background:var(--tint);border-radius:15px 15px 4px 15px;line-height:1.65;white-space:pre-wrap}
@@ -164,7 +165,7 @@
   const chip=document.createElement('button');chip.id='pdf-ask-chip';chip.type='button';chip.hidden=true;chip.textContent='ask nota';
   document.body.appendChild(chip);
   const askBox=document.createElement('section');askBox.id='pdf-ask';askBox.hidden=true;askBox.setAttribute('aria-label','ask nota');
-  askBox.innerHTML='<header><strong>nota</strong><button id="pdf-ask-expand" type="button" title="expand chat" aria-label="expand chat" aria-pressed="false"><i class="ph ph-arrows-out-simple" aria-hidden="true"></i></button><button id="pdf-ask-close" type="button" title="close (Esc)" aria-label="close"><i class="ph ph-x" aria-hidden="true"></i></button></header>'+
+  askBox.innerHTML='<header><strong>nota</strong><button id="pdf-ask-new" type="button" title="new chat" aria-label="new chat">new chat</button><button id="pdf-ask-expand" type="button" title="expand chat" aria-label="expand chat" aria-pressed="false"><i class="ph ph-arrows-out-simple" aria-hidden="true"></i></button><button id="pdf-ask-close" type="button" title="close (Esc)" aria-label="close"><i class="ph ph-x" aria-hidden="true"></i></button></header>'+
     '<div id="pdf-ask-messages" role="log" aria-label="conversation with nota" aria-live="off"></div><div id="pdf-ask-compose"><button id="pdf-ask-latest" type="button" hidden>latest reply <i class="ph ph-arrow-down" aria-hidden="true"></i></button>'+
     '<form id="pdf-ask-form"><textarea id="pdf-ask-input" rows="2" placeholder="ask about this passage…" aria-label="your question about this passage" autocomplete="off" enterkeyhint="send"></textarea><div class="pdf-compose-bottom"><span class="pdf-compose-hint">Shift + Enter for a new line</span><button class="go" id="pdf-ask-send" type="submit" title="ask" aria-label="ask" disabled><i class="ph ph-arrow-up" aria-hidden="true"></i></button></div></form></div><span id="pdf-ask-status" role="status" aria-live="polite" style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)"></span>';
   document.body.appendChild(askBox);
@@ -893,7 +894,7 @@
     for(const el of [col,document.getElementById('canvaswrap')])readerAnimations.push(el.animate({translate:[dx+'px 0','0px 0px']},{duration:460,easing:'cubic-bezier(.22,1,.36,1)'}));
   }
   function updateChatInput(){
-    const input=$('pdf-ask-input'),send=$('pdf-ask-send');askBox.setAttribute('aria-busy',String(!!asking));input.style.height='auto';input.style.height=Math.min(input.scrollHeight,innerWidth<1100?120:170)+'px';
+    const input=$('pdf-ask-input'),send=$('pdf-ask-send'),t=s=>N.i18n?N.i18n.t(s):s;input.placeholder=t(chatSession?.contexts.length?'ask about this passage…':'ask nota…');input.setAttribute('aria-label',t(chatSession?.contexts.length?'your question about this passage':'your question for nota'));const fresh=$('pdf-ask-new');fresh.textContent=t('new chat');fresh.title=t('new chat');fresh.setAttribute('aria-label',t('new chat'));askBox.setAttribute('aria-busy',String(!!asking));input.style.height='auto';input.style.height=Math.min(input.scrollHeight,innerWidth<1100?120:170)+'px';
     send.disabled=!asking&&!input.value.trim();send.title=asking?'stop response':'ask';send.setAttribute('aria-label',send.title);send.innerHTML='<i class="ph '+(asking?'ph-stop':'ph-arrow-up')+'" aria-hidden="true"></i>';
   }
   function inlineChat(text){
@@ -929,6 +930,15 @@
     $('pdf-ask-input').value=chatSession.draft||'';updateChatInput();
     log.scrollTop=log.scrollHeight;nearBottom=true;$('pdf-ask-latest').hidden=true;
   }
+  function newChat(){
+    asking?.abort();asking=null;passage=null;chip.hidden=true;
+    clearTimeout(closeTimer);cancelAnimationFrame(fadeFrame);
+    const selection=getSelection();if(layerRoot.contains(selection?.anchorNode))selection.removeAllRanges();
+    highlight.replaceChildren();sc.querySelectorAll('.pdf-context-retired').forEach(el=>el.remove());sc.style.setProperty('--pdf-context-opacity','1');
+    chatSession={note:S.id,contexts:[],messages:[],draft:''};chatSessions.set(S.id,chatSession);
+    renderChat();saveChat();$('pdf-ask-input').focus({preventScroll:true});
+    $('pdf-ask-status').textContent=N.i18n?N.i18n.t('new chat started.'):'new chat started.';
+  }
   function openAsk(){
     if(!S.pdf)return;
     const opening=askBox.hidden||askBox.classList.contains('leaving'),session=sessionForNote(),draft=passage;
@@ -937,13 +947,12 @@
       session.contexts=session.contexts.filter(p=>!(p.text===draft.text&&p.pages.join()===draft.pages.join()));
       const {rect,...context}=draft;session.contexts.push(context);session.contexts=session.contexts.slice(-12);
     }
-    if(!session.contexts.length)return;
     passage=null;chip.hidden=true;closeFind();clearTimeout(closeTimer);cancelAnimationFrame(fadeFrame);sc.style.setProperty('--pdf-context-opacity','1');
     const before=document.getElementById('col').getBoundingClientRect().left;
     askBox.classList.remove('leaving');askBox.inert=false;askBox.hidden=false;document.body.classList.add('pdf-chat-open');document.body.classList.toggle('pdf-chat-wide',askBox.classList.contains('wide'));
-    if(opening)renderChat();paintChatHighlight();chatLayout(before);saveChat();
+    if(opening)renderChat();else updateChatInput();paintChatHighlight();chatLayout(before);saveChat();
     if(opening)$('pdf-ask-input').focus({preventScroll:true});
-    $('pdf-ask-status').textContent='passage added to the conversation.';
+    $('pdf-ask-status').textContent=draft?'passage added to the conversation.':'';
   }
   function closeAsk(immediate=false){
     saveChat();asking?.abort();asking=null;chip.hidden=true;passage=null;
@@ -964,10 +973,10 @@
   async function ask(question){
     if(asking){asking.abort();return;}
     const session=sessionForNote(),pdf=S.pdf;
-    if(!session.contexts.length||!pdf)return;
+    if(!pdf)return;
     question=question.trim()||'Explain this passage simply and briefly.';
-    const contexts=session.contexts.map(p=>({...p})),previous=session.messages.filter(m=>!m.error).slice(-16).map(m=>(m.role==='user'?'User: ':'Nota: ')+m.text).join('\n\n').slice(-20000);
-    const q='The person selected these passages in a PDF they are reading:\n'+contexts.map((p,i)=>(i+1)+'. """\n'+p.text+'\n"""').join('\n\n').slice(-12000)+'\n\n'+(previous?'Earlier conversation (use this for follow-up questions):\n'+previous+'\n\n':'')+'They ask: '+question+'\nReply directly in readable paragraphs. Do not add an introductory heading or subtitle.';
+    const contexts=session.contexts.map(p=>({...p})),previous=session.messages.filter(m=>!m.error).slice(-16).map(m=>(m.role==='user'?'User: ':'Nota: ')+m.text).join('\n\n').slice(-5000);
+    const q=(contexts.length?'The person selected these passages in a PDF they are reading:\n'+contexts.map((p,i)=>(i+1)+'. """\n'+p.text+'\n"""').join('\n\n').slice(-6000)+'\n\n':'')+(previous?'Earlier conversation (use this for follow-up questions):\n'+previous+'\n\n':'')+'They ask: '+question+'\nReply directly in readable paragraphs. Do not add an introductory heading or subtitle.';
     const control=new AbortController();let chatRenderFrame=null;asking=control;
     session.messages.push({role:'user',text:question});appendChatMessage(session.messages.at(-1));
     const answer={role:'assistant',text:''};session.messages.push(answer);const out=appendChatMessage(answer);out.classList.add('wait');out.textContent='nota is reading…';out.id='pdf-ask-reply';
@@ -1213,6 +1222,8 @@
   });
   chip.addEventListener('pointerdown',e=>e.preventDefault());chip.onclick=openAsk;
   $('pdf-ask-close').onclick=()=>closeAsk();
+  $('pdf-ask-new').onclick=newChat;
+  N.i18n?.onChange(updateChatInput);
   $('pdf-ask-form').onsubmit=e=>{e.preventDefault();ask($('pdf-ask-input').value);};
   $('pdf-ask-input').maxLength=4000;
   $('pdf-ask-input').addEventListener('input',()=>{updateChatInput();saveChat();});
