@@ -87,7 +87,7 @@
     #pdf-ask form button.go:disabled{background:var(--tint);color:var(--ink-2);opacity:1}
     #pdf-ask #pdf-ask-latest{position:absolute;right:22px;top:-32px;min-width:0;height:28px;padding:0 10px;border:1px solid var(--rule);background:var(--panel);font:400 11px var(--ui);box-shadow:var(--shadow)}
     #pdf-context-highlight,.pdf-context-retired{position:absolute;inset:0;pointer-events:none;z-index:4;mix-blend-mode:multiply}
-    #pdf-context-highlight > span,.pdf-context-retired > span{position:absolute;background:rgba(219,230,205,var(--pdf-context-opacity,1));pointer-events:none}
+    #pdf-context-highlight > span,.pdf-context-retired > span{position:absolute;background:rgba(0,0,0,calc(var(--pdf-context-opacity,1) * .16));pointer-events:none}
     body:has(#pdf-ask:not([hidden])) #app-recommendation,body:has(#pdf-find:not([hidden])) #app-recommendation{display:none}
     @media(min-width:1100px) and (pointer:fine){
       body.pdf-chat-open #scroller{right:calc(var(--pdf-chat-width) + var(--edge) * 2 + var(--safe-r))}
@@ -132,7 +132,7 @@
     #pdf-tl .textLayer > :not(.markedContent),#pdf-tl .textLayer .markedContent span:not(.markedContent){z-index:1;--font-height:0;font-size:calc(var(--text-scale-factor) * var(--font-height));--scale-x:1;--rotate:0deg;transform:rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv))}
     #pdf-tl .textLayer .markedContent{display:contents}
     #pdf-tl .textLayer span[role=img]{-webkit-user-select:none;user-select:none;cursor:default}
-    #pdf-tl .textLayer ::selection{background:rgb(219,230,205);color:transparent}
+    #pdf-tl .textLayer ::selection{background:rgba(0,0,0,.16);color:transparent}
     #pdf-tl .textLayer br::selection{background:transparent}
     #pdf-tl .textLayer .endOfContent{display:block;position:absolute;inset:100% 0 0;z-index:0;cursor:default;-webkit-user-select:none;user-select:none}
     #pdf-tl .pdf-link{position:absolute;z-index:2;border-radius:2px}

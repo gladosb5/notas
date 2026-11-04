@@ -1,6 +1,7 @@
 import {chromium} from 'playwright';
 import {PDFDocument,StandardFonts} from 'pdf-lib';
 import assert from 'node:assert/strict';
+import {PNG} from 'pngjs';
 import {mkdir} from 'node:fs/promises';
 import {startServer} from '../scripts/serve.mjs';
 
@@ -28,7 +29,15 @@ try{
     await page.mouse.move(r.x+1,r.y+r.height/2);await page.mouse.down();await page.mouse.move(r.x+r.width-1,r.y+r.height/2,{steps:10});await page.mouse.up();
     await page.locator('#pdf-ask-chip').waitFor({state:'visible'});
   };
-  await select('Plants turn');await page.locator('#pdf-ask-chip').click();await page.waitForTimeout(500);
+  const selectedSpan=page.locator('#pdf-tl .textLayer span',{hasText:'Plants turn'});await selectedSpan.waitFor();await page.waitForTimeout(200);
+  const selectionBounds=await selectedSpan.boundingBox();
+  const darkPixels=buffer=>{const png=PNG.sync.read(buffer);let count=0;for(let i=0;i<png.data.length;i+=4)if(png.data[i]<100&&png.data[i+1]<100&&png.data[i+2]<100)count++;return count;};
+  const unselectedPixels=darkPixels(await page.screenshot({clip:selectionBounds}));assert.ok(unselectedPixels>20,'PDF text rendered before selection');
+  await select('Plants turn');
+  const nativeStyle=await selectedSpan.evaluate(el=>getComputedStyle(el,'::selection').backgroundColor);
+  assert.equal(nativeStyle,'rgba(0, 0, 0, 0.16)','native selection is translucent black');
+  assert.ok(darkPixels(await page.screenshot({clip:selectionBounds}))>=unselectedPixels*.9,'native highlighting keeps PDF text readable before focusing chat');
+  await page.locator('#pdf-ask-chip').click();await page.waitForTimeout(500);
   assert.equal(await page.locator('#pdf-ask-quote').count(),0,'no selection summary inside chat');
   assert.equal(await page.locator('#pdf-ask .ph-sparkle,#pdf-ask-chip .ph-sparkle').count(),0,'no sparkle icons');
   const bounds=await page.locator('#pdf-ask').boundingBox();assert.ok(bounds.width>=470&&bounds.height>600,'roomy stable panel');
